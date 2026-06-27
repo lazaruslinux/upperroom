@@ -308,6 +308,14 @@ async def chat_socket(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
+    forwarded = websocket.headers.get("x-forwarded-for", "")
+    ws_ip = forwarded.split(",")[0].strip() if forwarded else (
+        websocket.client.host if websocket.client else ""
+    )
+    if not country_allowed(ws_ip):
+        await websocket.close(code=4403)
+        return
+
     who = {
         "username": session["sub"],
         "name": session["name"],

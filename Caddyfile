@@ -11,6 +11,14 @@
 	encode zstd gzip
 
 	route {
+		# The chat and presence WebSocket, handled before the geo gate below. A
+		# forward_auth cannot proxy a WebSocket upgrade (it 403s it), and the
+		# socket already requires a valid login cookie, which can only be issued
+		# to an allowed country. The gate rechecks the country on the socket too.
+		handle /ws {
+			reverse_proxy gate:8000
+		}
+
 		# US-only country lock, enforced here on the server so the video never
 		# has to pass through Cloudflare. The gate checks the visitor's country
 		# for every single request. A blocked country gets a 403 and never
@@ -21,11 +29,6 @@
 
 		# Login, session, chat config, and stream status.
 		handle /api/* {
-			reverse_proxy gate:8000
-		}
-
-		# The chat and presence WebSocket. Caddy upgrades this for us.
-		handle /ws {
 			reverse_proxy gate:8000
 		}
 
