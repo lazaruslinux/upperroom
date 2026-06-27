@@ -29,14 +29,14 @@
 			reverse_proxy gate:8000
 		}
 
-		# The video itself. forward_auth asks the gate to check the session
-		# cookie first. Only a request with a valid cookie reaches MediaMTX,
-		# so the stream URL on its own is useless to anyone not signed in.
-		handle /hls/* {
+		# The video itself, served at the same /live/ paths MediaMTX uses so its
+		# internal redirects and segment URLs line up (it redirects to absolute
+		# paths, which breaks under a rewritten prefix). forward_auth checks the
+		# session cookie first, so the stream is useless to anyone not signed in.
+		handle /live/* {
 			forward_auth gate:8000 {
 				uri /api/verify
 			}
-			uri strip_prefix /hls
 			reverse_proxy mediamtx:8888
 		}
 

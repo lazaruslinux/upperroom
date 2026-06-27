@@ -1,7 +1,7 @@
 // Watch page. Confirms the viewer is signed in, plays the low latency stream,
 // and runs the chat and watching list over a WebSocket.
 
-const STREAM_URL = "/hls/live/index.m3u8";
+const STREAM_URL = "/live/index.m3u8";
 
 const video = document.getElementById("video");
 const offline = document.getElementById("offline");
