@@ -1,15 +1,10 @@
-// Login page. Renders the Turnstile bot check, keeps the Sign in button
-// disabled until it passes, then submits the username and password. On success
-// the server sets a session cookie and we move to the player.
-//
-// Turnstile readiness is signaled by window.onloadTurnstileCallback, which is
-// defined in the page head and fires only once Cloudflare's API is fully ready.
-// We render as soon as both that callback has fired and we have the sitekey,
-// in whichever order they happen.
+// Login page. If a Turnstile sitekey is configured the bot check is loaded and
+// required; otherwise this is a plain username and password sign in. The
+// Cloudflare script is only loaded when the bot check is actually enabled, so
+// nothing third party is fetched when it is turned off.
 
 let turnstileToken = "";
 let botCheckRequired = false;
-let sitekey = null;
 
 const form = document.getElementById("login-form");
 const submitButton = form.querySelector("button[type=submit]");
@@ -24,41 +19,35 @@ function clearError() {
   errorBox.hidden = true;
 }
 
-function renderTurnstile() {
-  // Only proceed once Turnstile is ready and we know the sitekey.
-  if (!window.turnstileReady || !sitekey) return;
-  window.turnstile.render("#turnstile", {
-    sitekey: sitekey,
-    callback: (token) => {
-      turnstileToken = token;
-      submitButton.disabled = false;
-      clearError();
-    },
-    "error-callback": (code) => {
-      turnstileToken = "";
-      showError("Bot check error (" + code + "). Reload the page and try again.");
-    },
-    "expired-callback": () => {
-      turnstileToken = "";
-      submitButton.disabled = true;
-    },
-  });
+function setupTurnstile(sitekey) {
+  botCheckRequired = true;
+  submitButton.disabled = true;
+  // Cloudflare invokes this once its API is ready, so render only then.
+  window.onloadTurnstileCallback = function () {
+    window.turnstile.render("#turnstile", {
+      sitekey: sitekey,
+      callback: (token) => {
+        turnstileToken = token;
+        submitButton.disabled = false;
+        clearError();
+      },
+      "error-callback": () => { turnstileToken = ""; },
+      "expired-callback": () => { turnstileToken = ""; submitButton.disabled = true; },
+    });
+  };
+  const script = document.createElement("script");
+  script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js" +
+    "?onload=onloadTurnstileCallback&render=explicit";
+  script.async = true;
+  script.defer = true;
+  document.head.appendChild(script);
 }
-
-// Called by the head script if Turnstile becomes ready after this file has run.
-window.onTurnstileReady = renderTurnstile;
 
 async function init() {
   const config = await (await fetch("/api/config")).json();
-  sitekey = config.turnstile_sitekey || "";
-  if (!sitekey) {
-    // No sitekey means the bot check is turned off (for example local testing).
-    return;
+  if (config.turnstile_sitekey) {
+    setupTurnstile(config.turnstile_sitekey);
   }
-  botCheckRequired = true;
-  submitButton.disabled = true;
-  // If Turnstile is already ready, render now; otherwise the head callback will.
-  renderTurnstile();
 }
 
 form.addEventListener("submit", async (event) => {
@@ -79,9 +68,8 @@ form.addEventListener("submit", async (event) => {
   } else {
     const data = await reply.json().catch(() => ({}));
     showError(data.error || "Could not sign you in.");
-    // Each token is single use, so reset the widget for another attempt.
     turnstileToken = "";
-    if (window.turnstile) {
+    if (window.turnstile && window.turnstile.reset) {
       window.turnstile.reset();
       submitButton.disabled = true;
     }
