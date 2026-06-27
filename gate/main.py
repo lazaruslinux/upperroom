@@ -52,7 +52,10 @@ AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
 AVATAR_SIZE = 256                   # avatars are stored as this square, in px
 MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
 SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
-ALLOWED_FONTS = {"system", "mono", "comic", "retro"}
+ALLOWED_FONTS = {
+    "system", "mono", "comic", "retro",
+    "bangers", "pacifico", "caveat", "orbitron", "silkscreen",
+}
 MAX_BIO_LENGTH = 200
 
 

@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=2">
+  <link rel="stylesheet" href="/assets/style.css?v=3">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 </head>
 <body class="watch">
@@ -38,14 +38,9 @@
         <span>Theme</span>
         <button id="theme-toggle" type="button" class="pill">Dark</button>
       </div>
-      <div class="setting">
+      <div class="setting setting-font">
         <span>Chat font</span>
-        <select id="font-select">
-          <option value="system">System</option>
-          <option value="mono">Roboto Mono</option>
-          <option value="comic">Comic Neue</option>
-          <option value="retro">VT323</option>
-        </select>
+        <div id="font-picker" class="font-picker"></div>
       </div>
       <div class="setting">
         <span>Avatar</span>
@@ -94,6 +89,6 @@
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=5"></script>
+  <script src="/assets/watch.js?v=6"></script>
 </body>
 </html>

@@ -9,6 +9,15 @@ Version 1.1.
                      with Reserved Font Name "Comic Neue".
   vt323.woff2        VT323 — Copyright (c) 2011, Peter Hull (peter.hull@oikoi.com),
                      with Reserved Font Name "VT323".
+  bangers.woff2      Bangers — Copyright The Bangers Project Authors.
+  pacifico.woff2     Pacifico — Copyright The Pacifico Project Authors,
+                     with Reserved Font Name "Pacifico".
+  caveat.woff2       Caveat — Copyright The Caveat Project Authors,
+                     with Reserved Font Name "Caveat".
+  orbitron.woff2     Orbitron — Copyright The Orbitron Project Authors,
+                     with Reserved Font Name "Orbitron".
+  silkscreen.woff2   Silkscreen — Copyright Jason Kottke,
+                     with Reserved Font Name "Silkscreen".
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 The full license text follows and is also available with a FAQ at:

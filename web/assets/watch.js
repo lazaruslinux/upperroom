@@ -237,11 +237,27 @@ const FONTS = {
   mono: "'Roboto Mono', monospace",
   comic: "'Comic Neue', cursive",
   retro: "'VT323', monospace",
+  bangers: "'Bangers', cursive",
+  pacifico: "'Pacifico', cursive",
+  caveat: "'Caveat', cursive",
+  orbitron: "'Orbitron', sans-serif",
+  silkscreen: "'Silkscreen', monospace",
 };
+const FONT_LIST = [
+  ["system", "Default"],
+  ["mono", "Roboto Mono"],
+  ["comic", "Comic Neue"],
+  ["retro", "VT323"],
+  ["bangers", "Bangers"],
+  ["pacifico", "Pacifico"],
+  ["caveat", "Caveat"],
+  ["orbitron", "Orbitron"],
+  ["silkscreen", "Silkscreen"],
+];
 
 const settingsPanel = document.getElementById("settings-panel");
 const themeToggle = document.getElementById("theme-toggle");
-const fontSelect = document.getElementById("font-select");
+const fontPicker = document.getElementById("font-picker");
 const bioInput = document.getElementById("bio-input");
 const bioSave = document.getElementById("bio-save");
 const avatarButton = document.getElementById("avatar-button");
@@ -276,11 +292,25 @@ async function saveProfile(patch) {
 }
 
 // Your chosen font rides along on your own messages for everyone to see, so it
-// is saved on the server, not just in this browser.
-fontSelect.addEventListener("change", async () => {
-  me.font = fontSelect.value;
-  await saveProfile({ font: me.font });
-});
+// is saved on the server (not just this browser). Each option is rendered in
+// its own typeface so you can preview it before picking.
+function buildFontPicker() {
+  fontPicker.innerHTML = "";
+  FONT_LIST.forEach(([key, label]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "font-option" + (me && me.font === key ? " selected" : "");
+    btn.textContent = label;
+    btn.style.fontFamily = FONTS[key] || "";
+    btn.addEventListener("click", async () => {
+      me.font = key;
+      fontPicker.querySelectorAll(".font-option").forEach((b) => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      await saveProfile({ font: key });
+    });
+    fontPicker.appendChild(btn);
+  });
+}
 
 bioSave.addEventListener("click", async () => {
   me.bio = bioInput.value;
@@ -298,7 +328,7 @@ function renderMyAvatar() {
 // Reflect the signed in account's saved profile in the settings panel.
 function loadMyProfile() {
   if (!me) return;
-  fontSelect.value = me.font || "system";
+  buildFontPicker();
   bioInput.value = me.bio || "";
   renderMyAvatar();
 }
@@ -435,6 +465,21 @@ unmuteButton.addEventListener("click", () => {
   video.play().catch(() => {});
   unmuteButton.hidden = true;
 });
+
+// Keep the page exactly as tall as the visible viewport so the video, the last
+// message, and the send box stay on screen on mobile as the address bar or the
+// keyboard slides in and out.
+function lockHeight() {
+  const vv = window.visualViewport;
+  const height = (vv && vv.height) || window.innerHeight;
+  document.documentElement.style.setProperty("--vvh", height + "px");
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", lockHeight);
+}
+window.addEventListener("resize", lockHeight);
+window.addEventListener("orientationchange", lockHeight);
+lockHeight();
 
 async function boot() {
   if (!(await requireAuth())) return;

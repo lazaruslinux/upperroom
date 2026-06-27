@@ -123,7 +123,11 @@ button:hover { filter: brightness(1.1); }
 
 .watch {
   display: flex;
-  height: 100vh;
+  /* --vvh is set from the visual viewport in watch.js so the layout always
+     fits the phone exactly, keeping the video, last message, and the send box
+     on screen even as the address bar or keyboard appears. */
+  height: var(--vvh, 100vh);
+  overflow: hidden;
 }
 
 .stage {
@@ -251,8 +255,8 @@ button:hover { filter: brightness(1.1); }
 /* On narrow screens, stack the video on top and the chat below it. */
 @media (max-width: 720px) {
   .watch { flex-direction: column; }
-  .stage { flex: none; height: 40vh; }
-  .chat { width: 100%; flex: 1; border-left: none; border-top: 1px solid var(--border); }
+  .stage { flex: 2; }
+  .chat { width: 100%; flex: 3; border-left: none; border-top: 1px solid var(--border); }
 }
 
 /* ---- settings panel ---- */
@@ -308,12 +312,52 @@ button:hover { filter: brightness(1.1); }
   src: url("/assets/fonts/vt323.woff2") format("woff2");
   font-display: swap;
 }
+@font-face {
+  font-family: "Bangers";
+  src: url("/assets/fonts/bangers.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Pacifico";
+  src: url("/assets/fonts/pacifico.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Caveat";
+  src: url("/assets/fonts/caveat.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Orbitron";
+  src: url("/assets/fonts/orbitron.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Silkscreen";
+  src: url("/assets/fonts/silkscreen.woff2") format("woff2");
+  font-display: swap;
+}
 
 /* ---- profile + bio ---- */
 
 .avatar-clickable { cursor: pointer; }
 
 .setting select { font-size: 16px; }   /* 16px avoids the iOS focus zoom */
+
+/* Each font option is rendered in its own typeface, so you can see it before
+   picking (a native <select> shows them all in the system font). */
+.setting-font { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+.font-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.font-option {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 15px;
+  cursor: pointer;
+}
+.font-option.selected { border-color: var(--accent); color: var(--accent); }
 
 .setting-bio { flex-direction: column; align-items: stretch; gap: 0.4rem; }
 .bio-edit { display: flex; gap: 0.5rem; align-items: flex-start; }
