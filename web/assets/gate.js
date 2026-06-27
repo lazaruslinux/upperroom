@@ -38,22 +38,23 @@ form.addEventListener("submit", async (event) => {
 // locally so we do not have to poll just to keep the duration fresh.
 
 const statusBox = document.getElementById("status");
-const statusText = document.getElementById("status-text");
+const statusLabel = document.getElementById("status-label");
+const statusTime = document.getElementById("status-time");
 let liveSince = null;
 let tick = null;
 
-function formatDuration(seconds) {
-  // Keep a friendly "just started" for the first ten minutes of a stream.
+function formatStarted(seconds) {
+  // Keep a friendly "just started" for the first ten minutes, then count up.
   if (seconds < 600) return "just started";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  if (hours > 0) return `started ${hours}h ${minutes}m ago`;
+  return `started ${minutes} minutes ago`;
 }
 
 function renderLive() {
   const elapsed = Math.floor(Date.now() / 1000) - liveSince;
-  statusText.textContent = `Live · ${formatDuration(elapsed)}`;
+  statusTime.textContent = formatStarted(elapsed);
 }
 
 async function refreshStatus() {
@@ -69,12 +70,14 @@ async function refreshStatus() {
 
   if (online) {
     statusBox.className = "status status-live";
+    statusLabel.textContent = "Live";
     liveSince = since || Math.floor(Date.now() / 1000);
     renderLive();
     if (!tick) tick = setInterval(renderLive, 30000);
   } else {
     statusBox.className = "status status-offline";
-    statusText.textContent = "Offline";
+    statusLabel.textContent = "Offline";
+    statusTime.textContent = "";
     liveSince = null;
     if (tick) { clearInterval(tick); tick = null; }
   }

@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Put your stream name here</title>
+  <title>Lazarus Labs</title>
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body class="center">
   <main class="card">
     <div id="status" class="status status-loading">
-      <span class="dot"></span><span id="status-text">Checking status…</span>
+      <span class="dot"></span>
+      <span id="status-label">Checking status…</span>
+      <span id="status-time" class="status-time"></span>
     </div>
-    <h1>Put your stream name here</h1>
-    <p class="muted">Sign in to watch the stream.</p>
+    <h1>Lazarus Labs</h1>
+    <p class="muted">Sign in</p>
     <form id="login-form">
       <input type="text" id="username" placeholder="Username" autocomplete="username" required>
       <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
@@ -20,6 +22,6 @@
       <p id="error" class="error" hidden></p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=10"></script>
+  <script src="/assets/gate.js?v=11"></script>
 </body>
 </html>
