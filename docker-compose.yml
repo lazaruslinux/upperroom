@@ -1,0 +1,67 @@
+# selfstream runs as three small containers:
+#
+#   mediamtx  receives the stream from OBS and republishes it as HLS
+#   gate      handles login, the session cookie, chat, and presence
+#   caddy     terminates TLS, serves the pages, and guards the video
+#
+# Every value in ${...} comes from your local .env file, which is never
+# committed. Copy .env.example to .env and fill it in before starting.
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    environment:
+      - PUBLISH_PASS=${PUBLISH_PASS}
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      # RTMP ingest from OBS. Lock this port to your home IP with the firewall
+      # (see docs/01-vps-setup.md). Nobody else should be able to publish.
+      - "1935:1935"
+    networks:
+      - selfstream
+
+  gate:
+    build: ./gate
+    restart: unless-stopped
+    environment:
+      - SELFSTREAM_JWT_SECRET=${SELFSTREAM_JWT_SECRET}
+      - SELFSTREAM_SESSION_HOURS=${SELFSTREAM_SESSION_HOURS:-6}
+      - TURNSTILE_SITEKEY=${TURNSTILE_SITEKEY}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET}
+      - SELFSTREAM_PATH=live
+      - MEDIAMTX_API=http://mediamtx:9997
+      - SELFSTREAM_DB=/data/selfstream.db
+    volumes:
+      - gate_data:/data
+    networks:
+      - selfstream
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      - SELFSTREAM_DOMAIN=${SELFSTREAM_DOMAIN}
+      - TLS_EMAIL=${TLS_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - selfstream
+    depends_on:
+      - gate
+      - mediamtx
+
+networks:
+  selfstream:
+
+volumes:
+  gate_data:
+  caddy_data:
+  caddy_config:

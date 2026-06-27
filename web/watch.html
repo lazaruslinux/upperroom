@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Put your stream name here</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+</head>
+<body class="watch">
+  <section class="stage">
+    <div id="offline" class="offline" hidden>
+      <p>The stream is offline right now.</p>
+      <p class="muted">This will start playing on its own when it goes live.</p>
+    </div>
+    <video id="video" controls autoplay playsinline></video>
+  </section>
+
+  <aside class="chat">
+    <header class="chat-head">
+      <button id="viewer-toggle" type="button">
+        <span id="viewer-count">0 watching</span>
+      </button>
+    </header>
+    <ul id="viewer-list" class="viewer-list" hidden></ul>
+    <div id="messages" class="messages"></div>
+    <form id="chat-form" class="chat-form">
+      <input id="chat-input" maxlength="500" placeholder="Say something" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </aside>
+
+  <script src="/assets/watch.js"></script>
+</body>
+</html>

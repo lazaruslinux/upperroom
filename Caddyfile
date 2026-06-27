@@ -1,0 +1,43 @@
+# Caddy terminates TLS and routes traffic. It gets a real certificate from
+# Let's Encrypt automatically, so the DNS record for your domain must point at
+# this server and be set to DNS only (grey cloud) in Cloudflare. See
+# docs/02-cloudflare.md for why.
+
+{
+	email {$TLS_EMAIL}
+}
+
+{$SELFSTREAM_DOMAIN} {
+	encode zstd gzip
+
+	# Login, session, chat config, and stream status.
+	handle /api/* {
+		reverse_proxy gate:8000
+	}
+
+	# The chat and presence WebSocket. Caddy upgrades this connection for us.
+	handle /ws {
+		reverse_proxy gate:8000
+	}
+
+	# The video itself. forward_auth asks the gate to check the session cookie
+	# first. Only a request with a valid cookie ever reaches MediaMTX, so the
+	# stream URL on its own is useless to anyone who is not signed in.
+	handle /hls/* {
+		route {
+			forward_auth gate:8000 {
+				uri /api/verify
+			}
+			uri strip_prefix /hls
+			reverse_proxy mediamtx:8888
+		}
+	}
+
+	# Everything else is the static site: the login page, the watch page, and
+	# the CSS and JavaScript.
+	handle {
+		root * /srv/web
+		try_files {path} {path}.html /index.html
+		file_server
+	}
+}

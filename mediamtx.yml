@@ -1,0 +1,50 @@
+###############################################################################
+# selfstream MediaMTX configuration
+#
+# MediaMTX receives the stream from OBS over RTMP and republishes it as low
+# latency HLS for the browser player. It does not transcode, it only
+# repackages, so it stays light on a small server.
+###############################################################################
+
+# Control API, used by the gate service to tell viewers whether the stream is
+# live. It listens only inside the docker network.
+api: yes
+apiAddress: :9997
+
+# Protocols we do not use.
+rtsp: no
+webrtc: no
+srt: no
+
+# RTMP ingest from OBS.
+rtmp: yes
+rtmpAddress: :1935
+
+# Low latency HLS output. Caddy is the only thing that reaches this, inside the
+# docker network.
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsAlwaysRemux: no
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsAllowOrigin: '*'
+
+# Only a client with the publish password may send a stream. Reading is allowed
+# only from inside the container network, since Caddy is the only reader and it
+# enforces the session check itself.
+authMethod: internal
+authInternalUsers:
+  - user: publisher
+    pass: ${PUBLISH_PASS}
+    permissions:
+      - action: publish
+        path: live
+  - user: any
+    ips: ['127.0.0.1', '::1', '172.16.0.0/12']
+    permissions:
+      - action: read
+
+paths:
+  live:

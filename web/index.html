@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Put your stream name here</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body class="center">
+  <main class="card">
+    <h1>Put your stream name here</h1>
+    <p class="muted">Sign in to watch the stream.</p>
+    <form id="login-form">
+      <input type="text" id="username" placeholder="Username" autocomplete="username" required>
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+      <div id="turnstile" class="turnstile"></div>
+      <button type="submit">Sign in</button>
+      <p id="error" class="error" hidden></p>
+    </form>
+  </main>
+  <script src="/assets/gate.js"></script>
+</body>
+</html>
