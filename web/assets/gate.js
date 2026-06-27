@@ -43,7 +43,8 @@ let liveSince = null;
 let tick = null;
 
 function formatDuration(seconds) {
-  if (seconds < 60) return "just started";
+  // Keep a friendly "just started" for the first ten minutes of a stream.
+  if (seconds < 600) return "just started";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;

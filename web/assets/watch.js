@@ -38,17 +38,37 @@ function startVideo() {
     hls = new Hls({ lowLatencyMode: true, backBufferLength: 30 });
     hls.loadSource(STREAM_URL);
     hls.attachMedia(video);
+    // Counts consecutive fatal errors with no clean playback in between. A
+    // healthy frame resets it, so this only trips when the stream is really
+    // down, not on a momentary blip.
+    let recoverAttempts = 0;
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       showOffline(false);
       video.play().catch(() => {});
     });
+    hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      recoverAttempts = 0;
+      showOffline(false);
+    });
     hls.on(Hls.Events.ERROR, (event, data) => {
-      if (data.fatal) {
-        hls.destroy();
-        hls = null;
-        showOffline(true);
-        setTimeout(checkStream, 5000);
+      if (!data.fatal) return;
+      // A brief source hiccup (a muxer restart, a dropped segment) should not
+      // blank straight to the offline card. Try to resume a few times first.
+      if (recoverAttempts < 3) {
+        recoverAttempts++;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        } else {
+          hls.startLoad();
+        }
+        return;
       }
+      // Recovery did not take, so the stream is probably actually down. Show
+      // the offline card and let the status poll bring it back when it returns.
+      hls.destroy();
+      hls = null;
+      showOffline(true);
+      setTimeout(checkStream, 5000);
     });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
     // Safari on iOS plays HLS natively without hls.js.
