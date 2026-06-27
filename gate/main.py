@@ -30,7 +30,7 @@ from fastapi import (
     FastAPI, File, Request, Response, UploadFile, WebSocket, WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse, JSONResponse
-from PIL import Image
+from PIL import Image, ImageOps
 
 import db
 
@@ -368,6 +368,9 @@ async def set_avatar(request: Request, image: UploadFile = File(...)):
     except Exception:
         return JSONResponse({"error": "That file is not an image."}, status_code=400)
 
+    # Honor the photo's EXIF orientation before cropping, so phone uploads are
+    # not rotated or flipped.
+    picture = ImageOps.exif_transpose(picture)
     square = crop_to_square(picture).convert("RGB").resize(
         (AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS
     )
