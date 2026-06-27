@@ -19,9 +19,23 @@ function clearError() {
 }
 
 function renderWidget(sitekey) {
-  // Wait until the Turnstile script has finished loading, then render.
+  // Wait until the Turnstile script has finished loading, then render. If it
+  // never loads (often a DNS filter or ad blocker blocking Cloudflare), say so
+  // instead of leaving the button silently disabled forever.
+  let waited = 0;
   const timer = setInterval(() => {
-    if (window.turnstile && typeof window.turnstile.render === "function") {
+    if (!(window.turnstile && typeof window.turnstile.render === "function")) {
+      waited += 100;
+      if (waited >= 8000) {
+        clearInterval(timer);
+        showError(
+          "Could not load the bot check. An ad blocker or DNS filter may be " +
+          "blocking challenges.cloudflare.com on this network."
+        );
+      }
+      return;
+    }
+    {
       clearInterval(timer);
       try {
         window.turnstile.render("#turnstile", {
