@@ -20,6 +20,7 @@ import os
 import time
 from collections import defaultdict, deque
 
+import geoip2.database
 import httpx
 import jwt
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
@@ -33,6 +34,12 @@ TURNSTILE_SITEKEY = os.environ.get("TURNSTILE_SITEKEY", "")
 TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET", "")
 MEDIAMTX_API = os.environ.get("MEDIAMTX_API", "http://mediamtx:9997")
 STREAM_PATH = os.environ.get("SELFSTREAM_PATH", "live")
+GEO_DB_PATH = os.environ.get("SELFSTREAM_GEO_DB", "/app/dbip-country.mmdb")
+ALLOWED_COUNTRIES = {
+    c.strip().upper()
+    for c in os.environ.get("SELFSTREAM_ALLOWED_COUNTRIES", "US").split(",")
+    if c.strip()
+}
 
 COOKIE_NAME = "selfstream_session"
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
@@ -88,6 +95,25 @@ def client_ip(request):
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
+
+# Geo lookup. The database is baked into the image at build time. If it is
+# missing, or an address is not in it, we allow the request, so a database
+# problem can never lock everyone out of the stream.
+try:
+    _geo_reader = geoip2.database.Reader(GEO_DB_PATH)
+except Exception:
+    _geo_reader = None
+
+
+def country_allowed(ip):
+    if not _geo_reader or not ALLOWED_COUNTRIES:
+        return True
+    try:
+        code = _geo_reader.country(ip).country.iso_code
+    except Exception:
+        return True
+    return code in ALLOWED_COUNTRIES
 
 
 async def turnstile_ok(token, ip):
@@ -195,6 +221,14 @@ def verify(request: Request):
     if read_session(request.cookies.get(COOKIE_NAME, "")):
         return Response(status_code=200)
     return Response(status_code=401)
+
+
+@app.get("/api/geo")
+def geo(request: Request):
+    # Caddy calls this for every request. Allow only the configured countries.
+    if country_allowed(client_ip(request)):
+        return Response(status_code=200)
+    return Response(status_code=403)
 
 
 @app.post("/api/auth")

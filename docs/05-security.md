@@ -50,6 +50,14 @@ yourself rather than take it on faith.
     the traffic, and you stay clear of Cloudflare's rules about video on the free
     plan.
 
+11. **Country lock.** Every request is checked against a country allow list
+    before it reaches anything. By default only United States addresses are
+    allowed and everyone else gets a 403. Because the video deliberately does
+    not pass through Cloudflare, this is enforced on the server itself using a
+    free DB-IP country database baked into the gate image. Set the list with
+    `SELFSTREAM_ALLOWED_COUNTRIES` in `.env`, or leave it blank to allow every
+    country. The database is refreshed whenever you rebuild the gate image.
+
 ## Rotating access
 
 To cut someone off, change their password or delete their account:
