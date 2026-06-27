@@ -79,20 +79,81 @@ function renderStats() {
   const messages = users.reduce((sum, u) => sum + (u.messages || 0), 0);
   const strip = document.getElementById("stat-strip");
   const cards = [
-    ["Accounts", users.length],
-    ["Admins", admins],
-    ["Watch time", formatDuration(watch)],
-    ["Messages (7d)", messages],
+    ["Accounts", users.length, "accounts"],
+    ["Admins", admins, "admins"],
+    ["Watch time", formatDuration(watch), "watch"],
+    ["Messages (7d)", messages, "messages"],
   ];
   strip.innerHTML = "";
-  cards.forEach(([label, value]) => {
-    const card = document.createElement("div");
+  cards.forEach(([label, value, kind]) => {
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = "stat-card";
     card.innerHTML = `<span class="stat-value"></span><span class="stat-label"></span>`;
     card.querySelector(".stat-value").textContent = value;
     card.querySelector(".stat-label").textContent = label;
+    card.addEventListener("click", () => openStat(kind));
     strip.appendChild(card);
   });
+}
+
+// ---- stat detail (tap a stat card) ----
+
+const statModal = document.getElementById("stat-modal");
+const statTitle = document.getElementById("stat-title");
+const statBody = document.getElementById("stat-body");
+
+function userRow(u, showWatch) {
+  const row = document.createElement("div");
+  row.className = "activity-row";
+  const left = document.createElement("span");
+  left.textContent = `${u.display_name} @${u.username}${u.is_admin ? " · admin" : ""}`;
+  const right = document.createElement("span");
+  right.className = "act-dur";
+  if (showWatch) right.textContent = formatDuration(u.watch_seconds);
+  row.append(left, right);
+  return row;
+}
+
+async function openStat(kind) {
+  const titles = {
+    accounts: "All accounts",
+    admins: "Admins",
+    watch: "Watch time (live only)",
+    messages: "Recent chat (7 days)",
+  };
+  statTitle.textContent = titles[kind] || "Details";
+  statBody.innerHTML = "";
+  openModal(statModal);
+
+  if (kind === "messages") {
+    statBody.innerHTML = `<p class="muted">Loading…</p>`;
+    let msgs = [];
+    try { msgs = (await (await fetch("/api/admin/chat")).json()).messages || []; } catch { /* empty */ }
+    statBody.innerHTML = "";
+    if (!msgs.length) { statBody.innerHTML = `<p class="muted">No messages in the last 7 days.</p>`; return; }
+    msgs.forEach((m) => {
+      const row = document.createElement("div");
+      row.className = "activity-row chat-row";
+      row.innerHTML = `<span class="act-when"></span><span class="act-text"></span>`;
+      row.querySelector(".act-when").textContent = formatStamp(m.ts);
+      row.querySelector(".act-text").textContent = `${m.display_name}: ${m.text}`;
+      statBody.appendChild(row);
+    });
+    return;
+  }
+
+  let list = users;
+  if (kind === "admins") list = users.filter((u) => u.is_admin);
+  if (kind === "watch") {
+    list = users.filter((u) => u.watch_seconds > 0)
+                .sort((a, b) => b.watch_seconds - a.watch_seconds);
+  }
+  if (!list.length) {
+    statBody.innerHTML = `<p class="muted">Nothing here yet.</p>`;
+    return;
+  }
+  list.forEach((u) => statBody.appendChild(userRow(u, kind === "watch")));
 }
 
 function renderUsers() {

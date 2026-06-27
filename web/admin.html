@@ -7,7 +7,7 @@
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=8">
+  <link rel="stylesheet" href="/assets/style.css?v=9">
 </head>
 <body class="admin">
   <header class="home-bar">
@@ -88,6 +88,15 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=1"></script>
+  <!-- Stat detail (tap a stat card) -->
+  <div id="stat-modal" class="modal" hidden>
+    <div class="modal-card admin-modal activity-modal">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3 id="stat-title">Details</h3>
+      <div id="stat-body" class="activity-list"></div>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js?v=2"></script>
 </body>
 </html>

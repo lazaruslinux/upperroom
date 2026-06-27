@@ -93,6 +93,9 @@ async def stream_watcher():
         try:
             data = await fetch_path()
             online = bool(data and data.get("ready", False))
+            # Open/close watch sessions on the live<->offline transition so
+            # watch time only counts while the stream is live.
+            await hub.set_live(online)
             if was_online and not online:
                 await hub.wipe()
             was_online = online
@@ -257,6 +260,7 @@ class Hub:
         self._sockets = {}            # websocket -> {"username", "name", "admin"}
         self._history = deque(maxlen=CHAT_HISTORY)
         self._lock = asyncio.Lock()
+        self._live = False            # whether the stream is currently live
 
     def viewers(self):
         # One entry per person, even if they have several tabs open.
@@ -288,6 +292,16 @@ class Hub:
         async with self._lock:
             self._sockets[socket] = who
             history = list(self._history)
+            # Only accrue watch time while the stream is actually live. Joining
+            # while offline just puts you in chat; no watch session is opened.
+            who["watch_id"] = None
+            if self._live:
+                try:
+                    who["watch_id"] = db.start_watch_session(
+                        who["username"], int(time.time())
+                    )
+                except Exception:
+                    who["watch_id"] = None
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
         await self.broadcast(
@@ -296,6 +310,11 @@ class Hub:
 
     async def leave(self, socket):
         who = self._sockets.pop(socket, None)
+        if who and who.get("watch_id"):
+            try:
+                db.end_watch_session(who["watch_id"], int(time.time()))
+            except Exception:
+                pass
         await self.broadcast(self.presence_message())
         if who:
             await self.broadcast(
@@ -321,6 +340,28 @@ class Hub:
         except Exception:
             pass
         await self.broadcast(message)
+
+    async def set_live(self, online):
+        # Called by the stream watcher. Watch time only counts while live, so on
+        # the transitions we open or close a watch session for everyone who is
+        # already connected.
+        if online == self._live:
+            return
+        now = int(time.time())
+        async with self._lock:
+            self._live = online
+            for who in self._sockets.values():
+                if online and not who.get("watch_id"):
+                    try:
+                        who["watch_id"] = db.start_watch_session(who["username"], now)
+                    except Exception:
+                        who["watch_id"] = None
+                elif not online and who.get("watch_id"):
+                    try:
+                        db.end_watch_session(who["watch_id"], now)
+                    except Exception:
+                        pass
+                    who["watch_id"] = None
 
     async def wipe(self):
         # Called when a broadcast ends. Clear the backlog and tell every open
@@ -817,14 +858,6 @@ async def chat_socket(websocket: WebSocket):
     await websocket.accept()
     await hub.join(websocket, who)
 
-    # Record this as a watch session so the admin can see who watched and for
-    # how long. Each open page is its own session; it is closed on disconnect.
-    watch_id = None
-    try:
-        watch_id = db.start_watch_session(session["sub"], int(time.time()))
-    except Exception:
-        pass
-
     sent_times = deque(maxlen=5)
     try:
         while True:
@@ -847,8 +880,3 @@ async def chat_socket(websocket: WebSocket):
             await hub.say(who, text)
     finally:
         await hub.leave(websocket)
-        if watch_id is not None:
-            try:
-                db.end_watch_session(watch_id, int(time.time()))
-            except Exception:
-                pass

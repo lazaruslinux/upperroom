@@ -386,10 +386,17 @@ function lockHeight() {
   document.documentElement.style.setProperty("--vvh", height + "px");
 }
 if (window.visualViewport) {
+  // Some mobile browsers only fire "scroll" (not "resize") when the bottom
+  // toolbar slides in or out, which changes the visible height, so listen to
+  // both. Otherwise the send box can end up hidden behind the toolbar.
   window.visualViewport.addEventListener("resize", lockHeight);
+  window.visualViewport.addEventListener("scroll", lockHeight);
 }
 window.addEventListener("resize", lockHeight);
 window.addEventListener("orientationchange", lockHeight);
+// Re-measure shortly after load too; the first value can be taken before the
+// browser chrome has settled.
+window.addEventListener("load", () => setTimeout(lockHeight, 200));
 lockHeight();
 
 async function boot() {
