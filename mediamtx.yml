@@ -29,7 +29,7 @@ hlsAlwaysRemux: no
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
-hlsAllowOrigin: '*'
+hlsAllowOrigins: ['*']
 
 # Only a client with the publish password may send a stream. Reading is allowed
 # only from inside the container network, since Caddy is the only reader and it
@@ -48,6 +48,9 @@ authInternalUsers:
     ips: ['127.0.0.1', '::1', '172.16.0.0/12']
     permissions:
       - action: read
+      # Lets the gate query the control API for stream status, from inside the
+      # container network only (the API port is never published to the host).
+      - action: api
 
 paths:
   live:
