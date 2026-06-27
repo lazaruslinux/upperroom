@@ -25,7 +25,11 @@ def main():
     # Try this month first, then last month in case the new file is not out yet.
     for day in (today, previous):
         try:
-            raw = urllib.request.urlopen(url_for(day), timeout=30).read()
+            # DB-IP rejects the default urllib user-agent, so set a normal one.
+            request = urllib.request.Request(
+                url_for(day), headers={"User-Agent": "Mozilla/5.0 (selfstream)"}
+            )
+            raw = urllib.request.urlopen(request, timeout=30).read()
             with open(OUT, "wb") as out:
                 out.write(gzip.decompress(raw))
             print(f"geo database saved for {day:%Y-%m}")
