@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    avatar_version INTEGER NOT NULL DEFAULT 0
+    avatar_version INTEGER NOT NULL DEFAULT 0,
+    chat_font TEXT NOT NULL DEFAULT 'system',
+    bio TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -42,9 +44,11 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
-        # Older databases predate the avatar column. Add it in place so existing
+        # Older databases predate these columns. Add them in place so existing
         # accounts keep working after an update.
         _ensure_column(conn, "users", "avatar_version", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "chat_font", "TEXT NOT NULL DEFAULT 'system'")
+        _ensure_column(conn, "users", "bio", "TEXT NOT NULL DEFAULT ''")
 
 
 def _ensure_column(conn, table, column, decl):
@@ -126,6 +130,18 @@ def bump_avatar_version(username):
             "SELECT avatar_version FROM users WHERE username = ?", (username,)
         ).fetchone()
         return row["avatar_version"] if row else 0
+
+
+def set_chat_font(username, font):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET chat_font = ? WHERE username = ?", (font, username)
+        )
+
+
+def set_bio(username, bio):
+    with connect() as conn:
+        conn.execute("UPDATE users SET bio = ? WHERE username = ?", (bio, username))
 
 
 def delete_user(username):

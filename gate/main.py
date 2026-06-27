@@ -52,6 +52,8 @@ AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
 AVATAR_SIZE = 256                   # avatars are stored as this square, in px
 MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
 SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
+ALLOWED_FONTS = {"system", "mono", "comic", "retro"}
+MAX_BIO_LENGTH = 200
 
 
 async def fetch_path():
@@ -225,6 +227,7 @@ class Hub:
             "name": who["name"],
             "admin": who["admin"],
             "avatar": who.get("avatar", 0),
+            "font": who.get("font", "system"),
             "text": text,
             "ts": int(time.time()),
         }
@@ -238,12 +241,16 @@ class Hub:
             self._history.clear()
         await self.broadcast({"type": "wipe"})
 
-    async def update_avatar(self, username, version):
-        # A viewer changed their avatar mid-session. Point their open sockets at
-        # the new version so their next messages and the watching list show it.
+    async def update_member(self, username, avatar=None, font=None):
+        # A viewer changed their avatar or chat font mid-session. Point their
+        # open sockets at the new value so their next messages and the watching
+        # list reflect it, without making them reconnect.
         for who in self._sockets.values():
             if who["username"] == username:
-                who["avatar"] = version
+                if avatar is not None:
+                    who["avatar"] = avatar
+                if font is not None:
+                    who["font"] = font
         await self.broadcast(self.presence_message())
 
 
@@ -264,6 +271,8 @@ def me(request: Request):
         "name": session["name"],
         "admin": session["admin"],
         "avatar": user["avatar_version"] if user else 0,
+        "font": user["chat_font"] if user else "system",
+        "bio": user["bio"] if user else "",
     }
 
 
@@ -376,7 +385,7 @@ async def set_avatar(request: Request, image: UploadFile = File(...)):
     )
     square.save(avatar_path(username), format="PNG")
     version = db.bump_avatar_version(username)
-    await hub.update_avatar(username, version)
+    await hub.update_member(username, avatar=version)
     return {"ok": True, "avatar": version}
 
 
@@ -392,6 +401,53 @@ def get_avatar(username: str, request: Request):
     if not os.path.exists(path):
         return Response(status_code=404)
     return FileResponse(path, media_type="image/png")
+
+
+# ---- Profiles -------------------------------------------------------------
+
+@app.post("/api/profile")
+async def set_profile(request: Request):
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    username = session["sub"]
+    body = await request.json()
+
+    font = None
+    if "font" in body:
+        font = str(body.get("font") or "system")
+        if font not in ALLOWED_FONTS:
+            return JSONResponse({"error": "Unknown font."}, status_code=400)
+        db.set_chat_font(username, font)
+
+    bio = None
+    if "bio" in body:
+        bio = str(body.get("bio") or "").strip()[:MAX_BIO_LENGTH]
+        db.set_bio(username, bio)
+
+    # Push a font change to the live chat so others see it without reconnecting.
+    if font is not None:
+        await hub.update_member(username, font=font)
+    return {"ok": True, "font": font, "bio": bio}
+
+
+@app.get("/api/profile/{username}")
+def get_profile(username: str, request: Request):
+    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+        return Response(status_code=401)
+    username = username.strip().lower()
+    if not SAFE_USERNAME.match(username):
+        return Response(status_code=404)
+    user = db.get_user(username)
+    if not user:
+        return Response(status_code=404)
+    return {
+        "username": user["username"],
+        "name": user["display_name"],
+        "admin": bool(user["is_admin"]),
+        "avatar": user["avatar_version"],
+        "bio": user["bio"],
+    }
 
 
 def ready_epoch(ready_time):
@@ -460,6 +516,7 @@ async def chat_socket(websocket: WebSocket):
         "name": session["name"],
         "admin": session["admin"],
         "avatar": user["avatar_version"] if user else 0,
+        "font": user["chat_font"] if user else "system",
     }
     await websocket.accept()
     await hub.join(websocket, who)

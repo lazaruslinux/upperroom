@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=1">
+  <link rel="stylesheet" href="/assets/style.css?v=2">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 </head>
 <body class="watch">
@@ -55,6 +55,13 @@
           <input id="avatar-input" type="file" accept="image/*" hidden>
         </span>
       </div>
+      <div class="setting setting-bio">
+        <span>Bio</span>
+        <div class="bio-edit">
+          <textarea id="bio-input" maxlength="200" rows="2" placeholder="A short bio others see when they tap your avatar"></textarea>
+          <button id="bio-save" type="button" class="pill">Save</button>
+        </div>
+      </div>
     </div>
     <ul id="viewer-list" class="viewer-list" hidden></ul>
     <div id="messages" class="messages"></div>
@@ -64,6 +71,29 @@
     </form>
   </aside>
 
-  <script src="/assets/watch.js?v=4"></script>
+  <div id="profile-modal" class="modal" hidden>
+    <div class="modal-card profile-card">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <span id="profile-avatar" class="profile-avatar"></span>
+      <div id="profile-name" class="profile-name"></div>
+      <div id="profile-bio" class="profile-bio muted"></div>
+    </div>
+  </div>
+
+  <div id="crop-modal" class="modal" hidden>
+    <div class="modal-card crop-card">
+      <div class="crop-stage">
+        <canvas id="crop-canvas" width="256" height="256"></canvas>
+        <div class="crop-ring"></div>
+      </div>
+      <input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
+      <div class="crop-actions">
+        <button type="button" class="pill" data-close>Cancel</button>
+        <button id="crop-save" type="button" class="pill primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/watch.js?v=5"></script>
 </body>
 </html>
