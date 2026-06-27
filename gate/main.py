@@ -121,10 +121,17 @@ async def turnstile_ok(token, ip):
         # No secret set means the bot check is turned off. This is only for
         # local testing. Always set a secret before going public.
         return True
-    data = {"secret": TURNSTILE_SECRET, "response": token, "remoteip": ip}
+    # We deliberately do not send remoteip. Behind a shared VPN or proxy the
+    # viewer's address can differ between solving the challenge and this
+    # request, which makes Cloudflare reject an otherwise valid token.
+    data = {"secret": TURNSTILE_SECRET, "response": token}
     async with httpx.AsyncClient(timeout=10) as http:
         reply = await http.post(TURNSTILE_VERIFY_URL, data=data)
-    return reply.json().get("success", False)
+    result = reply.json()
+    if not result.get("success"):
+        print("turnstile verify failed:", result.get("error-codes"),
+              "token_len=", len(token or ""), flush=True)
+    return result.get("success", False)
 
 
 # ---- Chat and presence ----------------------------------------------------
