@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    avatar_version INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -41,6 +42,15 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Older databases predate the avatar column. Add it in place so existing
+        # accounts keep working after an update.
+        _ensure_column(conn, "users", "avatar_version", "INTEGER NOT NULL DEFAULT 0")
+
+
+def _ensure_column(conn, table, column, decl):
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def hash_password(password):
@@ -102,6 +112,20 @@ def set_password(username, password):
             (hash_password(password), username),
         )
         return cur.rowcount > 0
+
+
+def bump_avatar_version(username):
+    # Each change bumps the version so the browser fetches the new image instead
+    # of a cached one. Returns the new version (0 means the user is unknown).
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET avatar_version = avatar_version + 1 WHERE username = ?",
+            (username,),
+        )
+        row = conn.execute(
+            "SELECT avatar_version FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        return row["avatar_version"] if row else 0
 
 
 def delete_user(username):

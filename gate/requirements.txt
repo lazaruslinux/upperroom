@@ -3,3 +3,5 @@ uvicorn[standard]==0.34.0
 httpx==0.28.1
 pyjwt==2.10.1
 geoip2==4.8.0
+pillow>=11.0
+python-multipart>=0.0.18

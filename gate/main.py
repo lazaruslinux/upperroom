@@ -15,16 +15,22 @@ every sensitive value is read from the environment.
 """
 
 import asyncio
+import io
 import os
+import re
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import geoip2.database
 import httpx
 import jwt
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import (
+    FastAPI, File, Request, Response, UploadFile, WebSocket, WebSocketDisconnect,
+)
+from fastapi.responses import FileResponse, JSONResponse
+from PIL import Image
 
 import db
 
@@ -41,9 +47,53 @@ ALLOWED_COUNTRIES = {
 
 COOKIE_NAME = "selfstream_session"
 MAX_MESSAGE_LENGTH = 500
+HISTORY_TTL_SECONDS = 60            # chat messages disappear after this long
+AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
+AVATAR_SIZE = 256                   # avatars are stored as this square, in px
+MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
+SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
 
-app = FastAPI(title="selfstream", docs_url=None, redoc_url=None)
+
+async def fetch_path():
+    """Return the MediaMTX path JSON for our stream, or None on any error."""
+    url = f"{MEDIAMTX_API}/v3/paths/get/{STREAM_PATH}"
+    try:
+        async with httpx.AsyncClient(timeout=5) as http:
+            reply = await http.get(url)
+        if reply.status_code == 200:
+            return reply.json()
+    except httpx.HTTPError:
+        pass
+    return None
+
+
+async def stream_watcher():
+    """Wipe the chat when a broadcast ends, so the next stream starts clean."""
+    was_online = False
+    while True:
+        try:
+            data = await fetch_path()
+            online = bool(data and data.get("ready", False))
+            if was_online and not online:
+                await hub.wipe()
+            was_online = online
+        except Exception:
+            pass
+        await asyncio.sleep(5)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    watcher = asyncio.create_task(stream_watcher())
+    try:
+        yield
+    finally:
+        watcher.cancel()
+
+
+app = FastAPI(title="selfstream", docs_url=None, redoc_url=None, lifespan=lifespan)
 db.init_db()
+os.makedirs(AVATAR_DIR, exist_ok=True)
 
 
 # ---- Login rate limiting --------------------------------------------------
@@ -127,8 +177,11 @@ class Hub:
         # One entry per person, even if they have several tabs open.
         seen = {}
         for who in self._sockets.values():
-            seen[who["username"]] = who["name"]
-        return [{"username": u, "name": n} for u, n in seen.items()]
+            seen[who["username"]] = who
+        return [
+            {"username": w["username"], "name": w["name"], "avatar": w.get("avatar", 0)}
+            for w in seen.values()
+        ]
 
     def presence_message(self):
         viewers = self.viewers()
@@ -145,9 +198,12 @@ class Hub:
             self._sockets.pop(socket, None)
 
     async def join(self, socket, who):
+        # Only replay messages from the last minute, since older ones have
+        # already disappeared for everyone else.
+        cutoff = int(time.time()) - HISTORY_TTL_SECONDS
         async with self._lock:
             self._sockets[socket] = who
-            history = list(self._history)
+            history = [m for m in self._history if m.get("ts", 0) >= cutoff]
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
         await self.broadcast(
@@ -168,11 +224,27 @@ class Hub:
             "user": who["username"],
             "name": who["name"],
             "admin": who["admin"],
+            "avatar": who.get("avatar", 0),
             "text": text,
             "ts": int(time.time()),
         }
         self._history.append(message)
         await self.broadcast(message)
+
+    async def wipe(self):
+        # Called when a broadcast ends. Clear the backlog and tell every open
+        # page to empty its chat, so the next stream starts fresh.
+        async with self._lock:
+            self._history.clear()
+        await self.broadcast({"type": "wipe"})
+
+    async def update_avatar(self, username, version):
+        # A viewer changed their avatar mid-session. Point their open sockets at
+        # the new version so their next messages and the watching list show it.
+        for who in self._sockets.values():
+            if who["username"] == username:
+                who["avatar"] = version
+        await self.broadcast(self.presence_message())
 
 
 hub = Hub()
@@ -185,11 +257,13 @@ def me(request: Request):
     session = read_session(request.cookies.get(COOKIE_NAME, ""))
     if not session:
         return {"authed": False}
+    user = db.get_user(session["sub"])
     return {
         "authed": True,
         "username": session["sub"],
         "name": session["name"],
         "admin": session["admin"],
+        "avatar": user["avatar_version"] if user else 0,
     }
 
 
@@ -252,6 +326,71 @@ def logout():
     return response
 
 
+# ---- Avatars --------------------------------------------------------------
+
+def avatar_path(username):
+    # basename strips any directory tricks hidden in the name.
+    return os.path.join(AVATAR_DIR, os.path.basename(f"{username}.png"))
+
+
+def crop_to_square(picture):
+    width, height = picture.size
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    return picture.crop((left, top, left + side, top + side))
+
+
+@app.post("/api/avatar")
+async def set_avatar(request: Request, image: UploadFile = File(...)):
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    username = session["sub"]
+
+    length = request.headers.get("content-length", "")
+    if length.isdigit() and int(length) > MAX_AVATAR_BYTES + 4096:
+        return JSONResponse(
+            {"error": "Image is too large. The limit is 2 MB."}, status_code=413
+        )
+
+    raw = await image.read(MAX_AVATAR_BYTES + 1)
+    if len(raw) > MAX_AVATAR_BYTES:
+        return JSONResponse(
+            {"error": "Image is too large. The limit is 2 MB."}, status_code=413
+        )
+
+    # Re-encode through Pillow. This proves the upload is really an image and
+    # drops any metadata or hidden payload: only clean pixels get written back.
+    try:
+        picture = Image.open(io.BytesIO(raw))
+        picture.load()
+    except Exception:
+        return JSONResponse({"error": "That file is not an image."}, status_code=400)
+
+    square = crop_to_square(picture).convert("RGB").resize(
+        (AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS
+    )
+    square.save(avatar_path(username), format="PNG")
+    version = db.bump_avatar_version(username)
+    await hub.update_avatar(username, version)
+    return {"ok": True, "avatar": version}
+
+
+@app.get("/api/avatar/{username}")
+def get_avatar(username: str, request: Request):
+    # Avatars appear in chat, so only signed in viewers may load them.
+    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+        return Response(status_code=401)
+    username = username.strip().lower()
+    if not SAFE_USERNAME.match(username):
+        return Response(status_code=404)
+    path = avatar_path(username)
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/png")
+
+
 def ready_epoch(ready_time):
     # MediaMTX reports readyTime as an RFC3339 string, with nanosecond precision
     # and a trailing Z, e.g. "2026-06-27T12:34:56.789012345Z". Turn it into a
@@ -291,16 +430,9 @@ async def status():
     # player can show an offline card instead of a broken video. When live we
     # also return when the stream started, so the landing page can show how
     # long it has been running.
-    url = f"{MEDIAMTX_API}/v3/paths/get/{STREAM_PATH}"
-    try:
-        async with httpx.AsyncClient(timeout=5) as http:
-            reply = await http.get(url)
-        if reply.status_code == 200:
-            data = reply.json()
-            if data.get("ready", False):
-                return {"online": True, "since": ready_epoch(data.get("readyTime"))}
-    except httpx.HTTPError:
-        pass
+    data = await fetch_path()
+    if data and data.get("ready", False):
+        return {"online": True, "since": ready_epoch(data.get("readyTime"))}
     return {"online": False}
 
 
@@ -319,10 +451,12 @@ async def chat_socket(websocket: WebSocket):
         await websocket.close(code=4403)
         return
 
+    user = db.get_user(session["sub"])
     who = {
         "username": session["sub"],
         "name": session["name"],
         "admin": session["admin"],
+        "avatar": user["avatar_version"] if user else 0,
     }
     await websocket.accept()
     await hub.join(websocket, who)

@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Put your stream name here</title>
+  <title>Lazarus Labs</title>
+  <script>
+    // Apply the saved theme before first paint so the page never flashes.
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+  </script>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 </head>
@@ -22,7 +26,31 @@
       <button id="viewer-toggle" type="button">
         <span id="viewer-count">0 watching</span>
       </button>
+      <button id="settings-toggle" type="button" class="icon-btn" aria-label="Settings">⚙</button>
     </header>
+    <div id="settings-panel" class="settings-panel" hidden>
+      <div class="setting">
+        <span>Theme</span>
+        <button id="theme-toggle" type="button" class="pill">Dark</button>
+      </div>
+      <div class="setting">
+        <span>Chat font</span>
+        <select id="font-select">
+          <option value="system">System</option>
+          <option value="mono">Roboto Mono</option>
+          <option value="comic">Comic Neue</option>
+          <option value="retro">VT323</option>
+        </select>
+      </div>
+      <div class="setting">
+        <span>Avatar</span>
+        <span class="avatar-edit">
+          <span id="my-avatar"></span>
+          <button id="avatar-button" type="button" class="pill">Change</button>
+          <input id="avatar-input" type="file" accept="image/*" hidden>
+        </span>
+      </div>
+    </div>
     <ul id="viewer-list" class="viewer-list" hidden></ul>
     <div id="messages" class="messages"></div>
     <form id="chat-form" class="chat-form">
@@ -31,6 +59,6 @@
     </form>
   </aside>
 
-  <script src="/assets/watch.js?v=3"></script>
+  <script src="/assets/watch.js?v=4"></script>
 </body>
 </html>

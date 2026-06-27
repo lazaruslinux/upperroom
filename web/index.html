@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lazarus Labs</title>
+  <script>
+    // Apply the saved theme before first paint so the page never flashes.
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+  </script>
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body class="center">
@@ -15,9 +19,9 @@
     </div>
     <h1>Lazarus Labs</h1>
     <p class="muted">Sign in</p>
-    <form id="login-form">
-      <input type="text" id="username" placeholder="Username" autocomplete="username" required>
-      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+    <form id="login-form" autocomplete="off">
+      <input type="text" id="username" placeholder="Username" autocomplete="off" required>
+      <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
       <button type="submit">Sign in</button>
       <p id="error" class="error" hidden></p>
     </form>

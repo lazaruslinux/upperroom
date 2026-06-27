@@ -14,6 +14,8 @@ const unmuteButton = document.getElementById("unmute");
 
 let me = null;
 let hls = null;
+let socket = null;
+const MESSAGE_TTL_MS = 60000;  // chat messages disappear after a minute
 
 async function requireAuth() {
   const reply = await fetch("/api/me");
@@ -94,6 +96,39 @@ async function checkStream() {
 
 // ---- chat and presence ----
 
+function avatarColor(seed) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
+  return `hsl(${hash}, 55%, 45%)`;
+}
+
+function initialsNode(username, name, big) {
+  const span = document.createElement("span");
+  span.className = big ? "avatar avatar-lg" : "avatar";
+  span.textContent = ((name || username || "?").trim().charAt(0) || "?").toUpperCase();
+  span.style.background = avatarColor(username || "?");
+  return span;
+}
+
+function avatarNode(username, name, version, big) {
+  if (!version) return initialsNode(username, name, big);
+  const img = document.createElement("img");
+  img.className = big ? "avatar avatar-lg" : "avatar";
+  img.alt = "";
+  img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
+  // If the image cannot load, fall back to the initials bubble.
+  img.addEventListener("error", () => img.replaceWith(initialsNode(username, name, big)));
+  return img;
+}
+
+function scheduleExpiry(node, ts) {
+  // Remove a line a minute after it was posted, so chat stays ephemeral.
+  if (!ts) return;
+  const remaining = ts * 1000 + MESSAGE_TTL_MS - Date.now();
+  if (remaining <= 0) { node.remove(); return; }
+  setTimeout(() => node.remove(), remaining);
+}
+
 function atBottom() {
   return messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
 }
@@ -107,14 +142,19 @@ function addLine(node) {
 function renderChat(msg) {
   const line = document.createElement("div");
   line.className = "msg";
+  line.appendChild(avatarNode(msg.user, msg.name, msg.avatar || 0, false));
+  const bodyWrap = document.createElement("span");
+  bodyWrap.className = "msg-body";
   const name = document.createElement("span");
   name.className = msg.admin ? "name admin" : "name";
   name.textContent = msg.name;
   const body = document.createElement("span");
   body.className = "body";
   body.textContent = msg.text;        // textContent keeps any HTML inert
-  line.append(name, document.createTextNode(" "), body);
+  bodyWrap.append(name, document.createTextNode(" "), body);
+  line.appendChild(bodyWrap);
   addLine(line);
+  scheduleExpiry(line, msg.ts);
 }
 
 function renderSystem(msg) {
@@ -122,6 +162,7 @@ function renderSystem(msg) {
   line.className = "msg system";
   line.textContent = msg.text;
   addLine(line);
+  scheduleExpiry(line, msg.ts);
 }
 
 function renderPresence(msg) {
@@ -129,21 +170,25 @@ function renderPresence(msg) {
   viewerList.innerHTML = "";
   msg.viewers.forEach((viewer) => {
     const item = document.createElement("li");
+    item.appendChild(avatarNode(viewer.username, viewer.name, viewer.avatar || 0, false));
     const youSuffix = me && viewer.username === me.username ? " (you)" : "";
-    item.textContent = viewer.name + youSuffix;
+    const label = document.createElement("span");
+    label.textContent = viewer.name + youSuffix;
+    item.appendChild(label);
     viewerList.appendChild(item);
   });
 }
 
 function connectChat() {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${scheme}://${location.host}/ws`);
+  socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
   socket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "chat") renderChat(msg);
     else if (msg.type === "system") renderSystem(msg);
     else if (msg.type === "presence") renderPresence(msg);
+    else if (msg.type === "wipe") messages.innerHTML = "";
     else if (msg.type === "hello") {
       me = me || msg.you;
       msg.history.forEach(renderChat);
@@ -156,7 +201,7 @@ function connectChat() {
   chatForm.onsubmit = (event) => {
     event.preventDefault();
     const text = chatInput.value.trim();
-    if (!text || socket.readyState !== WebSocket.OPEN) return;
+    if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({ type: "chat", text }));
     chatInput.value = "";
   };
@@ -164,6 +209,71 @@ function connectChat() {
 
 document.getElementById("viewer-toggle").addEventListener("click", () => {
   viewerList.hidden = !viewerList.hidden;
+});
+
+// ---- settings: theme, chat font, avatar ----
+
+const THEME_KEY = "selfstream_theme";
+const FONT_KEY = "selfstream_chat_font";
+const FONTS = {
+  system: "",
+  mono: "'Roboto Mono', monospace",
+  comic: "'Comic Neue', cursive",
+  retro: "'VT323', monospace",
+};
+
+const settingsPanel = document.getElementById("settings-panel");
+const themeToggle = document.getElementById("theme-toggle");
+const fontSelect = document.getElementById("font-select");
+const avatarButton = document.getElementById("avatar-button");
+const avatarInput = document.getElementById("avatar-input");
+const myAvatar = document.getElementById("my-avatar");
+
+document.getElementById("settings-toggle").addEventListener("click", () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+});
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_KEY, theme);
+  themeToggle.textContent = theme === "light" ? "Light" : "Dark";
+}
+applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+themeToggle.addEventListener("click", () => {
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+});
+
+function applyFont(key) {
+  if (FONTS[key] === undefined) key = "system";
+  messages.style.setProperty("--chat-font", FONTS[key] || "inherit");
+  localStorage.setItem(FONT_KEY, key);
+  fontSelect.value = key;
+}
+applyFont(localStorage.getItem(FONT_KEY) || "system");
+fontSelect.addEventListener("change", () => applyFont(fontSelect.value));
+
+function renderMyAvatar() {
+  if (!me) return;
+  myAvatar.innerHTML = "";
+  myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, true));
+}
+
+avatarButton.addEventListener("click", () => avatarInput.click());
+avatarInput.addEventListener("change", async () => {
+  const file = avatarInput.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("image", file);
+  const reply = await fetch("/api/avatar", { method: "POST", body: form });
+  if (reply.ok) {
+    const data = await reply.json();
+    me.avatar = data.avatar;
+    renderMyAvatar();
+  } else {
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not update your avatar.");
+  }
+  avatarInput.value = "";
 });
 
 // Browsers only allow autoplay when the video starts muted. The stream still
@@ -182,6 +292,7 @@ unmuteButton.addEventListener("click", () => {
 
 async function boot() {
   if (!(await requireAuth())) return;
+  renderMyAvatar();
   connectChat();
   checkStream();
 }

@@ -9,6 +9,17 @@
   --border: #262a33;
 }
 
+[data-theme="light"] {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --text: #1a1c20;
+  --muted: #5c6370;
+  --accent: #3b5bdb;
+  --live: #2f9e44;
+  --error: #e03131;
+  --border: #d8dce3;
+}
+
 * { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -158,18 +169,22 @@ button:hover { filter: brightness(1.1); }
 }
 
 .chat-head {
+  display: flex;
+  gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
 }
 
 .chat-head button {
-  width: 100%;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
   font-weight: 600;
   padding: 0.5rem;
 }
+
+.chat-head #viewer-toggle { flex: 1; }
+.chat-head .icon-btn { padding: 0.5rem 0.65rem; font-size: 1rem; line-height: 1; }
 
 .viewer-list {
   list-style: none;
@@ -179,7 +194,7 @@ button:hover { filter: brightness(1.1); }
   max-height: 30vh;
   overflow-y: auto;
 }
-.viewer-list li { padding: 0.2rem 0; color: var(--muted); }
+.viewer-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; color: var(--muted); }
 
 .messages {
   flex: 1;
@@ -187,14 +202,34 @@ button:hover { filter: brightness(1.1); }
   padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  font-family: var(--chat-font, inherit);
 }
 
-.msg { font-size: 0.95rem; line-height: 1.35; word-wrap: break-word; }
+.msg { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.95rem; line-height: 1.35; word-wrap: break-word; }
+.msg .msg-body { flex: 1; min-width: 0; }
 .msg .name { font-weight: 600; color: var(--accent); }
 .msg .name.admin { color: #ffcc66; }
 .msg .name.admin::after { content: " (admin)"; font-weight: 400; font-size: 0.8rem; color: var(--muted); }
 .msg.system { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+
+/* round avatars in chat and the watching list */
+.avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  object-fit: cover;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+}
+.avatar-lg { width: 40px; height: 40px; font-size: 1rem; }
 
 .chat-form {
   flex-direction: row;
@@ -218,4 +253,57 @@ button:hover { filter: brightness(1.1); }
   .watch { flex-direction: column; }
   .stage { flex: none; height: 40vh; }
   .chat { width: 100%; flex: 1; border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ---- settings panel ---- */
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.setting > span:first-child { color: var(--muted); }
+
+.setting select,
+.setting .pill {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+}
+.setting button.pill { cursor: pointer; font-weight: 600; }
+.avatar-edit { display: inline-flex; align-items: center; gap: 0.6rem; }
+
+/* keep the offline card readable on the always-black video stage */
+.offline { color: #e7e9ee; }
+.offline .muted { color: #9aa0ad; }
+
+/* ---- self-hosted chat fonts ---- */
+
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("/assets/fonts/roboto-mono.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Comic Neue";
+  src: url("/assets/fonts/comic-neue.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "VT323";
+  src: url("/assets/fonts/vt323.woff2") format("woff2");
+  font-display: swap;
 }
