@@ -47,16 +47,30 @@ ALLOWED_COUNTRIES = {
 
 COOKIE_NAME = "selfstream_session"
 MAX_MESSAGE_LENGTH = 500
-HISTORY_TTL_SECONDS = 60            # chat messages disappear after this long
+CHAT_HISTORY = 50                   # how many recent messages a joiner sees
 AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
 AVATAR_SIZE = 256                   # avatars are stored as this square, in px
 MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
 SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
-ALLOWED_FONTS = {
-    "system", "mono", "comic", "retro",
-    "bangers", "pacifico", "caveat", "orbitron", "silkscreen",
-}
+ALLOWED_FONTS = {"system", "mono", "comic", "retro", "caveat"}
 MAX_BIO_LENGTH = 200
+MAX_DISPLAY_NAME = 40
+MIN_PASSWORD = 8
+
+# How long the admin-only chat log is kept before old lines are purged. Viewers
+# always see chat as ephemeral; this only affects the history the admin reviews.
+CHAT_RETENTION_SECONDS = int(
+    os.environ.get("SELFSTREAM_CHAT_RETENTION_DAYS", "7")
+) * 86400
+
+# Live preview thumbnail. A background task pulls a single frame from the stream
+# every few seconds while it is live, so the home card can show a real preview.
+THUMB_PATH = os.environ.get("SELFSTREAM_THUMB", "/data/thumb.jpg")
+THUMB_TMP = THUMB_PATH + ".tmp"
+THUMB_INTERVAL = int(os.environ.get("SELFSTREAM_THUMB_INTERVAL", "15"))
+RTMP_SOURCE = os.environ.get(
+    "SELFSTREAM_RTMP_SOURCE", f"rtmp://mediamtx:1935/{STREAM_PATH}"
+)
 
 
 async def fetch_path():
@@ -87,13 +101,66 @@ async def stream_watcher():
         await asyncio.sleep(5)
 
 
+async def capture_thumbnail():
+    """Pull one frame from the live stream into THUMB_PATH. Best effort."""
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-rw_timeout", "5000000",          # give up on a stalled read after 5s
+        "-i", RTMP_SOURCE,
+        "-frames:v", "1",
+        "-vf", "scale=640:-2",             # 640px wide, height kept even
+        "-q:v", "5",
+        THUMB_TMP,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=12)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return
+    # Swap in atomically so a half-written file is never served.
+    if proc.returncode == 0 and os.path.exists(THUMB_TMP):
+        os.replace(THUMB_TMP, THUMB_PATH)
+
+
+async def thumbnail_worker():
+    """While the stream is live, refresh the preview thumbnail on an interval.
+    When it goes offline, drop the stale frame so the card shows offline."""
+    while True:
+        try:
+            data = await fetch_path()
+            if data and data.get("ready", False):
+                await capture_thumbnail()
+            elif os.path.exists(THUMB_PATH):
+                os.remove(THUMB_PATH)
+        except Exception:
+            pass
+        await asyncio.sleep(THUMB_INTERVAL)
+
+
+async def chat_purge_worker():
+    """Once a day, drop chat messages older than the retention window."""
+    while True:
+        try:
+            db.purge_old_chat(int(time.time()) - CHAT_RETENTION_SECONDS)
+        except Exception:
+            pass
+        await asyncio.sleep(86400)
+
+
 @asynccontextmanager
 async def lifespan(_app):
-    watcher = asyncio.create_task(stream_watcher())
+    tasks = [
+        asyncio.create_task(stream_watcher()),
+        asyncio.create_task(thumbnail_worker()),
+        asyncio.create_task(chat_purge_worker()),
+    ]
     try:
         yield
     finally:
-        watcher.cancel()
+        for task in tasks:
+            task.cancel()
 
 
 app = FastAPI(title="selfstream", docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -142,6 +209,19 @@ def read_session(token):
         return None
 
 
+def admin_user(request):
+    """Return the signed in admin's user row, or None. The admin flag is read
+    fresh from the database, not the cookie, so revoking admin takes effect at
+    once rather than waiting for the session to expire."""
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return None
+    user = db.get_user(session["sub"])
+    if not user or not user["is_admin"]:
+        return None
+    return user
+
+
 def client_ip(request):
     forwarded = request.headers.get("X-Forwarded-For", "")
     if forwarded:
@@ -175,7 +255,7 @@ class Hub:
 
     def __init__(self):
         self._sockets = {}            # websocket -> {"username", "name", "admin"}
-        self._history = deque(maxlen=50)
+        self._history = deque(maxlen=CHAT_HISTORY)
         self._lock = asyncio.Lock()
 
     def viewers(self):
@@ -203,12 +283,11 @@ class Hub:
             self._sockets.pop(socket, None)
 
     async def join(self, socket, who):
-        # Only replay messages from the last minute, since older ones have
-        # already disappeared for everyone else.
-        cutoff = int(time.time()) - HISTORY_TTL_SECONDS
+        # Replay the recent backlog so someone joining mid stream sees the last
+        # messages. The backlog is kept until the stream ends, then wiped.
         async with self._lock:
             self._sockets[socket] = who
-            history = [m for m in self._history if m.get("ts", 0) >= cutoff]
+            history = list(self._history)
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
         await self.broadcast(
@@ -235,6 +314,12 @@ class Hub:
             "ts": int(time.time()),
         }
         self._history.append(message)
+        # Keep an admin-only copy on disk. Viewers still see chat as ephemeral;
+        # this log is purged after the retention window (see chat_purge_worker).
+        try:
+            db.log_chat(who["username"], who["name"], text, message["ts"])
+        except Exception:
+            pass
         await self.broadcast(message)
 
     async def wipe(self):
@@ -336,6 +421,166 @@ def logout():
     response = JSONResponse({"ok": True})
     response.delete_cookie(COOKIE_NAME, path="/")
     return response
+
+
+@app.post("/api/password")
+async def change_password(request: Request):
+    # Lets a signed in viewer change their own password. They must prove they
+    # know the current one, so a borrowed session cannot lock the owner out.
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    body = await request.json()
+    current = body.get("current_password", "")
+    new = body.get("new_password", "")
+
+    user = db.get_user(session["sub"])
+    if not user or not db.verify_password(current, user["password_hash"]):
+        return JSONResponse(
+            {"error": "Your current password is wrong."}, status_code=403
+        )
+    if len(new) < MIN_PASSWORD:
+        return JSONResponse(
+            {"error": f"Use at least {MIN_PASSWORD} characters."}, status_code=400
+        )
+    db.set_password(session["sub"], new)
+    return {"ok": True}
+
+
+# ---- Thumbnail ------------------------------------------------------------
+
+@app.get("/api/thumbnail")
+def thumbnail(request: Request):
+    # The home card preview. Signed in viewers only, and never cached so the
+    # frame stays current. 404 means the stream is offline (no fresh frame).
+    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+        return Response(status_code=401)
+    if not os.path.exists(THUMB_PATH):
+        return Response(status_code=404)
+    return FileResponse(
+        THUMB_PATH,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ---- Admin ----------------------------------------------------------------
+
+def _clean_username(raw):
+    name = (raw or "").strip().lower()
+    return name if SAFE_USERNAME.match(name) else None
+
+
+@app.get("/api/admin/users")
+def admin_list(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"users": db.admin_list_users()}
+
+
+@app.post("/api/admin/users")
+async def admin_create(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    username = _clean_username(body.get("username"))
+    if not username:
+        return JSONResponse(
+            {"error": "Username may use only a-z, 0-9, dot, dash, underscore."},
+            status_code=400,
+        )
+    if db.get_user(username):
+        return JSONResponse(
+            {"error": f"User {username} already exists."}, status_code=409
+        )
+    password = body.get("password", "")
+    if len(password) < MIN_PASSWORD:
+        return JSONResponse(
+            {"error": f"Password needs at least {MIN_PASSWORD} characters."},
+            status_code=400,
+        )
+    display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
+    is_admin = bool(body.get("is_admin"))
+    db.add_user(username, display_name, password, is_admin=is_admin)
+    return {"ok": True, "username": username}
+
+
+@app.patch("/api/admin/users/{username}")
+async def admin_update(username: str, request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    username = _clean_username(username)
+    target = db.get_user(username) if username else None
+    if not target:
+        return JSONResponse({"error": "No such user."}, status_code=404)
+    body = await request.json()
+
+    display_name = None
+    if "display_name" in body:
+        display_name = (body.get("display_name") or "").strip()[:MAX_DISPLAY_NAME]
+        if not display_name:
+            return JSONResponse(
+                {"error": "Display name cannot be empty."}, status_code=400
+            )
+
+    is_admin = None
+    if "is_admin" in body:
+        is_admin = bool(body.get("is_admin"))
+        # Never let the last admin lose the badge, or the dashboard becomes
+        # unreachable for everyone.
+        if target["is_admin"] and not is_admin and db.count_admins() <= 1:
+            return JSONResponse(
+                {"error": "This is the only admin. Promote someone else first."},
+                status_code=400,
+            )
+
+    if display_name is not None or is_admin is not None:
+        db.update_user(username, display_name=display_name, is_admin=is_admin)
+
+    if "password" in body:
+        password = body.get("password", "")
+        if len(password) < MIN_PASSWORD:
+            return JSONResponse(
+                {"error": f"Password needs at least {MIN_PASSWORD} characters."},
+                status_code=400,
+            )
+        db.set_password(username, password)
+
+    return {"ok": True}
+
+
+@app.delete("/api/admin/users/{username}")
+def admin_delete(username: str, request: Request):
+    actor = admin_user(request)
+    if not actor:
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    username = _clean_username(username)
+    target = db.get_user(username) if username else None
+    if not target:
+        return JSONResponse({"error": "No such user."}, status_code=404)
+    if target["is_admin"] and db.count_admins() <= 1:
+        return JSONResponse(
+            {"error": "You cannot delete the only admin account."}, status_code=400
+        )
+    db.delete_user(username)
+    return {"ok": True}
+
+
+@app.get("/api/admin/users/{username}/activity")
+def admin_activity(username: str, request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    username = _clean_username(username)
+    if not username or not db.get_user(username):
+        return JSONResponse({"error": "No such user."}, status_code=404)
+    return db.user_activity(username)
+
+
+@app.get("/api/admin/chat")
+def admin_chat(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"messages": db.recent_chat()}
 
 
 # ---- Avatars --------------------------------------------------------------
@@ -493,9 +738,14 @@ async def status():
     # also return when the stream started, so the landing page can show how
     # long it has been running.
     data = await fetch_path()
+    watching = len(hub.viewers())
     if data and data.get("ready", False):
-        return {"online": True, "since": ready_epoch(data.get("readyTime"))}
-    return {"online": False}
+        return {
+            "online": True,
+            "since": ready_epoch(data.get("readyTime")),
+            "watching": watching,
+        }
+    return {"online": False, "watching": watching}
 
 
 @app.websocket("/ws")
@@ -524,6 +774,14 @@ async def chat_socket(websocket: WebSocket):
     await websocket.accept()
     await hub.join(websocket, who)
 
+    # Record this as a watch session so the admin can see who watched and for
+    # how long. Each open page is its own session; it is closed on disconnect.
+    watch_id = None
+    try:
+        watch_id = db.start_watch_session(session["sub"], int(time.time()))
+    except Exception:
+        pass
+
     sent_times = deque(maxlen=5)
     try:
         while True:
@@ -546,3 +804,8 @@ async def chat_socket(websocket: WebSocket):
             await hub.say(who, text)
     finally:
         await hub.leave(websocket)
+        if watch_id is not None:
+            try:
+                db.end_watch_session(watch_id, int(time.time()))
+            except Exception:
+                pass

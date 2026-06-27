@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lazarus Labs</title>
+  <script>
+    // Apply the saved theme before first paint so the page never flashes.
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/assets/style.css?v=5">
+</head>
+<body class="home">
+  <header class="home-bar">
+    <div class="brand">Lazarus<span>Labs</span></div>
+    <nav class="home-actions">
+      <a id="admin-link" href="/admin" class="ghost-btn" hidden>Admin</a>
+      <button id="logout" type="button" class="ghost-btn">Sign out</button>
+    </nav>
+  </header>
+
+  <main class="home-main">
+    <p id="greeting" class="home-greeting muted"></p>
+
+    <button id="stream-card" type="button" class="stream-card" aria-label="Join the stream">
+      <div class="thumb-wrap">
+        <div id="thumb-fallback" class="thumb-fallback">
+          <span class="thumb-mark">Lazarus<span>Labs</span></span>
+        </div>
+        <img id="thumb" class="thumb" alt="" hidden>
+        <span id="live-badge" class="live-badge" hidden><span class="live-dot"></span>LIVE</span>
+        <span id="watch-pill" class="watch-pill" hidden></span>
+        <span id="offline-pill" class="offline-pill">Offline</span>
+        <span class="play-overlay" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </span>
+      </div>
+      <div class="card-meta">
+        <span id="card-avatar" class="card-avatar">LL</span>
+        <span class="card-text">
+          <span class="card-title">Test Stream</span>
+          <span class="card-desc">Tap to join stream and start chatting</span>
+        </span>
+      </div>
+    </button>
+  </main>
+
+  <script src="/assets/home.js?v=1"></script>
+</body>
+</html>

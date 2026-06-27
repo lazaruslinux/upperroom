@@ -34,6 +34,10 @@ services:
       - SELFSTREAM_PATH=live
       - MEDIAMTX_API=http://mediamtx:9997
       - SELFSTREAM_DB=/data/selfstream.db
+      - SELFSTREAM_CHAT_RETENTION_DAYS=${SELFSTREAM_CHAT_RETENTION_DAYS:-7}
+      - SELFSTREAM_THUMB_INTERVAL=${SELFSTREAM_THUMB_INTERVAL:-15}
+      # Where the gate pulls a frame for the home card preview thumbnail.
+      - SELFSTREAM_RTMP_SOURCE=rtmp://mediamtx:1935/live
     volumes:
       - gate_data:/data
     networks:

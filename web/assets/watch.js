@@ -15,7 +15,7 @@ const unmuteButton = document.getElementById("unmute");
 let me = null;
 let hls = null;
 let socket = null;
-const MESSAGE_TTL_MS = 60000;  // chat messages disappear after a minute
+const MAX_VISIBLE_MESSAGES = 50;  // keep the last 50 lines on screen, no more
 
 async function requireAuth() {
   const reply = await fetch("/api/me");
@@ -137,12 +137,15 @@ function avatarNode(username, name, version, big, clickable) {
   return node;
 }
 
-function scheduleExpiry(node, ts) {
-  // Remove a line a minute after it was posted, so chat stays ephemeral.
-  if (!ts) return;
-  const remaining = ts * 1000 + MESSAGE_TTL_MS - Date.now();
-  if (remaining <= 0) { node.remove(); return; }
-  setTimeout(() => node.remove(), remaining);
+function formatTimestamp(ts) {
+  // Compact local stamp shown in tiny print on each line, e.g. "6.26.26 4:32pm".
+  const d = ts ? new Date(ts * 1000) : new Date();
+  const yr = String(d.getFullYear()).slice(-2);
+  let hour = d.getHours();
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const ampm = hour >= 12 ? "pm" : "am";
+  hour = hour % 12 || 12;
+  return `${d.getMonth() + 1}.${d.getDate()}.${yr} ${hour}:${min}${ampm}`;
 }
 
 function atBottom() {
@@ -152,6 +155,10 @@ function atBottom() {
 function addLine(node) {
   const stick = atBottom();
   messages.appendChild(node);
+  // Keep only the most recent lines so chat stays static but bounded.
+  while (messages.children.length > MAX_VISIBLE_MESSAGES) {
+    messages.removeChild(messages.firstChild);
+  }
   if (stick) messages.scrollTop = messages.scrollHeight;
 }
 
@@ -161,18 +168,23 @@ function renderChat(msg) {
   line.appendChild(avatarNode(msg.user, msg.name, msg.avatar || 0, false, true));
   const bodyWrap = document.createElement("span");
   bodyWrap.className = "msg-body";
+  const head = document.createElement("span");
+  head.className = "msg-head";
   const name = document.createElement("span");
   name.className = msg.admin ? "name admin" : "name";
   name.textContent = msg.name;
+  const time = document.createElement("span");
+  time.className = "msg-time";
+  time.textContent = formatTimestamp(msg.ts);
+  head.append(name, time);
   const body = document.createElement("span");
   body.className = "body";
   body.textContent = msg.text;        // textContent keeps any HTML inert
   // Each person's own font rides along on their messages for everyone to see.
   body.style.fontFamily = FONTS[msg.font] || "";
-  bodyWrap.append(name, document.createTextNode(" "), body);
+  bodyWrap.append(head, body);
   line.appendChild(bodyWrap);
   addLine(line);
-  scheduleExpiry(line, msg.ts);
 }
 
 function renderSystem(msg) {
@@ -180,7 +192,6 @@ function renderSystem(msg) {
   line.className = "msg system";
   line.textContent = msg.text;
   addLine(line);
-  scheduleExpiry(line, msg.ts);
 }
 
 function renderPresence(msg) {
@@ -237,22 +248,14 @@ const FONTS = {
   mono: "'Roboto Mono', monospace",
   comic: "'Comic Neue', cursive",
   retro: "'VT323', monospace",
-  bangers: "'Bangers', cursive",
-  pacifico: "'Pacifico', cursive",
   caveat: "'Caveat', cursive",
-  orbitron: "'Orbitron', sans-serif",
-  silkscreen: "'Silkscreen', monospace",
 };
 const FONT_LIST = [
   ["system", "Default"],
   ["mono", "Roboto Mono"],
   ["comic", "Comic Neue"],
   ["retro", "VT323"],
-  ["bangers", "Bangers"],
-  ["pacifico", "Pacifico"],
   ["caveat", "Caveat"],
-  ["orbitron", "Orbitron"],
-  ["silkscreen", "Silkscreen"],
 ];
 
 const settingsPanel = document.getElementById("settings-panel");
@@ -317,6 +320,51 @@ bioSave.addEventListener("click", async () => {
   const ok = await saveProfile({ bio: me.bio });
   bioSave.textContent = ok ? "Saved" : "Error";
   setTimeout(() => { bioSave.textContent = "Save"; }, 1500);
+});
+
+// ---- change your own password ----
+
+const pwCurrent = document.getElementById("pw-current");
+const pwNew = document.getElementById("pw-new");
+const pwSave = document.getElementById("pw-save");
+const pwMsg = document.getElementById("pw-msg");
+
+function showPwMsg(text, ok) {
+  pwMsg.textContent = text;
+  pwMsg.className = "pw-msg " + (ok ? "ok" : "bad");
+}
+
+pwSave.addEventListener("click", async () => {
+  const current = pwCurrent.value;
+  const next = pwNew.value;
+  if (next.length < 8) { showPwMsg("Use at least 8 characters.", false); return; }
+  pwSave.disabled = true;
+  try {
+    const reply = await fetch("/api/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    });
+    if (reply.ok) {
+      pwCurrent.value = "";
+      pwNew.value = "";
+      showPwMsg("Password changed.", true);
+    } else {
+      const data = await reply.json().catch(() => ({}));
+      showPwMsg(data.error || "Could not change password.", false);
+    }
+  } catch {
+    showPwMsg("Could not change password.", false);
+  } finally {
+    pwSave.disabled = false;
+  }
+});
+
+// ---- sign out ----
+
+document.getElementById("signout").addEventListener("click", async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch {}
+  window.location.href = "/";
 });
 
 function renderMyAvatar() {

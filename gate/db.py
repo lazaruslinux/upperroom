@@ -27,6 +27,28 @@ CREATE TABLE IF NOT EXISTS users (
     chat_font TEXT NOT NULL DEFAULT 'system',
     bio TEXT NOT NULL DEFAULT ''
 );
+
+-- One row per time someone opened the watch page. left_at is filled in when
+-- they leave, so the admin can see who watched, when, and for how long.
+CREATE TABLE IF NOT EXISTS watch_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    joined_at INTEGER NOT NULL,
+    left_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_watch_user ON watch_sessions (username, joined_at);
+
+-- A rolling log of chat messages, kept only so the admin can review history.
+-- Old rows are purged on a schedule (see CHAT_RETENTION_SECONDS in main.py),
+-- so this never grows without bound. Viewers still see chat as ephemeral.
+CREATE TABLE IF NOT EXISTS chat_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_log (ts);
 """
 
 
@@ -49,6 +71,12 @@ def init_db():
         _ensure_column(conn, "users", "avatar_version", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "chat_font", "TEXT NOT NULL DEFAULT 'system'")
         _ensure_column(conn, "users", "bio", "TEXT NOT NULL DEFAULT ''")
+        # If the gate restarted while people were watching, their sessions never
+        # got a left_at. Close them at their start so they do not count as one
+        # endless session, and so the next start is clean.
+        conn.execute(
+            "UPDATE watch_sessions SET left_at = joined_at WHERE left_at IS NULL"
+        )
 
 
 def _ensure_column(conn, table, column, decl):
@@ -118,6 +146,34 @@ def set_password(username, password):
         return cur.rowcount > 0
 
 
+def update_user(username, display_name=None, is_admin=None):
+    """Change a display name and/or the admin flag. Returns True if a row matched."""
+    sets = []
+    values = []
+    if display_name is not None:
+        sets.append("display_name = ?")
+        values.append(display_name)
+    if is_admin is not None:
+        sets.append("is_admin = ?")
+        values.append(1 if is_admin else 0)
+    if not sets:
+        return False
+    values.append(username)
+    with connect() as conn:
+        cur = conn.execute(
+            f"UPDATE users SET {', '.join(sets)} WHERE username = ?", values
+        )
+        return cur.rowcount > 0
+
+
+def count_admins():
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"
+        ).fetchone()
+        return row["n"]
+
+
 def bump_avatar_version(username):
     # Each change bumps the version so the browser fetches the new image instead
     # of a cached one. Returns the new version (0 means the user is unknown).
@@ -146,5 +202,103 @@ def set_bio(username, bio):
 
 def delete_user(username):
     with connect() as conn:
+        # Remove the account and everything tied to it, so a deleted user leaves
+        # no orphaned watch history or chat behind.
+        conn.execute("DELETE FROM watch_sessions WHERE username = ?", (username,))
+        conn.execute("DELETE FROM chat_log WHERE username = ?", (username,))
         cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
         return cur.rowcount > 0
+
+
+# ---- Watch activity -------------------------------------------------------
+
+def start_watch_session(username, when):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO watch_sessions (username, joined_at) VALUES (?, ?)",
+            (username, when),
+        )
+        return cur.lastrowid
+
+
+def end_watch_session(session_id, when):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE watch_sessions SET left_at = ? WHERE id = ? AND left_at IS NULL",
+            (when, session_id),
+        )
+
+
+# ---- Chat log -------------------------------------------------------------
+
+def log_chat(username, display_name, text, ts):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_log (username, display_name, text, ts) "
+            "VALUES (?, ?, ?, ?)",
+            (username, display_name, text, ts),
+        )
+
+
+def purge_old_chat(cutoff):
+    """Delete chat messages older than the cutoff epoch. Returns rows removed."""
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM chat_log WHERE ts < ?", (cutoff,))
+        return cur.rowcount
+
+
+def recent_chat(limit=200):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT username, display_name, text, ts FROM chat_log "
+            "ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---- Admin views ----------------------------------------------------------
+
+def admin_list_users():
+    """Every account with rolled-up activity stats, for the admin dashboard."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                u.username,
+                u.display_name,
+                u.is_admin,
+                u.created_at,
+                u.avatar_version,
+                (SELECT MAX(COALESCE(left_at, joined_at))
+                   FROM watch_sessions w WHERE w.username = u.username) AS last_seen,
+                (SELECT COUNT(*)
+                   FROM watch_sessions w WHERE w.username = u.username) AS sessions,
+                (SELECT COALESCE(SUM(COALESCE(left_at, joined_at) - joined_at), 0)
+                   FROM watch_sessions w WHERE w.username = u.username) AS watch_seconds,
+                (SELECT COUNT(*)
+                   FROM chat_log c WHERE c.username = u.username) AS messages
+            FROM users u
+            ORDER BY u.is_admin DESC, u.username
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def user_activity(username, watch_limit=50, chat_limit=100):
+    """Recent watch sessions and recent chat lines for one user."""
+    with connect() as conn:
+        watches = conn.execute(
+            "SELECT joined_at, left_at FROM watch_sessions WHERE username = ? "
+            "ORDER BY joined_at DESC LIMIT ?",
+            (username, watch_limit),
+        ).fetchall()
+        chats = conn.execute(
+            "SELECT text, ts FROM chat_log WHERE username = ? "
+            "ORDER BY ts DESC LIMIT ?",
+            (username, chat_limit),
+        ).fetchall()
+        return {
+            "watch_sessions": [dict(r) for r in watches],
+            "chat": [dict(r) for r in chats],
+        }

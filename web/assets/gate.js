@@ -25,7 +25,7 @@ form.addEventListener("submit", async (event) => {
     body: JSON.stringify({ username, password }),
   });
   if (reply.ok) {
-    window.location.href = "/watch";
+    window.location.href = "/home";
   } else {
     const data = await reply.json().catch(() => ({}));
     showError(data.error || "Could not sign you in.");

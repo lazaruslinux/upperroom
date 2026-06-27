@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · Lazarus Labs</title>
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/assets/style.css?v=5">
+</head>
+<body class="admin">
+  <header class="home-bar">
+    <div class="brand">Lazarus<span>Labs</span> <span class="admin-tag">Admin</span></div>
+    <nav class="home-actions">
+      <a href="/home" class="ghost-btn">Home</a>
+      <button id="new-user" type="button" class="solid-btn">+ New user</button>
+    </nav>
+  </header>
+
+  <main class="admin-main">
+    <section class="stat-strip" id="stat-strip"></section>
+
+    <h2 class="section-title">Accounts</h2>
+    <div id="user-grid" class="user-grid"></div>
+    <p id="empty" class="muted" hidden>No accounts yet. Create one with “New user”.</p>
+  </main>
+
+  <!-- Create user -->
+  <div id="create-modal" class="modal" hidden>
+    <div class="modal-card admin-modal">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3>New account</h3>
+      <form id="create-form" class="admin-form" autocomplete="off">
+        <label>Username
+          <input id="c-username" type="text" placeholder="lowercase, no spaces" autocomplete="off" required>
+        </label>
+        <label>Display name <span class="muted">(optional)</span>
+          <input id="c-name" type="text" placeholder="Shown in chat" autocomplete="off">
+        </label>
+        <label>Password
+          <input id="c-password" type="text" placeholder="at least 8 characters" autocomplete="new-password" required>
+        </label>
+        <label class="checkrow">
+          <input id="c-admin" type="checkbox"> Make this account an admin
+        </label>
+        <p id="c-error" class="error" hidden></p>
+        <button type="submit" class="solid-btn">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit user -->
+  <div id="edit-modal" class="modal" hidden>
+    <div class="modal-card admin-modal">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3 id="e-title">Edit account</h3>
+      <form id="edit-form" class="admin-form" autocomplete="off">
+        <label>Display name
+          <input id="e-name" type="text" autocomplete="off">
+        </label>
+        <label>Reset password <span class="muted">(leave blank to keep)</span>
+          <input id="e-password" type="text" placeholder="new password" autocomplete="new-password">
+        </label>
+        <label class="checkrow">
+          <input id="e-admin" type="checkbox"> Admin
+        </label>
+        <p id="e-error" class="error" hidden></p>
+        <div class="edit-actions">
+          <button type="button" id="e-delete" class="danger-btn">Delete</button>
+          <button type="submit" class="solid-btn">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Activity drawer -->
+  <div id="activity-modal" class="modal" hidden>
+    <div class="modal-card admin-modal activity-modal">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3 id="a-title">Activity</h3>
+      <div class="activity-tabs">
+        <button type="button" class="tab selected" data-tab="watch">Watch history</button>
+        <button type="button" class="tab" data-tab="chat">Chat history</button>
+      </div>
+      <div id="a-watch" class="activity-list"></div>
+      <div id="a-chat" class="activity-list" hidden></div>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js?v=1"></script>
+</body>
+</html>
