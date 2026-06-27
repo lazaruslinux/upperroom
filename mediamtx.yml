@@ -37,7 +37,10 @@ hlsAllowOrigin: '*'
 authMethod: internal
 authInternalUsers:
   - user: publisher
-    pass: ${PUBLISH_PASS}
+    # The real password is injected at runtime by MTX_AUTHINTERNALUSERS_0_PASS
+    # in docker-compose.yml. MediaMTX does not expand ${VAR} inside this file,
+    # so this value is a placeholder that the override replaces.
+    pass: set-via-env
     permissions:
       - action: publish
         path: live

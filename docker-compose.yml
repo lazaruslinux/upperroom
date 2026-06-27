@@ -12,7 +12,10 @@ services:
     image: bluenviron/mediamtx:latest
     restart: unless-stopped
     environment:
-      - PUBLISH_PASS=${PUBLISH_PASS}
+      # MediaMTX does not substitute ${VAR} inside its config file, so the
+      # publisher password is injected with MediaMTX's own MTX_ override, which
+      # replaces the password of the first user in authInternalUsers.
+      - MTX_AUTHINTERNALUSERS_0_PASS=${PUBLISH_PASS}
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     ports:
