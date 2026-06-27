@@ -5,7 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Put your stream name here</title>
   <link rel="stylesheet" href="/assets/style.css">
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <script>
+    // Defined before the Turnstile script loads. Cloudflare calls this only
+    // once its API is fully ready, which removes any race when rendering.
+    window.turnstileReady = false;
+    window.onloadTurnstileCallback = function () {
+      window.turnstileReady = true;
+      if (window.onTurnstileReady) window.onTurnstileReady();
+    };
+  </script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback" async defer></script>
 </head>
 <body class="center">
   <main class="card">
@@ -19,6 +28,6 @@
       <p id="error" class="error" hidden></p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=3"></script>
+  <script src="/assets/gate.js?v=4"></script>
 </body>
 </html>
