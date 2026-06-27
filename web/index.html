@@ -8,16 +8,18 @@
 </head>
 <body class="center">
   <main class="card">
+    <div id="status" class="status status-loading">
+      <span class="dot"></span><span id="status-text">Checking status…</span>
+    </div>
     <h1>Put your stream name here</h1>
     <p class="muted">Sign in to watch the stream.</p>
     <form id="login-form">
       <input type="text" id="username" placeholder="Username" autocomplete="username" required>
       <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-      <div id="turnstile" class="turnstile"></div>
       <button type="submit">Sign in</button>
       <p id="error" class="error" hidden></p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=8"></script>
+  <script src="/assets/gate.js?v=9"></script>
 </body>
 </html>

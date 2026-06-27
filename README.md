@@ -1,10 +1,10 @@
 # selfstream
 
 Self hosted, single channel live streaming with accounts and chat. You
-broadcast from OBS. Your viewers open one link, pass a bot check, sign in with
-an account you made for them, and watch in 1080p60 with live chat and a list of
-who else is watching. No third party streaming service, no public sign ups. You
-run the whole thing.
+broadcast from OBS. Your viewers open one link, sign in with an account you made
+for them, and watch in 1080p60 with live chat and a list of who else is
+watching. No third party streaming service, no public sign ups. You run the
+whole thing.
 
 ## What it does
 
@@ -13,7 +13,6 @@ run the whole thing.
 - Serves one gated watch page at your own domain.
 - Logs viewers in with named accounts that only you can create.
 - Runs live chat and shows a live list of who is watching, with a count.
-- Puts a Cloudflare Turnstile bot check in front of the login.
 
 It does not transcode. Your computer does the encoding inside OBS, so the
 server only repackages the video and stays light.
@@ -29,7 +28,7 @@ MediaMTX  ------------->  repackages to low latency HLS
 Caddy  --  checks the session cookie before serving any video
   |  HTTPS at your domain
   v
-Viewer's browser  --  Turnstile, sign in, then video plus chat plus presence
+Viewer's browser  --  sign in, then video plus chat plus presence
 ```
 
 Three containers:
@@ -44,7 +43,7 @@ You need a small Linux server with a public IP, a domain you control, and a
 free Cloudflare account. The tutorials in `docs/` walk through each part.
 
 1. Prepare the server: `docs/01-vps-setup.md`
-2. Set up Cloudflare Turnstile and DNS: `docs/02-cloudflare.md`
+2. Point your domain at the server with DNS: `docs/02-cloudflare.md`
 3. Copy the config and fill it in:
    ```
    cp .env.example .env
@@ -71,9 +70,9 @@ the full list and what each value does.
 ## Security model
 
 In short: the video is never served without a valid session cookie, the cookie
-is only issued after both a Turnstile check and a correct username and password,
-and the ingest port only accepts your home address. Passwords are stored as
-scrypt hashes. The full explanation is in `docs/05-security.md`.
+is only issued after a correct username and password, and the ingest port only
+accepts your home address. Passwords are stored as scrypt hashes. The full
+explanation is in `docs/05-security.md`.
 
 ## License
 

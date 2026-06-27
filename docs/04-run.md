@@ -49,9 +49,9 @@ See `docs/06-accounts-and-chat.md` for the full set of account commands.
 
 ## 4.4 Test it
 
-Open `https://watch.example.com` in a browser. You should see the login page
-with the Turnstile check. Sign in with the account you made. Until OBS is
-streaming you will see the offline card. Start OBS and the video appears.
+Open `https://watch.example.com` in a browser. You should see the login page.
+Sign in with the account you made. Until OBS is streaming you will see the
+offline card. Start OBS and the video appears.
 
 ## 4.5 Updating
 
@@ -75,5 +75,3 @@ container.
   the OBS stream key is exactly `live?user=publisher&pass=YOUR_PUBLISH_PASS`.
 - OBS cannot connect. The firewall rule for port 1935 may not match your current
   home IP. See `docs/01-vps-setup.md`, section 1.4.
-- The bot check never appears. Make sure `TURNSTILE_SITEKEY` is set and that the
-  Turnstile widget lists your exact domain.

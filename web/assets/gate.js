@@ -1,10 +1,5 @@
-// Login page. If a Turnstile sitekey is configured the bot check is loaded and
-// required; otherwise this is a plain username and password sign in. The
-// Cloudflare script is only loaded when the bot check is actually enabled, so
-// nothing third party is fetched when it is turned off.
-
-let turnstileToken = "";
-let botCheckRequired = false;
+// Login page. A plain username and password sign in. On success the gate sets
+// a session cookie and we send the viewer to the watch page.
 
 const form = document.getElementById("login-form");
 const submitButton = form.querySelector("button[type=submit]");
@@ -19,61 +14,70 @@ function clearError() {
   errorBox.hidden = true;
 }
 
-function setupTurnstile(sitekey) {
-  botCheckRequired = true;
-  submitButton.disabled = true;
-  // Cloudflare invokes this once its API is ready, so render only then.
-  window.onloadTurnstileCallback = function () {
-    window.turnstile.render("#turnstile", {
-      sitekey: sitekey,
-      callback: (token) => {
-        turnstileToken = token;
-        submitButton.disabled = false;
-        clearError();
-      },
-      "error-callback": () => { turnstileToken = ""; },
-      "expired-callback": () => { turnstileToken = ""; submitButton.disabled = true; },
-    });
-  };
-  const script = document.createElement("script");
-  script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js" +
-    "?onload=onloadTurnstileCallback&render=explicit";
-  script.async = true;
-  script.defer = true;
-  document.head.appendChild(script);
-}
-
-async function init() {
-  const config = await (await fetch("/api/config")).json();
-  if (config.turnstile_sitekey) {
-    setupTurnstile(config.turnstile_sitekey);
-  }
-}
-
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (botCheckRequired && !turnstileToken) {
-    showError("The bot check has not finished. Give it a second, then try again.");
-    return;
-  }
+  clearError();
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
   const reply = await fetch("/api/auth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, turnstile_token: turnstileToken }),
+    body: JSON.stringify({ username, password }),
   });
   if (reply.ok) {
     window.location.href = "/watch";
   } else {
     const data = await reply.json().catch(() => ({}));
     showError(data.error || "Could not sign you in.");
-    turnstileToken = "";
-    if (window.turnstile && window.turnstile.reset) {
-      window.turnstile.reset();
-      submitButton.disabled = true;
-    }
   }
 });
 
-init();
+// ---- live status badge ----------------------------------------------------
+// Polls the public status endpoint and shows whether the stream is live. When
+// it is, the badge counts up from the moment the stream started, ticking
+// locally so we do not have to poll just to keep the duration fresh.
+
+const statusBox = document.getElementById("status");
+const statusText = document.getElementById("status-text");
+let liveSince = null;
+let tick = null;
+
+function formatDuration(seconds) {
+  if (seconds < 60) return "just started";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function renderLive() {
+  const elapsed = Math.floor(Date.now() / 1000) - liveSince;
+  statusText.textContent = `Live · ${formatDuration(elapsed)}`;
+}
+
+async function refreshStatus() {
+  let online = false;
+  let since = null;
+  try {
+    const data = await (await fetch("/api/status")).json();
+    online = !!data.online;
+    since = data.since;
+  } catch {
+    online = false;
+  }
+
+  if (online) {
+    statusBox.className = "status status-live";
+    liveSince = since || Math.floor(Date.now() / 1000);
+    renderLive();
+    if (!tick) tick = setInterval(renderLive, 30000);
+  } else {
+    statusBox.className = "status status-offline";
+    statusText.textContent = "Offline";
+    liveSince = null;
+    if (tick) { clearInterval(tick); tick = null; }
+  }
+}
+
+refreshStatus();
+setInterval(refreshStatus, 20000);

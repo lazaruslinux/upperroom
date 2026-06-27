@@ -5,9 +5,9 @@ yourself rather than take it on faith.
 
 ## The layers
 
-1. **Bot check at the door.** The login page runs Cloudflare Turnstile. A
-   visitor has to pass it before a username and password are even checked. This
-   keeps automated scanners and password guessing scripts from hammering the
+1. **Rate limited login.** The login endpoint accepts only a handful of attempts
+   per address each minute, and over its limit it returns a 429. This slows
+   automated scanners and password guessing scripts that try to hammer the
    login.
 
 2. **Named accounts, no sign ups.** There is no public registration. Every

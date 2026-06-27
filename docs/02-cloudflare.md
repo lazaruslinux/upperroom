@@ -1,24 +1,9 @@
-# 2. Cloudflare: Turnstile and DNS
+# 2. Cloudflare: DNS
 
-You need two things from Cloudflare: a Turnstile widget for the bot check, and a
-DNS record that points your domain at the server.
+You need one thing from Cloudflare: a DNS record that points your domain at the
+server.
 
-## 2.1 Create a Turnstile widget
-
-Turnstile is Cloudflare's bot check. It is free and it replaces the old style
-puzzle captchas with a mostly invisible check.
-
-1. Go to https://dash.cloudflare.com and open Turnstile.
-2. Add a widget.
-3. For the domain, enter your hostname, for example `watch.example.com`.
-4. Choose the "Managed" widget type.
-5. Save. Cloudflare gives you two values:
-   - a sitekey, which is public and goes in the browser
-   - a secret key, which is private and stays on the server
-
-Put these into your `.env` later as `TURNSTILE_SITEKEY` and `TURNSTILE_SECRET`.
-
-## 2.2 Point your domain at the server
+## 2.1 Point your domain at the server
 
 In the Cloudflare dashboard, open your domain, then DNS, then add a record:
 
@@ -30,15 +15,14 @@ In the Cloudflare dashboard, open your domain, then DNS, then add a record:
 The grey cloud matters. With it, your video goes straight from the server to the
 viewer and never passes through Cloudflare's network. That keeps you clear of
 Cloudflare's rules about serving video on the free plan, and it means Caddy can
-get its own certificate directly. Turnstile still works fine with the grey
-cloud, because the bot check runs as a small script in the browser regardless of
-how DNS is set.
+get its own certificate directly.
 
-The tradeoff is that your server's IP is visible to anyone who looks up the
-domain. That is normal for a self hosted service and the firewall plus the login
-are what protect you, not hiding the address.
+The tradeoff is that the VPS's public IP is visible to anyone who looks up the
+domain. This is only the rented server's address, never your home IP, which
+stays off DNS entirely. That is normal for a self hosted service, and the
+firewall plus the login are what protect you, not hiding the address.
 
-## 2.3 Certificates
+## 2.2 Certificates
 
 You do not need to do anything for HTTPS. When you start the stack, Caddy asks
 Let's Encrypt for a certificate for your domain automatically and renews it on

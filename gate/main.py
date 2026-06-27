@@ -3,8 +3,7 @@ selfstream gate and chat service.
 
 This service is the brains of selfstream. It:
 
-  - serves the public site config the login page needs (the Turnstile sitekey)
-  - logs viewers in with a named account plus the Cloudflare Turnstile bot check
+  - logs viewers in with a named account and password
   - issues a signed session cookie that lasts a few hours
   - answers the check Caddy makes before it serves any video
   - runs the live chat and the watching list over a WebSocket
@@ -19,6 +18,7 @@ import asyncio
 import os
 import time
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 
 import geoip2.database
 import httpx
@@ -30,8 +30,6 @@ import db
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
-TURNSTILE_SITEKEY = os.environ.get("TURNSTILE_SITEKEY", "")
-TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET", "")
 MEDIAMTX_API = os.environ.get("MEDIAMTX_API", "http://mediamtx:9997")
 STREAM_PATH = os.environ.get("SELFSTREAM_PATH", "live")
 GEO_DB_PATH = os.environ.get("SELFSTREAM_GEO_DB", "/app/dbip-country.mmdb")
@@ -42,7 +40,6 @@ ALLOWED_COUNTRIES = {
 }
 
 COOKIE_NAME = "selfstream_session"
-TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 MAX_MESSAGE_LENGTH = 500
 
 app = FastAPI(title="selfstream", docs_url=None, redoc_url=None)
@@ -116,24 +113,6 @@ def country_allowed(ip):
     return code in ALLOWED_COUNTRIES
 
 
-async def turnstile_ok(token, ip):
-    if not TURNSTILE_SECRET:
-        # No secret set means the bot check is turned off. This is only for
-        # local testing. Always set a secret before going public.
-        return True
-    # We deliberately do not send remoteip. Behind a shared VPN or proxy the
-    # viewer's address can differ between solving the challenge and this
-    # request, which makes Cloudflare reject an otherwise valid token.
-    data = {"secret": TURNSTILE_SECRET, "response": token}
-    async with httpx.AsyncClient(timeout=10) as http:
-        reply = await http.post(TURNSTILE_VERIFY_URL, data=data)
-    result = reply.json()
-    if not result.get("success"):
-        print("turnstile verify failed:", result.get("error-codes"),
-              "token_len=", len(token or ""), flush=True)
-    return result.get("success", False)
-
-
 # ---- Chat and presence ----------------------------------------------------
 
 class Hub:
@@ -201,12 +180,6 @@ hub = Hub()
 
 # ---- HTTP routes ----------------------------------------------------------
 
-@app.get("/api/config")
-def config():
-    # The sitekey is public by design. It is safe to send to the browser.
-    return {"turnstile_sitekey": TURNSTILE_SITEKEY}
-
-
 @app.get("/api/me")
 def me(request: Request):
     session = read_session(request.cookies.get(COOKIE_NAME, ""))
@@ -250,13 +223,6 @@ async def auth(request: Request):
     body = await request.json()
     username = body.get("username", "").strip().lower()
     password = body.get("password", "")
-    turnstile_token = body.get("turnstile_token", "")
-
-    if not await turnstile_ok(turnstile_token, ip):
-        return JSONResponse(
-            {"error": "Bot check failed. Reload the page and try again."},
-            status_code=403,
-        )
 
     user = db.get_user(username)
     # Always run a hash check, even for an unknown user, so the response time
@@ -286,16 +252,53 @@ def logout():
     return response
 
 
+def ready_epoch(ready_time):
+    # MediaMTX reports readyTime as an RFC3339 string, with nanosecond precision
+    # and a trailing Z, e.g. "2026-06-27T12:34:56.789012345Z". Turn it into a
+    # plain Unix timestamp the browser can use to show how long the stream has
+    # been live. Anything unparseable returns None, and the page simply omits
+    # the duration rather than breaking.
+    if not ready_time:
+        return None
+    text = ready_time.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    # datetime.fromisoformat only accepts 3 or 6 fractional digits, so trim the
+    # nanoseconds down to microseconds while leaving any timezone offset intact.
+    if "." in text:
+        head, _, tail = text.partition(".")
+        frac = ""
+        rest = ""
+        for i, ch in enumerate(tail):
+            if ch.isdigit():
+                frac += ch
+            else:
+                rest = tail[i:]
+                break
+        text = head + "." + frac[:6] + rest
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return int(when.timestamp())
+
+
 @app.get("/api/status")
 async def status():
     # Ask MediaMTX whether a publisher is connected to our stream path, so the
-    # player can show an offline card instead of a broken video.
+    # player can show an offline card instead of a broken video. When live we
+    # also return when the stream started, so the landing page can show how
+    # long it has been running.
     url = f"{MEDIAMTX_API}/v3/paths/get/{STREAM_PATH}"
     try:
         async with httpx.AsyncClient(timeout=5) as http:
             reply = await http.get(url)
-        if reply.status_code == 200 and reply.json().get("ready", False):
-            return {"online": True}
+        if reply.status_code == 200:
+            data = reply.json()
+            if data.get("ready", False):
+                return {"online": True, "since": ready_epoch(data.get("readyTime"))}
     except httpx.HTTPError:
         pass
     return {"online": False}
