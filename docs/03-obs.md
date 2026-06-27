@@ -37,7 +37,19 @@ In Settings, then Output, set Output Mode to `Advanced`, then the Streaming tab:
 NVENC keeps the load off your processor while you game, which is why it is worth
 using over x264 if you have it.
 
-## 3.3 Go live
+## 3.3 Audio
+
+Your audio is sent automatically inside the same stream, so there is nothing
+extra to turn on. In Settings, then Output, the Audio tab, an Audio Bitrate of
+`160` is a good quality. Make sure the sources you want heard, such as desktop
+audio and your microphone, are active in the OBS Audio Mixer and not muted.
+
+One browser detail to expect: browsers will not start a video with sound on
+their own, so the watch page begins muted and shows a "Tap for sound" button.
+Viewers tap it once and they hear everything from then on. This is normal and
+the same thing Twitch and YouTube do.
+
+## 3.4 Go live
 
 Click Start Streaming in OBS. Within a few seconds the watch page will switch
 from the offline card to your video. If it does not, see the troubleshooting

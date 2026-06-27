@@ -101,6 +101,17 @@ button:hover { filter: brightness(1.1); }
 }
 .offline p { margin: 0.25rem 0; }
 
+.unmute {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  padding: 0.6rem 1.25rem;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--border);
+}
+
 .chat {
   width: 320px;
   display: flex;

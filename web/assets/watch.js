@@ -10,6 +10,7 @@ const viewerCount = document.getElementById("viewer-count");
 const viewerList = document.getElementById("viewer-list");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
+const unmuteButton = document.getElementById("unmute");
 
 let me = null;
 let hls = null;
@@ -143,6 +144,20 @@ function connectChat() {
 
 document.getElementById("viewer-toggle").addEventListener("click", () => {
   viewerList.hidden = !viewerList.hidden;
+});
+
+// Browsers only allow autoplay when the video starts muted. The stream still
+// carries your audio, so once it is playing we offer a button to turn sound on.
+video.addEventListener("playing", () => {
+  unmuteButton.hidden = !video.muted;
+});
+video.addEventListener("volumechange", () => {
+  if (!video.muted) unmuteButton.hidden = true;
+});
+unmuteButton.addEventListener("click", () => {
+  video.muted = false;
+  video.play().catch(() => {});
+  unmuteButton.hidden = true;
 });
 
 async function boot() {
