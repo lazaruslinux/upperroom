@@ -174,6 +174,16 @@ def count_admins():
         return row["n"]
 
 
+def channel_owner():
+    """The streamer shown on the home card: the longest-standing admin."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT username, display_name, avatar_version FROM users "
+            "WHERE is_admin = 1 ORDER BY created_at ASC, rowid ASC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def bump_avatar_version(username):
     # Each change bumps the version so the browser fetches the new image instead
     # of a cached one. Returns the new version (0 means the user is unknown).

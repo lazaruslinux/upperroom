@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=6">
+  <link rel="stylesheet" href="/assets/style.css?v=8">
 </head>
 <body class="home">
   <header class="home-bar">
@@ -29,7 +29,9 @@
           <span class="thumb-mark">Lazarus<span>Labs</span></span>
         </div>
         <img id="thumb" class="thumb" alt="" hidden>
-        <span id="live-badge" class="live-badge" hidden><span class="live-dot"></span>LIVE</span>
+        <span id="stream-badge" class="stream-badge is-offline">
+          <span class="badge-dot"></span><span id="badge-label">Offline</span>
+        </span>
         <span id="status-pill" class="watch-pill" hidden></span>
         <span class="play-overlay" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -39,6 +41,7 @@
         <span id="card-avatar" class="card-avatar">LL</span>
         <span class="card-text">
           <span class="card-title">Test Stream</span>
+          <span id="card-channel" class="card-channel"></span>
           <span class="card-desc">Tap to join stream and start chatting</span>
         </span>
       </div>
@@ -50,6 +53,17 @@
     <div class="modal-card admin-modal">
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
       <h3>Your settings</h3>
+      <div class="setting">
+        <span>Theme</span>
+        <button id="theme-toggle" type="button" class="pill">Dark</button>
+      </div>
+      <div class="setting setting-name">
+        <span>Display name</span>
+        <div class="name-edit">
+          <input id="name-input" type="text" maxlength="40" placeholder="Shown in chat" autocomplete="off">
+          <button id="name-save" type="button" class="pill">Save</button>
+        </div>
+      </div>
       <div class="setting">
         <span>Avatar</span>
         <span class="avatar-edit">
@@ -94,6 +108,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=2"></script>
+  <script src="/assets/home.js?v=4"></script>
 </body>
 </html>

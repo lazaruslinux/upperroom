@@ -7,13 +7,15 @@ const greeting = document.getElementById("greeting");
 const adminLink = document.getElementById("admin-link");
 const logoutButton = document.getElementById("logout");
 const card = document.getElementById("stream-card");
-const cardAvatar = document.getElementById("card-avatar");
+const cardChannel = document.getElementById("card-channel");
 const thumb = document.getElementById("thumb");
 const thumbFallback = document.getElementById("thumb-fallback");
-const liveBadge = document.getElementById("live-badge");
+const streamBadge = document.getElementById("stream-badge");
+const badgeLabel = document.getElementById("badge-label");
 const statusPill = document.getElementById("status-pill");
 
 let me = null;
+let channel = null;          // the streamer shown on the card
 let online = false;
 
 function avatarColor(seed) {
@@ -52,24 +54,59 @@ async function requireAuth() {
   return true;
 }
 
-function setupIdentity() {
+function renderGreeting() {
   const name = (me.name || me.username || "there").split(" ")[0];
   greeting.textContent = `Welcome back, ${name}.`;
+}
+
+function setupIdentity() {
+  renderGreeting();
   if (me.admin) adminLink.hidden = false;
-  // The channel badge on the card uses the signed in person's own avatar.
-  cardAvatar.replaceWith(avatarNode(me.username, me.name, me.avatar || 0, "card-avatar"));
+}
+
+// The card represents the streamer (the channel owner), not the viewer, so it
+// shows their name, @username, and avatar.
+function renderChannel() {
+  if (!channel) return;
+  const fresh = avatarNode(channel.username, channel.name, channel.avatar || 0, "card-avatar");
+  document.querySelector(".card-avatar").replaceWith(fresh);
+  cardChannel.innerHTML = "";
+  const nm = document.createElement("span");
+  nm.className = "channel-name";
+  nm.textContent = channel.name;
+  cardChannel.appendChild(nm);
+  if (channel.username) {
+    const handle = document.createElement("span");
+    handle.className = "channel-handle";
+    handle.textContent = "@" + channel.username;
+    cardChannel.appendChild(handle);
+  }
+}
+
+async function loadChannel() {
+  try {
+    channel = await (await fetch("/api/channel")).json();
+  } catch {
+    channel = { username: null, name: "Lazarus Labs", avatar: 0 };
+  }
+  renderChannel();
 }
 
 // ---- live status + thumbnail ----
 
 function showLive(isLive, watching) {
   online = isLive;
-  liveBadge.hidden = !isLive;          // LIVE badge only when actually live
   card.classList.toggle("is-live", isLive);
 
-  // One status pill, never two: "N watching" while live, "N in chat" while
-  // offline (people can hang out in chat between streams). Hidden when offline
-  // and nobody is around, so an empty offline card stays clean.
+  // One badge that toggles state: red blinking LIVE when live, muted Offline
+  // otherwise.
+  streamBadge.classList.toggle("is-live", isLive);
+  streamBadge.classList.toggle("is-offline", !isLive);
+  badgeLabel.textContent = isLive ? "LIVE" : "Offline";
+
+  // A separate count pill: "N watching" while live, "N in chat" while offline
+  // (people can hang out in chat between streams). Hidden when offline and
+  // nobody is around, so an empty offline card stays clean.
   const count = typeof watching === "number" ? watching : 0;
   if (isLive) {
     statusPill.hidden = false;
@@ -129,6 +166,8 @@ logoutButton.addEventListener("click", async () => {
 
 const userModal = document.getElementById("user-modal");
 const myAvatar = document.getElementById("my-avatar");
+const nameInput = document.getElementById("name-input");
+const nameSave = document.getElementById("name-save");
 const bioInput = document.getElementById("bio-input");
 const bioSave = document.getElementById("bio-save");
 const avatarButton = document.getElementById("avatar-button");
@@ -144,12 +183,44 @@ function renderMyAvatar() {
 }
 
 document.getElementById("settings-btn").addEventListener("click", () => {
+  nameInput.value = me.name || "";
   bioInput.value = me.bio || "";
   pwCurrent.value = "";
   pwNew.value = "";
   pwMsg.textContent = "";
   renderMyAvatar();
   openModal(userModal);
+});
+
+nameSave.addEventListener("click", async () => {
+  const next = nameInput.value.trim();
+  if (!next) { nameSave.textContent = "Empty"; setTimeout(() => { nameSave.textContent = "Save"; }, 1500); return; }
+  const ok = await saveProfile({ display_name: next });
+  if (ok) {
+    me.name = next;
+    renderGreeting();
+    // If the viewer is the streamer, the card name updates too.
+    if (channel && channel.username === me.username) {
+      channel.name = next;
+      renderChannel();
+    }
+  }
+  nameSave.textContent = ok ? "Saved" : "Error";
+  setTimeout(() => { nameSave.textContent = "Save"; }, 1500);
+});
+
+// ---- theme (light / dark) ----
+
+const THEME_KEY = "selfstream_theme";
+const themeToggle = document.getElementById("theme-toggle");
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_KEY, theme);
+  themeToggle.textContent = theme === "light" ? "Light" : "Dark";
+}
+applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+themeToggle.addEventListener("click", () => {
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
 });
 
 async function saveProfile(patch) {
@@ -278,9 +349,11 @@ cropSave.addEventListener("click", () => {
       const data = await reply.json();
       me.avatar = data.avatar;
       renderMyAvatar();
-      // Refresh the card badge too, so the new avatar shows on the lobby.
-      document.querySelector(".card-avatar")
-        .replaceWith(avatarNode(me.username, me.name, me.avatar, "card-avatar"));
+      // If the viewer is the streamer, refresh the card avatar to match.
+      if (channel && channel.username === me.username) {
+        channel.avatar = data.avatar;
+        renderChannel();
+      }
       closeModal(cropModal);
     } else {
       const data = await reply.json().catch(() => ({}));
@@ -305,6 +378,7 @@ document.addEventListener("keydown", (e) => {
 async function boot() {
   if (!(await requireAuth())) return;
   setupIdentity();
+  loadChannel();
   await refreshStatus();
   refreshThumb();
   setInterval(refreshStatus, 10000);

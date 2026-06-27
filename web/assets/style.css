@@ -463,11 +463,26 @@ button:hover { filter: brightness(1.1); }
 .setting-links { gap: 0.5rem; }
 .setting-links .pill { text-decoration: none; display: inline-block; text-align: center; }
 
+.setting-name { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+.name-edit { display: flex; gap: 0.5rem; align-items: center; }
+.name-edit input {
+  flex: 1;
+  padding: 0.55rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
 /* =========================================================================
    Home (card landing) + Admin dashboard
    ========================================================================= */
 
-.home, .admin {
+/* Scoped to the page body on purpose: a bare `.admin` would also match the
+   `admin` class on chat author names (`.name.admin`), painting a full-height
+   gradient block behind every admin's message. */
+body.home, body.admin {
   min-height: 100vh;
   min-height: 100dvh;
   background:
@@ -546,6 +561,10 @@ button:hover { filter: brightness(1.1); }
 .stream-card {
   width: 100%;
   text-align: left;
+  /* The card is a <button>, which the base button rule colors white. Reset to
+     the text color so children (like the title) are not invisibly white on the
+     light theme's white card. */
+  color: var(--text);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -606,7 +625,9 @@ button:hover { filter: brightness(1.1); }
 .stream-card:hover .play-overlay { opacity: 1; }
 .stream-card.is-live .play-overlay { opacity: 0.92; }
 
-.live-badge {
+/* One badge that toggles between live and offline. It always sits over the
+   dark thumbnail backdrop, so its colors are fixed (not theme variables). */
+.stream-badge {
   position: absolute;
   top: 0.75rem;
   left: 0.75rem;
@@ -615,26 +636,29 @@ button:hover { filter: brightness(1.1); }
   gap: 0.4rem;
   padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  background: var(--live-red);
-  color: #fff;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+.stream-badge .badge-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.stream-badge.is-live {
+  background: var(--live-red);
+  color: #fff;
   box-shadow: 0 4px 14px rgba(255, 59, 70, 0.45);
 }
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #fff;
-  animation: liveblink 1.2s ease-in-out infinite;
+.stream-badge.is-live .badge-dot { background: #fff; animation: liveblink 1.2s ease-in-out infinite; }
+.stream-badge.is-offline {
+  background: rgba(18, 20, 28, 0.7);
+  color: #d2d6df;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
+.stream-badge.is-offline .badge-dot { background: #d2d6df; }
 @keyframes liveblink {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(0.7); }
 }
 
-.watch-pill, .offline-pill {
+.watch-pill {
   position: absolute;
   bottom: 0.75rem;
   right: 0.75rem;
@@ -645,7 +669,6 @@ button:hover { filter: brightness(1.1); }
   color: #fff;
   background: rgba(0, 0, 0, 0.6);
 }
-.offline-pill { color: var(--muted); border: 1px solid rgba(255, 255, 255, 0.15); }
 
 .card-meta {
   display: flex;
@@ -666,9 +689,12 @@ button:hover { filter: brightness(1.1); }
   color: #fff;
   background: var(--grad);
 }
-.card-text { display: flex; flex-direction: column; min-width: 0; }
-.card-title { font-weight: 700; font-size: 1.05rem; }
-.card-desc { color: var(--muted); font-size: 0.9rem; }
+.card-text { display: flex; flex-direction: column; min-width: 0; gap: 0.05rem; }
+.card-title { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+.card-channel { font-size: 0.85rem; }
+.card-channel .channel-name { font-weight: 600; color: var(--text); }
+.card-channel .channel-handle { color: var(--muted); margin-left: 0.35rem; }
+.card-desc { color: var(--muted); font-size: 0.85rem; margin-top: 0.1rem; }
 
 /* ---- admin dashboard ---- */
 

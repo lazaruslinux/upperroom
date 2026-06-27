@@ -329,16 +329,18 @@ class Hub:
             self._history.clear()
         await self.broadcast({"type": "wipe"})
 
-    async def update_member(self, username, avatar=None, font=None):
-        # A viewer changed their avatar or chat font mid-session. Point their
-        # open sockets at the new value so their next messages and the watching
-        # list reflect it, without making them reconnect.
+    async def update_member(self, username, avatar=None, font=None, name=None):
+        # A viewer changed their avatar, chat font, or display name mid-session.
+        # Point their open sockets at the new value so their next messages and
+        # the watching list reflect it, without making them reconnect.
         for who in self._sockets.values():
             if who["username"] == username:
                 if avatar is not None:
                     who["avatar"] = avatar
                 if font is not None:
                     who["font"] = font
+                if name is not None:
+                    who["name"] = name
         await self.broadcast(self.presence_message())
 
 
@@ -361,6 +363,22 @@ def me(request: Request):
         "avatar": user["avatar_version"] if user else 0,
         "font": user["chat_font"] if user else "system",
         "bio": user["bio"] if user else "",
+    }
+
+
+@app.get("/api/channel")
+def channel(request: Request):
+    # Identity of the streamer (the channel owner) shown on the home card. Only
+    # for signed in viewers, like the rest of the lobby.
+    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+        return Response(status_code=401)
+    owner = db.channel_owner()
+    if not owner:
+        return {"username": None, "name": "Lazarus Labs", "avatar": 0}
+    return {
+        "username": owner["username"],
+        "name": owner["display_name"],
+        "avatar": owner["avatar_version"],
     }
 
 
@@ -673,10 +691,35 @@ async def set_profile(request: Request):
         bio = str(body.get("bio") or "").strip()[:MAX_BIO_LENGTH]
         db.set_bio(username, bio)
 
-    # Push a font change to the live chat so others see it without reconnecting.
-    if font is not None:
-        await hub.update_member(username, font=font)
-    return {"ok": True, "font": font, "bio": bio}
+    name = None
+    if "display_name" in body:
+        name = str(body.get("display_name") or "").strip()[:MAX_DISPLAY_NAME]
+        if not name:
+            return JSONResponse(
+                {"error": "Display name cannot be empty."}, status_code=400
+            )
+        db.update_user(username, display_name=name)
+
+    # Push font/name changes to the live chat so others see them at once.
+    if font is not None or name is not None:
+        await hub.update_member(username, font=font, name=name)
+
+    response = JSONResponse({"ok": True, "font": font, "bio": bio, "name": name})
+    # The display name is baked into the session token (used for chat and the
+    # greeting), so re-issue the cookie when it changes or it would look stale
+    # until the next sign in.
+    if name is not None:
+        user = db.get_user(username)
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=issue_token(user),
+            max_age=SESSION_HOURS * 3600,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            path="/",
+        )
+    return response
 
 
 @app.get("/api/profile/{username}")
