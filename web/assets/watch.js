@@ -15,7 +15,16 @@ const unmuteButton = document.getElementById("unmute");
 let me = null;
 let hls = null;
 let socket = null;
+let streamOnline = false;          // tracks live state so the count can reword
+let lastViewerCount = 0;
 const MAX_VISIBLE_MESSAGES = 50;  // keep the last 50 lines on screen, no more
+
+// The header count is "watching" while live, "in chat" while offline (people
+// can still hang out in chat between streams).
+function setViewerLabel() {
+  const noun = streamOnline ? "watching" : "in chat";
+  viewerCount.textContent = `${lastViewerCount} ${noun}`;
+}
 
 async function requireAuth() {
   const reply = await fetch("/api/me");
@@ -33,6 +42,8 @@ async function requireAuth() {
 function showOffline(isOffline) {
   offline.hidden = !isOffline;
   video.style.visibility = isOffline ? "hidden" : "visible";
+  streamOnline = !isOffline;
+  setViewerLabel();
 }
 
 function startVideo() {
@@ -195,7 +206,8 @@ function renderSystem(msg) {
 }
 
 function renderPresence(msg) {
-  viewerCount.textContent = msg.count === 1 ? "1 watching" : `${msg.count} watching`;
+  lastViewerCount = msg.count;
+  setViewerLabel();
   viewerList.innerHTML = "";
   msg.viewers.forEach((viewer) => {
     const item = document.createElement("li");
@@ -261,11 +273,6 @@ const FONT_LIST = [
 const settingsPanel = document.getElementById("settings-panel");
 const themeToggle = document.getElementById("theme-toggle");
 const fontPicker = document.getElementById("font-picker");
-const bioInput = document.getElementById("bio-input");
-const bioSave = document.getElementById("bio-save");
-const avatarButton = document.getElementById("avatar-button");
-const avatarInput = document.getElementById("avatar-input");
-const myAvatar = document.getElementById("my-avatar");
 
 document.getElementById("settings-toggle").addEventListener("click", () => {
   settingsPanel.hidden = !settingsPanel.hidden;
@@ -315,70 +322,10 @@ function buildFontPicker() {
   });
 }
 
-bioSave.addEventListener("click", async () => {
-  me.bio = bioInput.value;
-  const ok = await saveProfile({ bio: me.bio });
-  bioSave.textContent = ok ? "Saved" : "Error";
-  setTimeout(() => { bioSave.textContent = "Save"; }, 1500);
-});
-
-// ---- change your own password ----
-
-const pwCurrent = document.getElementById("pw-current");
-const pwNew = document.getElementById("pw-new");
-const pwSave = document.getElementById("pw-save");
-const pwMsg = document.getElementById("pw-msg");
-
-function showPwMsg(text, ok) {
-  pwMsg.textContent = text;
-  pwMsg.className = "pw-msg " + (ok ? "ok" : "bad");
-}
-
-pwSave.addEventListener("click", async () => {
-  const current = pwCurrent.value;
-  const next = pwNew.value;
-  if (next.length < 8) { showPwMsg("Use at least 8 characters.", false); return; }
-  pwSave.disabled = true;
-  try {
-    const reply = await fetch("/api/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ current_password: current, new_password: next }),
-    });
-    if (reply.ok) {
-      pwCurrent.value = "";
-      pwNew.value = "";
-      showPwMsg("Password changed.", true);
-    } else {
-      const data = await reply.json().catch(() => ({}));
-      showPwMsg(data.error || "Could not change password.", false);
-    }
-  } catch {
-    showPwMsg("Could not change password.", false);
-  } finally {
-    pwSave.disabled = false;
-  }
-});
-
-// ---- sign out ----
-
-document.getElementById("signout").addEventListener("click", async () => {
-  try { await fetch("/api/logout", { method: "POST" }); } catch {}
-  window.location.href = "/";
-});
-
-function renderMyAvatar() {
-  if (!me) return;
-  myAvatar.innerHTML = "";
-  myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, true, false));
-}
-
-// Reflect the signed in account's saved profile in the settings panel.
+// Reflect the signed in account's saved chat font in the settings panel. Avatar,
+// bio, and password now live in the home page's "Your settings" menu.
 function loadMyProfile() {
-  if (!me) return;
-  buildFontPicker();
-  bioInput.value = me.bio || "";
-  renderMyAvatar();
+  if (me) buildFontPicker();
 }
 
 // ---- profile popup (tap any avatar) ----
@@ -400,90 +347,6 @@ async function openProfile(username) {
     /* a failed lookup just does nothing */
   }
 }
-
-// ---- avatar crop (drag + zoom) ----
-
-const cropModal = document.getElementById("crop-modal");
-const cropCanvas = document.getElementById("crop-canvas");
-const cropZoom = document.getElementById("crop-zoom");
-const cropSave = document.getElementById("crop-save");
-const cropCtx = cropCanvas.getContext("2d");
-const CROP = 256;
-let cropImg = null;
-let cropScaleBase = 1;
-let cropX = 0;
-let cropY = 0;
-
-function drawCrop() {
-  if (!cropImg) return;
-  const scale = cropScaleBase * parseFloat(cropZoom.value);
-  const w = cropImg.width * scale;
-  const h = cropImg.height * scale;
-  // Keep the image covering the square so there is never a blank edge.
-  cropX = Math.min(0, Math.max(CROP - w, cropX));
-  cropY = Math.min(0, Math.max(CROP - h, cropY));
-  cropCtx.clearRect(0, 0, CROP, CROP);
-  cropCtx.drawImage(cropImg, cropX, cropY, w, h);
-}
-
-avatarButton.addEventListener("click", () => avatarInput.click());
-avatarInput.addEventListener("change", () => {
-  const file = avatarInput.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  cropImg = new Image();
-  cropImg.onload = () => {
-    URL.revokeObjectURL(url);
-    cropScaleBase = Math.max(CROP / cropImg.width, CROP / cropImg.height);
-    cropZoom.value = "1";
-    cropX = (CROP - cropImg.width * cropScaleBase) / 2;
-    cropY = (CROP - cropImg.height * cropScaleBase) / 2;
-    drawCrop();
-    openModal(cropModal);
-  };
-  cropImg.src = url;
-  avatarInput.value = "";
-});
-
-cropZoom.addEventListener("input", drawCrop);
-
-let cropDragging = false;
-let cropLastX = 0;
-let cropLastY = 0;
-cropCanvas.addEventListener("pointerdown", (e) => {
-  cropDragging = true;
-  cropLastX = e.clientX;
-  cropLastY = e.clientY;
-  cropCanvas.setPointerCapture(e.pointerId);
-});
-cropCanvas.addEventListener("pointermove", (e) => {
-  if (!cropDragging) return;
-  const rect = cropCanvas.getBoundingClientRect();
-  cropX += (e.clientX - cropLastX) * (CROP / rect.width);
-  cropY += (e.clientY - cropLastY) * (CROP / rect.height);
-  cropLastX = e.clientX;
-  cropLastY = e.clientY;
-  drawCrop();
-});
-cropCanvas.addEventListener("pointerup", () => { cropDragging = false; });
-
-cropSave.addEventListener("click", () => {
-  cropCanvas.toBlob(async (blob) => {
-    if (!blob) return;
-    const form = new FormData();
-    form.append("image", blob, "avatar.png");
-    const reply = await fetch("/api/avatar", { method: "POST", body: form });
-    if (reply.ok) {
-      const data = await reply.json();
-      me.avatar = data.avatar;
-      renderMyAvatar();
-      closeModal(cropModal);
-    } else {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not update your avatar.");
-    }
-  }, "image/png");
-});
 
 // ---- modal helpers ----
 

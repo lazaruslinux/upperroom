@@ -30,6 +30,11 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must always win, even over a class that sets display.
+   Without this, rules like `.live-badge{display:inline-flex}` override `hidden`
+   and the element is stuck visible. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -187,12 +192,14 @@ button:hover { filter: brightness(1.1); }
   border-bottom: 1px solid var(--border);
 }
 
-.chat-head button {
+.chat-head button,
+.chat-head a.icon-btn {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
   font-weight: 600;
   padding: 0.5rem;
+  text-decoration: none;
 }
 
 .chat-head #viewer-toggle { flex: 1; }
@@ -215,7 +222,13 @@ button:hover { filter: brightness(1.1); }
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Only message text is selectable, so a stray long-press cannot paint a
+     tall highlight down the empty part of the chat column. */
+  -webkit-user-select: none;
+  user-select: none;
 }
+.msg .name, .msg .msg-time, .msg .body { -webkit-user-select: text; user-select: text; }
+::selection { background: rgba(79, 124, 255, 0.35); }
 
 .msg { display: flex; gap: 0.5rem; align-items: flex-start; font-size: 0.95rem; line-height: 1.35; word-wrap: break-word; }
 .msg .msg-body { flex: 1; min-width: 0; }
@@ -280,6 +293,8 @@ button:hover { filter: brightness(1.1); }
   border-bottom: 1px solid var(--border);
 }
 .settings-panel[hidden] { display: none; }
+.settings-heading { margin: 0; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.settings-note { margin: 0.25rem 0 0; font-size: 0.78rem; line-height: 1.4; }
 
 .setting {
   display: flex;
