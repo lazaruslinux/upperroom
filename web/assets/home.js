@@ -5,9 +5,12 @@
 
 const greeting = document.getElementById("greeting");
 const adminLink = document.getElementById("admin-link");
+const modLink = document.getElementById("mod-link");
 const logoutButton = document.getElementById("logout");
 const card = document.getElementById("stream-card");
 const cardChannel = document.getElementById("card-channel");
+const cardTitle = document.getElementById("card-title");
+const cardDesc = document.getElementById("card-desc");
 const thumb = document.getElementById("thumb");
 const thumbFallback = document.getElementById("thumb-fallback");
 const streamBadge = document.getElementById("stream-badge");
@@ -61,7 +64,10 @@ function renderGreeting() {
 
 function setupIdentity() {
   renderGreeting();
+  // Admin outranks moderator and its dashboard is a superset, so an admin only
+  // needs the Admin button; a plain moderator gets the Mod button.
   if (me.admin) adminLink.hidden = false;
+  else if (me.mod) modLink.hidden = false;
 }
 
 // The card represents the streamer (the channel owner), not the viewer, so it
@@ -70,6 +76,8 @@ function renderChannel() {
   if (!channel) return;
   const fresh = avatarNode(channel.username, channel.name, channel.avatar || 0, "card-avatar");
   document.querySelector(".card-avatar").replaceWith(fresh);
+  if (channel.title) cardTitle.textContent = channel.title;
+  cardDesc.textContent = channel.description || "Tap to join stream and start chatting";
   cardChannel.innerHTML = "";
   const nm = document.createElement("span");
   nm.className = "channel-name";
@@ -182,14 +190,70 @@ function renderMyAvatar() {
   myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
 }
 
+const streamInfoSettings = document.getElementById("stream-info-settings");
+const streamTitleInput = document.getElementById("stream-title-input");
+const streamTitleSave = document.getElementById("stream-title-save");
+const streamDescInput = document.getElementById("stream-desc-input");
+const streamDescSave = document.getElementById("stream-desc-save");
+const clipLimitUser = document.getElementById("clip-limit-user");
+const clipLimitMod = document.getElementById("clip-limit-mod");
+const clipLimitSave = document.getElementById("clip-limit-save");
+
 document.getElementById("settings-btn").addEventListener("click", () => {
   nameInput.value = me.name || "";
   bioInput.value = me.bio || "";
   pwCurrent.value = "";
   pwNew.value = "";
   pwMsg.textContent = "";
+  // Only the channel owner (an admin) edits the stream title, description, and
+  // the per-role daily clip limits.
+  if (me.admin) {
+    streamInfoSettings.hidden = false;
+    streamTitleInput.value = (channel && channel.title) || "";
+    streamDescInput.value = (channel && channel.description) || "";
+    clipLimitUser.value = channel && channel.clip_limit_user != null ? channel.clip_limit_user : 5;
+    clipLimitMod.value = channel && channel.clip_limit_mod != null ? channel.clip_limit_mod : 10;
+  }
   renderMyAvatar();
   openModal(userModal);
+});
+
+async function saveStreamInfo(patch, btn) {
+  let ok = false;
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    ok = reply.ok;
+  } catch { ok = false; }
+  if (ok && channel) {
+    if ("title" in patch) { channel.title = patch.title; }
+    if ("description" in patch) { channel.description = patch.description; }
+    if ("clip_limit_user" in patch) { channel.clip_limit_user = patch.clip_limit_user; }
+    if ("clip_limit_mod" in patch) { channel.clip_limit_mod = patch.clip_limit_mod; }
+    renderChannel();
+  }
+  btn.textContent = ok ? "Saved" : "Error";
+  setTimeout(() => { btn.textContent = "Save"; }, 1500);
+}
+
+streamTitleSave.addEventListener("click", () => {
+  const next = streamTitleInput.value.trim();
+  if (!next) { streamTitleSave.textContent = "Empty"; setTimeout(() => { streamTitleSave.textContent = "Save"; }, 1500); return; }
+  saveStreamInfo({ title: next }, streamTitleSave);
+});
+streamDescSave.addEventListener("click", () => {
+  saveStreamInfo({ description: streamDescInput.value.trim() }, streamDescSave);
+});
+clipLimitSave.addEventListener("click", () => {
+  const u = parseInt(clipLimitUser.value, 10);
+  const m = parseInt(clipLimitMod.value, 10);
+  if (Number.isNaN(u) || Number.isNaN(m)) {
+    clipLimitSave.textContent = "Number?"; setTimeout(() => { clipLimitSave.textContent = "Save"; }, 1500); return;
+  }
+  saveStreamInfo({ clip_limit_user: u, clip_limit_mod: m }, clipLimitSave);
 });
 
 nameSave.addEventListener("click", async () => {
@@ -375,10 +439,109 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
 });
 
+// ---- library (past VODs + clips) ----
+
+const libGrid = document.getElementById("lib-grid");
+const libEmpty = document.getElementById("lib-empty");
+let libTab = "vods";
+const libCache = { vods: null, clips: null };
+
+function durationClock(secs) {
+  secs = Math.max(0, Math.round(secs || 0));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function relDate(epoch) {
+  if (!epoch) return "";
+  const secs = Math.floor(Date.now() / 1000) - epoch;
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`;
+  return new Date(epoch * 1000).toLocaleDateString();
+}
+
+function mediaCard(item, kind) {
+  const a = document.createElement("a");
+  a.className = "media-card";
+  a.href = `/media?type=${kind}&id=${item.id}`;
+
+  const thumb = document.createElement("div");
+  thumb.className = "media-thumb";
+  if (item.poster) {
+    const img = document.createElement("img");
+    img.src = `/media/${kind}s/${item.id}.jpg`;
+    img.alt = "";
+    img.loading = "lazy";
+    thumb.appendChild(img);
+  } else {
+    thumb.classList.add("media-thumb-fallback");
+    const mark = document.createElement("span");
+    mark.className = "thumb-mark";
+    mark.innerHTML = 'Lazarus<span>Labs</span>';
+    thumb.appendChild(mark);
+  }
+  if (item.duration) {
+    const dur = document.createElement("span");
+    dur.className = "media-dur";
+    dur.textContent = durationClock(item.duration);
+    thumb.appendChild(dur);
+  }
+  a.appendChild(thumb);
+
+  const meta = document.createElement("div");
+  meta.className = "media-meta";
+  const title = document.createElement("div");
+  title.className = "media-title";
+  title.textContent = kind === "vod" ? item.title : item.name;
+  const sub = document.createElement("div");
+  sub.className = "media-sub muted";
+  const views = item.views === 1 ? "1 view" : `${item.views} views`;
+  const when = relDate(kind === "vod" ? item.started_at : item.created_at);
+  let line = `${views} · ${when}`;
+  if (kind === "clip" && item.creator) line += ` · @${item.creator}`;
+  sub.textContent = line;
+  meta.append(title, sub);
+  a.appendChild(meta);
+  return a;
+}
+
+async function renderLibrary() {
+  const kind = libTab === "vods" ? "vod" : "clip";
+  let items = libCache[libTab];
+  if (items === null) {
+    try { items = (await (await fetch(`/api/${libTab}`)).json())[libTab] || []; }
+    catch { items = []; }
+    libCache[libTab] = items;
+  }
+  libGrid.innerHTML = "";
+  if (!items.length) {
+    libEmpty.hidden = false;
+    libEmpty.textContent = libTab === "vods"
+      ? "No past broadcasts yet. Recordings appear here after a stream ends."
+      : "No clips yet. Viewers can clip the last 30 seconds while live.";
+    return;
+  }
+  libEmpty.hidden = true;
+  items.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
+}
+
+document.querySelectorAll(".lib-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    libTab = tab.dataset.tab;
+    document.querySelectorAll(".lib-tab").forEach((t) => t.classList.toggle("selected", t === tab));
+    renderLibrary();
+  });
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
   setupIdentity();
   loadChannel();
+  renderLibrary();
   await refreshStatus();
   refreshThumb();
   setInterval(refreshStatus, 10000);

@@ -8,13 +8,14 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=9">
+  <link rel="stylesheet" href="/assets/style.css?v=11">
 </head>
 <body class="home">
   <header class="home-bar">
     <div class="brand">Lazarus<span>Labs</span></div>
     <nav class="home-actions">
       <button id="settings-btn" type="button" class="ghost-btn">Settings</button>
+      <a id="mod-link" href="/mod" class="ghost-btn" hidden>Mod</a>
       <a id="admin-link" href="/admin" class="ghost-btn" hidden>Admin</a>
       <button id="logout" type="button" class="ghost-btn">Sign out</button>
     </nav>
@@ -40,12 +41,22 @@
       <div class="card-meta">
         <span id="card-avatar" class="card-avatar">LL</span>
         <span class="card-text">
-          <span class="card-title">Test Stream</span>
+          <span id="card-title" class="card-title">Live Stream</span>
           <span id="card-channel" class="card-channel"></span>
-          <span class="card-desc">Tap to join stream and start chatting</span>
+          <span id="card-desc" class="card-desc">Tap to join stream and start chatting</span>
         </span>
       </div>
     </button>
+
+    <!-- Past broadcasts and viewer clips. -->
+    <section class="library">
+      <div class="lib-tabs">
+        <button type="button" class="lib-tab selected" data-tab="vods">VODs</button>
+        <button type="button" class="lib-tab" data-tab="clips">Clips</button>
+      </div>
+      <div id="lib-grid" class="lib-grid"></div>
+      <p id="lib-empty" class="muted" hidden></p>
+    </section>
   </main>
 
   <!-- Your account / profile settings -->
@@ -53,6 +64,35 @@
     <div class="modal-card admin-modal">
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
       <h3>Your settings</h3>
+
+      <!-- Stream title + description: only the channel owner (an admin) sees this. -->
+      <div id="stream-info-settings" class="stream-info-settings" hidden>
+        <p class="settings-heading muted">Stream</p>
+        <div class="setting setting-name">
+          <span>Title</span>
+          <div class="name-edit">
+            <input id="stream-title-input" type="text" maxlength="100" placeholder="What you're streaming" autocomplete="off">
+            <button id="stream-title-save" type="button" class="pill">Save</button>
+          </div>
+        </div>
+        <div class="setting setting-bio">
+          <span>Description</span>
+          <div class="bio-edit">
+            <textarea id="stream-desc-input" maxlength="500" rows="2" placeholder="A short description shown on the home card"></textarea>
+            <button id="stream-desc-save" type="button" class="pill">Save</button>
+          </div>
+        </div>
+        <div class="setting setting-name">
+          <span>Clips per day</span>
+          <div class="clip-limit-edit">
+            <label>Viewers <input id="clip-limit-user" type="number" min="0" max="1000" inputmode="numeric"></label>
+            <label>Mods <input id="clip-limit-mod" type="number" min="0" max="1000" inputmode="numeric"></label>
+            <button id="clip-limit-save" type="button" class="pill">Save</button>
+          </div>
+        </div>
+        <p class="settings-heading muted">You</p>
+      </div>
+
       <div class="setting">
         <span>Theme</span>
         <button id="theme-toggle" type="button" class="pill">Dark</button>
@@ -108,6 +148,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=4"></script>
+  <script src="/assets/home.js?v=5"></script>
 </body>
 </html>

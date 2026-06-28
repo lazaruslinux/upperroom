@@ -11,6 +11,7 @@ const viewerList = document.getElementById("viewer-list");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const unmuteButton = document.getElementById("unmute");
+const clipBtn = document.getElementById("clip-btn");
 
 let me = null;
 let hls = null;
@@ -43,6 +44,8 @@ function showOffline(isOffline) {
   offline.hidden = !isOffline;
   video.style.visibility = isOffline ? "hidden" : "visible";
   streamOnline = !isOffline;
+  // Clipping only makes sense while the stream is live (and being recorded).
+  clipBtn.hidden = isOffline;
   setViewerLabel();
 }
 
@@ -148,6 +151,30 @@ function avatarNode(username, name, version, big, clickable) {
   return node;
 }
 
+// Role badges sit just to the right of the avatar, sized to match it, in place
+// of any "(admin)" text. Admin and moderator are separate roles with separate
+// icons: an amber crown for admin, a blue shield for a moderator. An admin keeps
+// every moderator power, so an admin simply shows the crown.
+const CROWN_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+  '<path d="M3 8l4.5 3.5L12 5l4.5 6.5L21 8l-1.8 10H4.8z"/>' +
+  '<rect x="4.8" y="18.2" width="14.4" height="2.2" rx="0.6"/></svg>';
+const SHIELD_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path fill="currentColor" d="M12 2l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V5z"/>' +
+  '<path d="M8.5 12l2.3 2.3L15.5 9.5" fill="none" stroke="#fff" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function roleBadgeNode(admin, mod, big) {
+  if (!admin && !mod) return null;
+  const span = document.createElement("span");
+  span.className =
+    "role-badge-icon " + (admin ? "is-admin" : "is-mod") + (big ? " role-badge-lg" : "");
+  span.title = admin ? "Admin" : "Moderator";
+  span.innerHTML = admin ? CROWN_SVG : SHIELD_SVG;
+  return span;
+}
+
 function formatTimestamp(ts) {
   // Compact local stamp shown in tiny print on each line, e.g. "6.26.26 4:32pm".
   const d = ts ? new Date(ts * 1000) : new Date();
@@ -176,7 +203,10 @@ function addLine(node) {
 function renderChat(msg) {
   const line = document.createElement("div");
   line.className = "msg";
+  if (msg.id != null) line.dataset.msgid = msg.id;
   line.appendChild(avatarNode(msg.user, msg.name, msg.avatar || 0, false, true));
+  const badge = roleBadgeNode(msg.admin, msg.mod, false);
+  if (badge) line.appendChild(badge);
   const bodyWrap = document.createElement("span");
   bodyWrap.className = "msg-body";
   const head = document.createElement("span");
@@ -190,12 +220,33 @@ function renderChat(msg) {
   head.append(name, time);
   const body = document.createElement("span");
   body.className = "body";
-  body.textContent = msg.text;        // textContent keeps any HTML inert
-  // Each person's own font rides along on their messages for everyone to see.
-  body.style.fontFamily = FONTS[msg.font] || "";
+  if (msg.deleted) {
+    markBodyDeleted(body);
+  } else {
+    body.textContent = msg.text;        // textContent keeps any HTML inert
+    // Each person's own font rides along on their messages for everyone to see.
+    body.style.fontFamily = FONTS[msg.font] || "";
+  }
   bodyWrap.append(head, body);
   line.appendChild(bodyWrap);
   addLine(line);
+}
+
+// A line removed by a moderator stays in place but its text is replaced, so the
+// conversation does not visibly reflow and everyone sees it was moderated.
+function markBodyDeleted(body) {
+  body.textContent = "deleted by a moderator";
+  body.classList.add("deleted");
+  body.style.fontFamily = "";
+}
+
+function applyDelete(id) {
+  if (id == null) return;
+  const line = messages.querySelector(`[data-msgid="${id}"]`);
+  if (line) {
+    const body = line.querySelector(".body");
+    if (body) markBodyDeleted(body);
+  }
 }
 
 function renderSystem(msg) {
@@ -212,6 +263,8 @@ function renderPresence(msg) {
   msg.viewers.forEach((viewer) => {
     const item = document.createElement("li");
     item.appendChild(avatarNode(viewer.username, viewer.name, viewer.avatar || 0, false, true));
+    const badge = roleBadgeNode(viewer.admin, viewer.mod, false);
+    if (badge) item.appendChild(badge);
     const youSuffix = me && viewer.username === me.username ? " (you)" : "";
     const label = document.createElement("span");
     label.textContent = viewer.name + youSuffix;
@@ -229,6 +282,7 @@ function connectChat() {
     if (msg.type === "chat") renderChat(msg);
     else if (msg.type === "system") renderSystem(msg);
     else if (msg.type === "presence") renderPresence(msg);
+    else if (msg.type === "delete") applyDelete(msg.id);
     else if (msg.type === "wipe") messages.innerHTML = "";
     else if (msg.type === "hello") {
       me = me || msg.you;
@@ -340,7 +394,9 @@ async function openProfile(username) {
     const data = await (await fetch(`/api/profile/${encodeURIComponent(username)}`)).json();
     profileAvatar.innerHTML = "";
     profileAvatar.appendChild(avatarNode(data.username, data.name, data.avatar || 0, true, false));
-    profileName.textContent = data.name + (data.admin ? " (admin)" : "");
+    const badge = roleBadgeNode(data.admin, data.mod, true);
+    if (badge) profileAvatar.appendChild(badge);
+    profileName.textContent = data.name;
     profileBio.textContent = data.bio || "No bio yet.";
     openModal(profileModal);
   } catch {
@@ -399,8 +455,64 @@ window.addEventListener("orientationchange", lockHeight);
 window.addEventListener("load", () => setTimeout(lockHeight, 200));
 lockHeight();
 
+// ---- clip the last 30 seconds ----
+
+const clipModal = document.getElementById("clip-modal");
+const clipName = document.getElementById("clip-name");
+const clipSave = document.getElementById("clip-save");
+const clipMsg = document.getElementById("clip-msg");
+
+function showClipMsg(text, ok, link) {
+  clipMsg.className = "pw-msg " + (ok ? "ok" : "bad");
+  clipMsg.textContent = "";
+  clipMsg.append(document.createTextNode(text));
+  if (link) {
+    clipMsg.append(document.createTextNode(" "));
+    const a = document.createElement("a");
+    a.href = link;
+    a.textContent = "View clip";
+    clipMsg.appendChild(a);
+  }
+}
+
+clipBtn.addEventListener("click", () => {
+  clipName.value = "";
+  clipMsg.textContent = "";
+  clipMsg.className = "pw-msg";
+  clipSave.disabled = false;
+  openModal(clipModal);
+  clipName.focus();
+});
+
+clipSave.addEventListener("click", async () => {
+  clipSave.disabled = true;
+  showClipMsg("Saving…", true);
+  try {
+    const reply = await fetch("/api/clip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: clipName.value.trim() }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      showClipMsg("Clip saved.", true, `/media?type=clip&id=${data.id}`);
+    } else {
+      showClipMsg(data.error || "Could not make the clip.", false);
+      clipSave.disabled = false;
+    }
+  } catch {
+    showClipMsg("Could not make the clip.", false);
+    clipSave.disabled = false;
+  }
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
+  // Let moderators and admins know the commands exist, without cluttering chat
+  // for everyone else.
+  if (me && (me.admin || me.mod)) {
+    chatInput.placeholder = "Say something — or /help for commands";
+  }
   loadMyProfile();
   connectChat();
   checkStream();

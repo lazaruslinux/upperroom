@@ -18,6 +18,8 @@ import asyncio
 import io
 import os
 import re
+import shutil
+import signal
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -56,6 +58,9 @@ ALLOWED_FONTS = {"system", "mono", "comic", "retro", "caveat"}
 MAX_BIO_LENGTH = 200
 MAX_DISPLAY_NAME = 40
 MIN_PASSWORD = 8
+MAX_STREAM_TITLE = 100
+MAX_STREAM_DESC = 500
+MAX_CLIP_NAME = 80
 
 # How long the admin-only chat log is kept before old lines are purged. Viewers
 # always see chat as ephemeral; this only affects the history the admin reviews.
@@ -71,6 +76,24 @@ THUMB_INTERVAL = int(os.environ.get("SELFSTREAM_THUMB_INTERVAL", "15"))
 RTMP_SOURCE = os.environ.get(
     "SELFSTREAM_RTMP_SOURCE", f"rtmp://mediamtx:1935/{STREAM_PATH}"
 )
+
+# Recordings (VODs) and viewer clips. Broadcasts are recorded to a node local
+# scratch dir while live (a plain copy, no transcode, over the internal docker
+# network, so it never touches the live stream's bandwidth), then archived to the
+# media store once the stream ends. The operator points SELFSTREAM_MEDIA_DIR
+# wherever they like (a big disk, a NAS, a ZFS mount); it defaults to a docker
+# volume so a fresh checkout just works.
+RECORD_TMP = os.environ.get("SELFSTREAM_RECORD_TMP", "/data/rec")
+MEDIA_DIR = os.environ.get("SELFSTREAM_MEDIA_DIR", "/data/media")
+VOD_DIR = os.path.join(MEDIA_DIR, "vods")
+CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
+# Retention: keep at most this many VODs, and/or only this many days. 0 disables
+# that limit. The oldest beyond the limit are pruned (files and rows) on stop.
+VOD_KEEP = int(os.environ.get("SELFSTREAM_VOD_KEEP", "20"))
+VOD_KEEP_DAYS = int(os.environ.get("SELFSTREAM_VOD_KEEP_DAYS", "0"))
+CLIP_SECONDS = 30                  # how much of the live edge a clip captures
+CLIP_LAG = 2                       # stay this far back from the very live edge
+CLIP_COOLDOWN = int(os.environ.get("SELFSTREAM_CLIP_COOLDOWN", "10"))
 
 
 async def fetch_path():
@@ -96,8 +119,11 @@ async def stream_watcher():
             # Open/close watch sessions on the live<->offline transition so
             # watch time only counts while the stream is live.
             await hub.set_live(online)
+            if online and not was_online:
+                await start_recording()
             if was_online and not online:
                 await hub.wipe()
+                await stop_recording()
             was_online = online
         except Exception:
             pass
@@ -142,6 +168,209 @@ async def thumbnail_worker():
         await asyncio.sleep(THUMB_INTERVAL)
 
 
+# ---- Recording (VODs) and clips -------------------------------------------
+# A broadcast is recorded with a plain stream copy (no transcode) to local
+# scratch while live, then archived to the media store when it ends. Clips are
+# cut from that in-progress file on demand.
+
+_rec = {
+    "active": False, "vod_id": None, "tmp_path": None,
+    "started_at": None, "proc": None,
+}
+
+
+async def _run_ffmpeg(args, timeout):
+    """Run an ffmpeg/ffprobe command to completion, returning (returncode, stdout).
+    Best effort: a timeout or failure returns (None, b'')."""
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return proc.returncode, out
+    except Exception:
+        if proc and proc.returncode is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return None, b""
+
+
+async def _make_poster(src, dst, seek=2):
+    """Save a single frame as the card poster for a VOD or clip."""
+    await _run_ffmpeg(
+        ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(seek), "-i", src,
+         "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", dst],
+        timeout=20,
+    )
+
+
+async def _probe_duration(path):
+    code, out = await _run_ffmpeg(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", path],
+        timeout=20,
+    )
+    try:
+        return int(float(out.decode().strip()))
+    except Exception:
+        return 0
+
+
+def _remove_media_files(folder, filename, item_id):
+    for name in (filename, f"{item_id}.jpg"):
+        if not name:
+            continue
+        path = os.path.join(folder, os.path.basename(name))
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+
+async def start_recording():
+    if _rec["active"]:
+        return
+    started_at = int(time.time())
+    info = db.get_stream_info()
+    try:
+        vod_id = db.create_vod(
+            info["stream_title"], info["stream_description"], started_at
+        )
+    except Exception:
+        return
+    tmp_path = os.path.join(RECORD_TMP, f"{vod_id}.mp4")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", RTMP_SOURCE,
+            "-c", "copy",
+            "-f", "mp4",
+            # A fragmented MP4 is web playable and survives an abrupt stop, which
+            # matters because we cut clips from it while it is still being written.
+            "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+            tmp_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except Exception:
+        try:
+            db.delete_media("vod", vod_id)
+        except Exception:
+            pass
+        return
+    _rec.update(
+        active=True, vod_id=vod_id, tmp_path=tmp_path,
+        started_at=started_at, proc=proc,
+    )
+
+
+async def stop_recording():
+    if not _rec["active"]:
+        return
+    vod_id, tmp_path = _rec["vod_id"], _rec["tmp_path"]
+    started_at, proc = _rec["started_at"], _rec["proc"]
+    ended_at = int(time.time())
+    # Mark inactive at once so clips stop and a quick re-go-live starts clean.
+    _rec.update(active=False, vod_id=None, tmp_path=None, started_at=None, proc=None)
+    if proc and proc.returncode is None:
+        try:
+            proc.send_signal(signal.SIGINT)   # let ffmpeg write the trailer
+            await asyncio.wait_for(proc.wait(), timeout=15)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    # Archive and finalize in the background so a slow transfer to the media
+    # store (which may be a network mount) never blocks the stream watcher.
+    asyncio.create_task(_finalize_recording(vod_id, tmp_path, started_at, ended_at))
+
+
+async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
+    try:
+        if not (tmp_path and os.path.exists(tmp_path)
+                and os.path.getsize(tmp_path) > 100_000):
+            db.delete_media("vod", vod_id)
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return
+        filename = f"{vod_id}.mp4"
+        # Poster first, while the file is still on fast local scratch.
+        await _make_poster(tmp_path, os.path.join(VOD_DIR, f"{vod_id}.jpg"))
+        dst = os.path.join(VOD_DIR, filename)
+        await asyncio.to_thread(shutil.move, tmp_path, dst)
+        duration = await _probe_duration(dst) or max(0, ended_at - started_at)
+        db.finalize_vod(vod_id, ended_at, duration, filename)
+        db.snapshot_chat("vod", vod_id, started_at, ended_at)
+        # Enforce retention, removing the oldest VODs (rows and files) over the cap.
+        try:
+            for doomed in db.prune_vods(VOD_KEEP, VOD_KEEP_DAYS, int(time.time())):
+                _remove_media_files(VOD_DIR, doomed.get("filename"), doomed["id"])
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def clip_limit_for(user):
+    """The daily clip cap for a user. Admins are uncapped; moderators and viewers
+    use the admin-configured limits."""
+    info = db.get_stream_info()
+    if user and user["is_admin"]:
+        return None  # unlimited
+    if user and user["is_moderator"]:
+        return int(info["clip_limit_mod"])
+    return int(info["clip_limit_user"])
+
+
+async def make_clip(user, name):
+    """Cut the last CLIP_SECONDS of the live stream into a named clip. Returns
+    (clip_id, None) on success or (None, error_message)."""
+    if not _rec["active"]:
+        return None, "The stream is not live."
+    username = user["username"]
+    limit = clip_limit_for(user)
+    if limit is not None:
+        made = db.count_user_clips_since(username, int(time.time()) - 86400)
+        if made >= limit:
+            return None, f"You've reached your limit of {limit} clips per day."
+    started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
+    end = int(time.time()) - CLIP_LAG
+    start = max(started_at, end - CLIP_SECONDS)
+    duration = end - start
+    if duration < 3:
+        return None, "The stream just started; nothing to clip yet."
+    name = (name or "").strip()[:MAX_CLIP_NAME] or "Clip"
+    # Create the row first so the file can be named by its id.
+    clip_id = db.create_clip(
+        name, "", username, vod_id, start, end, duration, int(time.time())
+    )
+    filename = f"{clip_id}.mp4"
+    dst = os.path.join(CLIP_DIR, filename)
+    code, _ = await _run_ffmpeg(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-ss", str(start - started_at), "-i", src, "-t", str(duration),
+         "-c", "copy", "-movflags", "+faststart", dst],
+        timeout=40,
+    )
+    if code != 0 or not os.path.exists(dst) or os.path.getsize(dst) < 1000:
+        db.delete_media("clip", clip_id)
+        _remove_media_files(CLIP_DIR, filename, clip_id)
+        return None, "Could not make the clip. Try again in a moment."
+    db.set_clip_filename(clip_id, filename)
+    await _make_poster(dst, os.path.join(CLIP_DIR, f"{clip_id}.jpg"), seek=1)
+    db.snapshot_chat("clip", clip_id, start, end)
+    return clip_id, None
+
+
 async def chat_purge_worker():
     """Once a day, drop chat messages older than the retention window."""
     while True:
@@ -154,6 +383,13 @@ async def chat_purge_worker():
 
 @asynccontextmanager
 async def lifespan(_app):
+    hub.load_bans()
+    # Any VOD still marked unfinished is from a recording the previous run never
+    # got to close out; drop those rows so they do not linger.
+    try:
+        db.clear_unfinished_vods()
+    except Exception:
+        pass
     tasks = [
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
@@ -168,7 +404,8 @@ async def lifespan(_app):
 
 app = FastAPI(title="selfstream", docs_url=None, redoc_url=None, lifespan=lifespan)
 db.init_db()
-os.makedirs(AVATAR_DIR, exist_ok=True)
+for _dir in (AVATAR_DIR, RECORD_TMP, VOD_DIR, CLIP_DIR):
+    os.makedirs(_dir, exist_ok=True)
 
 
 # ---- Login rate limiting --------------------------------------------------
@@ -199,6 +436,7 @@ def issue_token(user):
         "sub": user["username"],
         "name": user["display_name"],
         "admin": bool(user["is_admin"]),
+        "mod": bool(user["is_moderator"]),
         "iat": now,
         "exp": now + SESSION_HOURS * 3600,
     }
@@ -223,6 +461,25 @@ def admin_user(request):
     if not user or not user["is_admin"]:
         return None
     return user
+
+
+def mod_actor(request):
+    """The signed in user's row if they may use the moderator dashboard (admin or
+    moderator), read fresh from the database. None otherwise."""
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return None
+    user = db.get_user(session["sub"])
+    if not user or not (user["is_admin"] or user["is_moderator"]):
+        return None
+    return user
+
+
+def can_moderate(user):
+    """Whether a user may run moderator actions. Admin and moderator are separate
+    roles, but an admin keeps every moderator power (admin is a superset of mod in
+    capability, never in identity, so the badges stay distinct)."""
+    return bool(user and (user["is_admin"] or user["is_moderator"]))
 
 
 def client_ip(request):
@@ -257,10 +514,12 @@ class Hub:
     """Tracks who is connected and relays chat messages to everyone."""
 
     def __init__(self):
-        self._sockets = {}            # websocket -> {"username", "name", "admin"}
+        self._sockets = {}            # websocket -> {"username", "name", "admin", "mod"}
         self._history = deque(maxlen=CHAT_HISTORY)
         self._lock = asyncio.Lock()
         self._live = False            # whether the stream is currently live
+        self._timeouts = {}           # username -> epoch until which they are muted
+        self._banned = set()          # usernames with a persistent chat ban
 
     def viewers(self):
         # One entry per person, even if they have several tabs open.
@@ -268,7 +527,13 @@ class Hub:
         for who in self._sockets.values():
             seen[who["username"]] = who
         return [
-            {"username": w["username"], "name": w["name"], "avatar": w.get("avatar", 0)}
+            {
+                "username": w["username"],
+                "name": w["name"],
+                "avatar": w.get("avatar", 0),
+                "admin": bool(w.get("admin")),
+                "mod": bool(w.get("mod")),
+            }
             for w in seen.values()
         ]
 
@@ -322,24 +587,99 @@ class Hub:
             )
 
     async def say(self, who, text):
+        ts = int(time.time())
+        # Log first so the message carries its database row id. A moderator's
+        # /del command uses that id to remove a specific line for everyone.
+        msg_id = None
+        try:
+            msg_id = db.log_chat(who["username"], who["name"], text, ts)
+        except Exception:
+            pass
         message = {
             "type": "chat",
+            "id": msg_id,
             "user": who["username"],
             "name": who["name"],
             "admin": who["admin"],
+            "mod": who.get("mod", False),
             "avatar": who.get("avatar", 0),
             "font": who.get("font", "system"),
             "text": text,
-            "ts": int(time.time()),
+            "ts": ts,
         }
         self._history.append(message)
-        # Keep an admin-only copy on disk. Viewers still see chat as ephemeral;
-        # this log is purged after the retention window (see chat_purge_worker).
-        try:
-            db.log_chat(who["username"], who["name"], text, message["ts"])
-        except Exception:
-            pass
         await self.broadcast(message)
+
+    # ---- moderation -------------------------------------------------------
+
+    def is_timed_out(self, username):
+        until = self._timeouts.get(username)
+        if not until:
+            return 0
+        remaining = until - int(time.time())
+        if remaining <= 0:
+            self._timeouts.pop(username, None)
+            return 0
+        return remaining
+
+    def set_timeout(self, username, seconds):
+        self._timeouts[username] = int(time.time()) + seconds
+
+    def clear_timeout(self, username):
+        self._timeouts.pop(username, None)
+
+    def load_bans(self):
+        try:
+            self._banned = set(db.banned_usernames())
+        except Exception:
+            self._banned = set()
+
+    def is_banned(self, username):
+        return username in self._banned
+
+    def add_ban_local(self, username):
+        self._banned.add(username)
+
+    def remove_ban_local(self, username):
+        self._banned.discard(username)
+
+    async def delete_last_by(self, username, by):
+        """Mark the most recent visible message from a user as deleted, in the
+        backlog and on every open page. Returns the message dict, or None."""
+        target = None
+        for message in reversed(self._history):
+            if message.get("user") == username and not message.get("deleted"):
+                target = message
+                break
+        if not target:
+            return None
+        target["deleted"] = True
+        if target.get("id"):
+            try:
+                db.mark_chat_deleted(target["id"], by)
+            except Exception:
+                pass
+        await self.broadcast({"type": "delete", "id": target.get("id")})
+        return target
+
+    async def update_role(self, username, mod=None):
+        """Reflect a role change on a user's open sockets so their next message
+        and the watching list show (or drop) the badge without a reconnect."""
+        for who in self._sockets.values():
+            if who["username"] == username and mod is not None:
+                who["mod"] = bool(mod)
+        await self.broadcast(self.presence_message())
+
+    async def notify_user(self, username, text):
+        """Send a private system line to one user's open sockets (e.g. to tell
+        them they have been timed out). Others do not see it."""
+        note = {"type": "system", "text": text, "ts": int(time.time())}
+        for socket, who in list(self._sockets.items()):
+            if who["username"] == username:
+                try:
+                    await socket.send_json(note)
+                except Exception:
+                    pass
 
     async def set_live(self, online):
         # Called by the stream watcher. Watch time only counts while live, so on
@@ -388,6 +728,188 @@ class Hub:
 hub = Hub()
 
 
+# ---- Chat slash commands --------------------------------------------------
+# Moderation is driven entirely by commands typed into chat, not buttons. The
+# chat socket intercepts any message starting with "/", authorizes it against a
+# fresh database read of the sender's role, and never echoes it to other people.
+
+DEFAULT_TIMEOUT_SECONDS = 300
+MAX_TIMEOUT_SECONDS = 86400
+
+
+async def system_reply(websocket, text):
+    """Send a private system line back to the person who ran a command."""
+    try:
+        await websocket.send_json(
+            {"type": "system", "text": text, "ts": int(time.time())}
+        )
+    except Exception:
+        pass
+
+
+def _target_name(arg):
+    return arg.strip().lower().lstrip("@")
+
+
+async def handle_command(websocket, who, text):
+    parts = text[1:].split()
+    if not parts:
+        return
+    cmd = parts[0].lower()
+    args = parts[1:]
+
+    # Role is read fresh from the database, never trusted from the cookie, so a
+    # demotion takes effect immediately.
+    actor = db.get_user(who["username"])
+    is_admin = bool(actor and actor["is_admin"])
+    is_mod = bool(actor and actor["is_moderator"])
+
+    if cmd == "help":
+        lines = ["Chat commands:"]
+        if is_admin or is_mod:
+            lines += [
+                "/timeout <user> [seconds] — mute a viewer (default 300)",
+                "/untimeout <user> — lift a timeout",
+                "/del <user> — delete that viewer's last message",
+                "/ban <user> [reason] — ban a viewer from chat",
+                "/unban <user> — lift a ban (yours, or any if admin)",
+            ]
+        if is_admin:
+            lines += [
+                "/mod <user> — make someone a chat moderator",
+                "/unmod <user> — remove a chat moderator",
+            ]
+        if len(lines) == 1:
+            lines.append("Your account has no chat commands.")
+        await system_reply(websocket, "\n".join(lines))
+        return
+
+    if not (is_admin or is_mod):
+        await system_reply(websocket, "You do not have permission for chat commands.")
+        return
+
+    # Granting and removing moderators is admin only: moderators cannot mint more
+    # moderators.
+    if cmd in ("mod", "unmod"):
+        if not is_admin:
+            await system_reply(websocket, "Only an admin can change moderators.")
+            return
+        if not args:
+            await system_reply(websocket, f"Usage: /{cmd} <username>")
+            return
+        target = db.get_user(_target_name(args[0]))
+        if not target:
+            await system_reply(websocket, f"No account named {_target_name(args[0])}.")
+            return
+        make = cmd == "mod"
+        if bool(target["is_moderator"]) == make:
+            state = "already" if make else "not"
+            await system_reply(
+                websocket, f"{target['display_name']} is {state} a moderator."
+            )
+            return
+        db.update_user(target["username"], is_moderator=make)
+        await hub.update_role(target["username"], mod=make)
+        word = "now" if make else "no longer"
+        await system_reply(
+            websocket, f"{target['display_name']} is {word} a moderator."
+        )
+        await hub.notify_user(
+            target["username"],
+            "You are now a chat moderator." if make
+            else "You are no longer a chat moderator.",
+        )
+        return
+
+    # timeout / untimeout / del all act on a target, and a moderator may not act
+    # on an admin (only another admin can).
+    if not args:
+        await system_reply(websocket, f"Usage: /{cmd} <username>")
+        return
+    target = db.get_user(_target_name(args[0]))
+    if not target:
+        await system_reply(websocket, f"No account named {_target_name(args[0])}.")
+        return
+    if target["is_admin"] and not is_admin:
+        await system_reply(websocket, "You can't moderate an admin.")
+        return
+
+    if cmd == "timeout":
+        seconds = DEFAULT_TIMEOUT_SECONDS
+        if len(args) > 1:
+            try:
+                seconds = max(1, min(MAX_TIMEOUT_SECONDS, int(args[1])))
+            except ValueError:
+                await system_reply(websocket, "Seconds must be a whole number.")
+                return
+        hub.set_timeout(target["username"], seconds)
+        await system_reply(
+            websocket, f"{target['display_name']} is timed out for {seconds}s."
+        )
+        await hub.notify_user(
+            target["username"],
+            f"A moderator has timed you out for {seconds} seconds.",
+        )
+        return
+
+    if cmd == "untimeout":
+        hub.clear_timeout(target["username"])
+        await system_reply(websocket, f"Timeout lifted for {target['display_name']}.")
+        await hub.notify_user(target["username"], "Your timeout has been lifted.")
+        return
+
+    if cmd == "del":
+        removed = await hub.delete_last_by(target["username"], who["username"])
+        if removed:
+            await system_reply(
+                websocket, f"Deleted {target['display_name']}'s last message."
+            )
+        else:
+            await system_reply(
+                websocket, f"No recent message from {target['display_name']}."
+            )
+        return
+
+    if cmd == "ban":
+        reason = " ".join(args[1:])[:200]
+        try:
+            db.add_ban(target["username"], who["username"], reason, int(time.time()))
+        except Exception:
+            await system_reply(websocket, "Could not save the ban.")
+            return
+        hub.add_ban_local(target["username"])
+        await system_reply(
+            websocket, f"{target['display_name']} is banned from chat."
+        )
+        await hub.notify_user(
+            target["username"], "You have been banned from chat."
+        )
+        return
+
+    if cmd == "unban":
+        existing = db.get_ban(target["username"])
+        if not existing:
+            await system_reply(
+                websocket, f"{target['display_name']} is not banned."
+            )
+            return
+        # A moderator may lift only a ban they issued; an admin may lift any.
+        if not is_admin and existing["banned_by"] != who["username"]:
+            await system_reply(
+                websocket, "Only the moderator who set this ban, or an admin, can lift it."
+            )
+            return
+        db.remove_ban(target["username"])
+        hub.remove_ban_local(target["username"])
+        await system_reply(websocket, f"{target['display_name']} is unbanned.")
+        await hub.notify_user(
+            target["username"], "Your chat ban has been lifted."
+        )
+        return
+
+    await system_reply(websocket, f"Unknown command /{cmd}. Try /help.")
+
+
 # ---- HTTP routes ----------------------------------------------------------
 
 @app.get("/api/me")
@@ -400,7 +922,8 @@ def me(request: Request):
         "authed": True,
         "username": session["sub"],
         "name": session["name"],
-        "admin": session["admin"],
+        "admin": bool(user["is_admin"]) if user else bool(session.get("admin")),
+        "mod": bool(user["is_moderator"]) if user else False,
         "avatar": user["avatar_version"] if user else 0,
         "font": user["chat_font"] if user else "system",
         "bio": user["bio"] if user else "",
@@ -413,14 +936,56 @@ def channel(request: Request):
     # for signed in viewers, like the rest of the lobby.
     if not read_session(request.cookies.get(COOKIE_NAME, "")):
         return Response(status_code=401)
+    info = db.get_stream_info()
     owner = db.channel_owner()
+    base = {
+        "title": info["stream_title"],
+        "description": info["stream_description"],
+        "clip_limit_user": info["clip_limit_user"],
+        "clip_limit_mod": info["clip_limit_mod"],
+    }
     if not owner:
-        return {"username": None, "name": "Lazarus Labs", "avatar": 0}
+        return {**base, "username": None, "name": "Lazarus Labs", "avatar": 0}
     return {
+        **base,
         "username": owner["username"],
         "name": owner["display_name"],
         "avatar": owner["avatar_version"],
     }
+
+
+@app.post("/api/stream-info")
+async def set_stream_info(request: Request):
+    # The streamer's title and description for the next/current broadcast. Admin
+    # only: this is channel level, not a per viewer setting.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    title = None
+    if "title" in body:
+        title = str(body.get("title") or "").strip()[:MAX_STREAM_TITLE]
+        if not title:
+            return JSONResponse(
+                {"error": "Stream title cannot be empty."}, status_code=400
+            )
+    description = None
+    if "description" in body:
+        description = str(body.get("description") or "").strip()[:MAX_STREAM_DESC]
+
+    def clamp_limit(value):
+        try:
+            return max(0, min(1000, int(value)))
+        except (TypeError, ValueError):
+            return None
+
+    clip_limit_user = clamp_limit(body["clip_limit_user"]) if "clip_limit_user" in body else None
+    clip_limit_mod = clamp_limit(body["clip_limit_mod"]) if "clip_limit_mod" in body else None
+
+    db.set_stream_info(
+        title=title, description=description,
+        clip_limit_user=clip_limit_user, clip_limit_mod=clip_limit_mod,
+    )
+    return {"ok": True}
 
 
 @app.get("/api/verify")
@@ -523,6 +1088,146 @@ def thumbnail(request: Request):
     )
 
 
+# ---- VODs and clips -------------------------------------------------------
+# Metadata and view counting live here; the media files themselves are served
+# straight from disk by Caddy at /media/* (behind the same session check as the
+# live video), so large files never pass through this Python service.
+
+def _signed_in(request):
+    return read_session(request.cookies.get(COOKIE_NAME, "")) is not None
+
+
+def _media_summary(row, kind):
+    """Shape a VOD or clip row for a listing, including whether a poster exists."""
+    folder = VOD_DIR if kind == "vod" else CLIP_DIR
+    has_poster = bool(row.get("id")) and os.path.exists(
+        os.path.join(folder, f"{row['id']}.jpg")
+    )
+    out = {
+        "id": row["id"],
+        "filename": row.get("filename"),
+        "duration": row.get("duration") or 0,
+        "views": row.get("views") or 0,
+        "poster": has_poster,
+    }
+    if kind == "vod":
+        out.update(
+            title=row["title"], description=row.get("description") or "",
+            started_at=row["started_at"],
+        )
+    else:
+        out.update(
+            name=row["name"], creator=row.get("creator"),
+            created_at=row["created_at"],
+        )
+    return out
+
+
+@app.get("/api/vods")
+def list_vods(request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    return {"vods": [_media_summary(v, "vod") for v in db.list_vods()]}
+
+
+@app.get("/api/clips")
+def list_clips(request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    return {"clips": [_media_summary(c, "clip") for c in db.list_clips()]}
+
+
+@app.get("/api/vods/{vod_id}")
+def get_vod(vod_id: int, request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    vod = db.get_vod(vod_id)
+    if not vod or not vod["ready"]:
+        return JSONResponse({"error": "No such VOD."}, status_code=404)
+    return _media_summary(vod, "vod")
+
+
+@app.get("/api/clips/{clip_id}")
+def get_clip(clip_id: int, request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    clip = db.get_clip(clip_id)
+    if not clip:
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+    return _media_summary(clip, "clip")
+
+
+@app.post("/api/vods/{vod_id}/view")
+def view_vod(vod_id: int, request: Request):
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return Response(status_code=401)
+    if not db.get_vod(vod_id):
+        return JSONResponse({"error": "No such VOD."}, status_code=404)
+    return {"views": db.add_view("vod", vod_id, session["sub"])}
+
+
+@app.post("/api/clips/{clip_id}/view")
+def view_clip(clip_id: int, request: Request):
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return Response(status_code=401)
+    if not db.get_clip(clip_id):
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+    return {"views": db.add_view("clip", clip_id, session["sub"])}
+
+
+@app.get("/api/vods/{vod_id}/chat")
+def vod_chat(vod_id: int, request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    return {"messages": db.get_replay("vod", vod_id)}
+
+
+@app.get("/api/clips/{clip_id}/chat")
+def clip_chat(clip_id: int, request: Request):
+    if not _signed_in(request):
+        return Response(status_code=401)
+    return {"messages": db.get_replay("clip", clip_id)}
+
+
+@app.post("/api/clip")
+async def create_clip_endpoint(request: Request):
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    user = db.get_user(session["sub"])
+    if not user:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    body = await request.json()
+    clip_id, error = await make_clip(user, body.get("name"))
+    if error:
+        return JSONResponse({"error": error}, status_code=400)
+    return {"ok": True, "id": clip_id}
+
+
+@app.delete("/api/vods/{vod_id}")
+def delete_vod(vod_id: int, request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    row = db.delete_media("vod", vod_id)
+    if not row:
+        return JSONResponse({"error": "No such VOD."}, status_code=404)
+    _remove_media_files(VOD_DIR, row.get("filename"), vod_id)
+    return {"ok": True}
+
+
+@app.delete("/api/clips/{clip_id}")
+def delete_clip(clip_id: int, request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    row = db.delete_media("clip", clip_id)
+    if not row:
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+    _remove_media_files(CLIP_DIR, row.get("filename"), clip_id)
+    return {"ok": True}
+
+
 # ---- Admin ----------------------------------------------------------------
 
 def _clean_username(raw):
@@ -560,7 +1265,10 @@ async def admin_create(request: Request):
         )
     display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
     is_admin = bool(body.get("is_admin"))
+    is_moderator = bool(body.get("is_moderator"))
     db.add_user(username, display_name, password, is_admin=is_admin)
+    if is_moderator:
+        db.update_user(username, is_moderator=True)
     return {"ok": True, "username": username}
 
 
@@ -593,8 +1301,19 @@ async def admin_update(username: str, request: Request):
                 status_code=400,
             )
 
-    if display_name is not None or is_admin is not None:
-        db.update_user(username, display_name=display_name, is_admin=is_admin)
+    is_moderator = None
+    if "is_moderator" in body:
+        is_moderator = bool(body.get("is_moderator"))
+
+    if display_name is not None or is_admin is not None or is_moderator is not None:
+        db.update_user(
+            username,
+            display_name=display_name,
+            is_admin=is_admin,
+            is_moderator=is_moderator,
+        )
+        if is_moderator is not None:
+            await hub.update_role(username, mod=is_moderator)
 
     if "password" in body:
         password = body.get("password", "")
@@ -640,6 +1359,74 @@ def admin_chat(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     return {"messages": db.recent_chat()}
+
+
+# ---- Moderator dashboard --------------------------------------------------
+# A moderator can review watch and chat history and lift bans they set, but
+# cannot add or edit accounts and never sees admin accounts. Admins pass these
+# same checks (admin is a superset of mod), so the admin dashboard can reuse the
+# ban endpoints; the admin's own listing uses the fuller /api/admin/* routes.
+
+@app.get("/api/mod/users")
+def mod_users(request: Request):
+    if not mod_actor(request):
+        return JSONResponse({"error": "Moderators only."}, status_code=403)
+    return {"users": db.admin_list_users(include_admins=False)}
+
+
+@app.get("/api/mod/users/{username}/activity")
+def mod_activity(username: str, request: Request):
+    if not mod_actor(request):
+        return JSONResponse({"error": "Moderators only."}, status_code=403)
+    username = _clean_username(username)
+    target = db.get_user(username) if username else None
+    if not target:
+        return JSONResponse({"error": "No such user."}, status_code=404)
+    # Admin accounts are invisible in the moderator area.
+    if target["is_admin"]:
+        return JSONResponse({"error": "No such user."}, status_code=404)
+    return db.user_activity(username)
+
+
+@app.get("/api/mod/chat")
+def mod_chat(request: Request):
+    if not mod_actor(request):
+        return JSONResponse({"error": "Moderators only."}, status_code=403)
+    return {"messages": db.recent_chat(exclude_admins=True)}
+
+
+@app.get("/api/mod/bans")
+def mod_bans(request: Request):
+    actor = mod_actor(request)
+    if not actor:
+        return JSONResponse({"error": "Moderators only."}, status_code=403)
+    # Tell the page whether the viewer may lift each ban: an admin may lift any,
+    # a moderator only the ones they set.
+    bans = db.list_bans()
+    is_admin = bool(actor["is_admin"])
+    for ban in bans:
+        ban["can_lift"] = is_admin or ban["banned_by"] == actor["username"]
+    return {"bans": bans, "is_admin": is_admin}
+
+
+@app.post("/api/mod/unban")
+async def mod_unban(request: Request):
+    actor = mod_actor(request)
+    if not actor:
+        return JSONResponse({"error": "Moderators only."}, status_code=403)
+    body = await request.json()
+    username = _clean_username(body.get("username"))
+    existing = db.get_ban(username) if username else None
+    if not existing:
+        return JSONResponse({"error": "That user is not banned."}, status_code=404)
+    if not actor["is_admin"] and existing["banned_by"] != actor["username"]:
+        return JSONResponse(
+            {"error": "Only the moderator who set this ban, or an admin, can lift it."},
+            status_code=403,
+        )
+    db.remove_ban(username)
+    hub.remove_ban_local(username)
+    return {"ok": True}
 
 
 # ---- Avatars --------------------------------------------------------------
@@ -777,6 +1564,7 @@ def get_profile(username: str, request: Request):
         "username": user["username"],
         "name": user["display_name"],
         "admin": bool(user["is_admin"]),
+        "mod": bool(user["is_moderator"]),
         "avatar": user["avatar_version"],
         "bio": user["bio"],
     }
@@ -851,7 +1639,8 @@ async def chat_socket(websocket: WebSocket):
     who = {
         "username": session["sub"],
         "name": session["name"],
-        "admin": session["admin"],
+        "admin": bool(user["is_admin"]) if user else bool(session.get("admin")),
+        "mod": bool(user["is_moderator"]) if user else False,
         "avatar": user["avatar_version"] if user else 0,
         "font": user["chat_font"] if user else "system",
     }
@@ -871,6 +1660,22 @@ async def chat_socket(websocket: WebSocket):
                 continue
             text = str(data.get("text", "")).strip()[:MAX_MESSAGE_LENGTH]
             if not text:
+                continue
+            # A leading slash is a moderation command, handled and answered
+            # privately, never shown to other viewers.
+            if text.startswith("/"):
+                await handle_command(websocket, who, text)
+                continue
+            # A banned viewer cannot chat at all (a persistent timeout).
+            if hub.is_banned(who["username"]):
+                await system_reply(websocket, "You are banned from chat.")
+                continue
+            # A timed-out viewer's messages are dropped, with a private notice.
+            remaining = hub.is_timed_out(who["username"])
+            if remaining:
+                await system_reply(
+                    websocket, f"You are timed out for {remaining} more seconds."
+                )
                 continue
             # Flood guard: drop anything past five messages in three seconds.
             now = time.time()

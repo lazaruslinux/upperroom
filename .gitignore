@@ -1,6 +1,11 @@
 # Secrets and local config
 .env
 
+# Local-only storage / deployment overrides (e.g. pointing recordings at your
+# own disk or NAS). Keep your own paths out of the repo.
+docker-compose.override.yml
+Caddyfile.local
+
 # Python
 __pycache__/
 *.pyc

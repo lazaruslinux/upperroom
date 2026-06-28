@@ -243,10 +243,25 @@ button:hover { filter: brightness(1.1); }
 .msg .msg-head { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
 .msg .name { font-weight: 600; color: var(--accent); }
 .msg .name.admin { color: #ffcc66; }
-.msg .name.admin::after { content: " (admin)"; font-weight: 400; font-size: 0.8rem; color: var(--muted); }
 .msg .msg-time { font-size: 0.65rem; color: var(--muted); font-weight: 400; }
 .msg .body { display: block; }
-.msg.system { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+.msg .body.deleted { color: var(--muted); font-style: italic; }
+.msg.system { color: var(--muted); font-style: italic; font-size: 0.85rem; white-space: pre-wrap; }
+
+/* Role badges: a small icon right of the avatar, sized to match it. Admin and
+   moderator are distinct roles with distinct icons (crown vs shield). */
+.role-badge-icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.role-badge-icon svg { width: 100%; height: 100%; display: block; }
+.role-badge-icon.is-admin { color: #f5b840; }   /* amber crown */
+.role-badge-icon.is-mod { color: #3f7cff; }      /* blue shield  */
+.role-badge-lg { width: 34px; height: 34px; }
 
 /* round avatars in chat and the watching list */
 .avatar {
@@ -426,7 +441,7 @@ button:hover { filter: brightness(1.1); }
 }
 
 .profile-card { text-align: center; }
-.profile-avatar { display: inline-flex; margin-bottom: 0.75rem; }
+.profile-avatar { display: inline-flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
 .profile-avatar .avatar { width: 96px; height: 96px; font-size: 2.2rem; }
 .profile-name { font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem; }
 .profile-bio { font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
@@ -472,6 +487,16 @@ button:hover { filter: brightness(1.1); }
 
 .setting-links { gap: 0.5rem; }
 .setting-links .pill { text-decoration: none; display: inline-block; text-align: center; }
+
+.stream-info-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-bottom: 0.85rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.stream-info-settings .settings-heading { margin: 0; }
 
 .setting-name { flex-direction: column; align-items: stretch; gap: 0.4rem; }
 .name-edit { display: flex; gap: 0.5rem; align-items: center; }
@@ -790,6 +815,16 @@ body.home, body.admin {
   border-radius: 999px;
   padding: 0.08rem 0.4rem;
 }
+/* The moderator badge is flat blue, distinct from the admin gradient badge. */
+.role-badge.mod { background: #3f7cff; }
+
+.ban-row { justify-content: space-between; align-items: center; gap: 0.75rem; }
+.ban-row .chip-btn { flex: none; }
+.ban-row b { font-weight: 700; }
+.ban-row a { color: var(--accent); text-decoration: none; }
+.ban-row a:hover { text-decoration: underline; }
+.chip-btn.danger-chip { color: var(--error); flex: none; }
+.chip-btn.danger-chip:hover { border-color: var(--error); color: var(--error); }
 .user-handle { font-size: 0.85rem; }
 
 .user-stats {
@@ -880,4 +915,188 @@ body.home, body.admin {
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
   .user-grid { grid-template-columns: 1fr; }
+}
+
+/* =========================================================================
+   Library (VODs + clips) on the home page
+   ========================================================================= */
+
+.library { margin-top: 2rem; }
+.lib-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.lib-tab {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-weight: 700;
+}
+.lib-tab.selected { color: #fff; background: var(--grad); border-color: transparent; }
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.media-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--text);
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.media-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79, 124, 255, 0.5);
+  box-shadow: var(--elev);
+}
+.media-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.media-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-thumb-fallback {
+  background:
+    radial-gradient(400px 200px at 30% 20%, rgba(79, 124, 255, 0.25), transparent 60%),
+    radial-gradient(360px 220px at 80% 90%, rgba(168, 85, 247, 0.22), transparent 60%),
+    #0a0b0e;
+}
+.media-thumb-fallback .thumb-mark { font-size: 1.05rem; }
+.media-dur {
+  position: absolute;
+  bottom: 0.4rem;
+  right: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+}
+.media-meta { padding: 0.6rem 0.75rem 0.75rem; }
+.media-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.25;
+  margin-bottom: 0.2rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.media-sub { font-size: 0.78rem; }
+
+/* =========================================================================
+   Media page (VOD / clip playback with chat replay)
+   ========================================================================= */
+
+body.media {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1100px 520px at 12% -8%, rgba(79, 124, 255, 0.16), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(168, 85, 247, 0.14), transparent 55%),
+    var(--bg);
+}
+
+.media-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+.media-stage { flex: 1; min-width: 0; }
+.media-stage video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 12px;
+  display: block;
+}
+.media-info { padding: 1rem 0.25rem 0; }
+.media-page-title { font-size: 1.25rem; margin: 0 0 0.35rem; }
+.media-desc { color: var(--text); margin: 0.6rem 0 0; line-height: 1.5; white-space: pre-wrap; }
+
+.media-replay {
+  width: 340px;
+  flex: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  align-self: stretch;
+  max-height: 78vh;
+}
+.replay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+.media-replay .messages { flex: 1 1 auto; min-height: 240px; }
+.replay-empty { padding: 1rem; margin: 0; }
+
+@media (max-width: 860px) {
+  .media-main { flex-direction: column; }
+  .media-replay { width: 100%; max-height: 60vh; }
+}
+
+/* clip button in the chat send row */
+.chat-form .icon-btn {
+  flex: none;
+  width: auto;
+  padding: 0.6rem 0.7rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-form .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* clip naming modal + clip-limit settings row */
+.clip-h3 { margin: 0 0 0.85rem; }
+#clip-name {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  margin-bottom: 0.6rem;
+}
+#clip-msg a { color: var(--accent); margin-left: 0.25rem; }
+.clip-limit-edit { display: flex; align-items: flex-end; gap: 0.6rem; flex-wrap: wrap; }
+.clip-limit-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.clip-limit-edit input {
+  width: 4.5rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
 }

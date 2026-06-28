@@ -13,6 +13,10 @@ whole thing.
 - Serves one gated watch page at your own domain.
 - Logs viewers in with named accounts that only you can create.
 - Runs live chat and shows a live list of who is watching, with a count.
+- Records every broadcast as a VOD and lets viewers clip the last 30 seconds,
+  both with synced chat replay and per-item view counts.
+- Has an admin role and a separate moderator role, with chat commands
+  (`/mod`, `/timeout`, `/ban`, `/del`) and dashboards for each.
 
 It does not transcode. Your computer does the encoding inside OBS, so the
 server only repackages the video and stays light.

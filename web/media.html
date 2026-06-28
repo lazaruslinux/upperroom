@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lazarus Labs</title>
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/assets/style.css?v=11">
+</head>
+<body class="media">
+  <header class="home-bar">
+    <div class="brand">Lazarus<span>Labs</span></div>
+    <nav class="home-actions">
+      <a href="/home" class="ghost-btn">Home</a>
+    </nav>
+  </header>
+
+  <main class="media-main">
+    <section class="media-stage">
+      <video id="video" controls playsinline></video>
+      <div class="media-info">
+        <h1 id="media-title" class="media-page-title">Loading…</h1>
+        <div id="media-sub" class="media-sub muted"></div>
+        <p id="media-desc" class="media-desc"></p>
+      </div>
+    </section>
+
+    <aside class="media-replay">
+      <header class="replay-head">
+        <span>Chat replay</span>
+        <button id="replay-toggle" type="button" class="pill">On</button>
+      </header>
+      <div id="replay-messages" class="messages"></div>
+      <p id="replay-empty" class="muted replay-empty" hidden>No chat was recorded for this.</p>
+    </aside>
+  </main>
+
+  <script src="/assets/media.js?v=1"></script>
+</body>
+</html>

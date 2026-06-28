@@ -52,6 +52,13 @@ def main():
     p_del = sub.add_parser("deluser", help="delete an account")
     p_del.add_argument("username")
 
+    # Granting moderators is normally done in chat with the /mod command. These
+    # are a command line fallback (e.g. to set the very first moderator).
+    p_mod = sub.add_parser("mod", help="make an account a moderator")
+    p_mod.add_argument("username")
+    p_unmod = sub.add_parser("unmod", help="remove a moderator")
+    p_unmod.add_argument("username")
+
     sub.add_parser("listusers", help="list all accounts")
 
     args = parser.parse_args()
@@ -83,14 +90,27 @@ def main():
         else:
             print(f"No such user {username}.")
 
+    elif args.command in ("mod", "unmod"):
+        username = args.username.strip().lower()
+        if not db.get_user(username):
+            print(f"No such user {username}.")
+            sys.exit(1)
+        make = args.command == "mod"
+        db.update_user(username, is_moderator=make)
+        print(f"{username} is {'now' if make else 'no longer'} a moderator.")
+
     elif args.command == "listusers":
         users = db.list_users()
         if not users:
             print("No accounts yet. Create one with adduser.")
             return
         for u in users:
-            tag = " [admin]" if u["is_admin"] else ""
-            print(f"{u['username']}  ({u['display_name']}){tag}")
+            tags = ""
+            if u["is_admin"]:
+                tags += " [admin]"
+            if u["is_moderator"]:
+                tags += " [mod]"
+            print(f"{u['username']}  ({u['display_name']}){tags}")
 
 
 if __name__ == "__main__":

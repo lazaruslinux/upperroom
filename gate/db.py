@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
+    is_moderator INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     avatar_version INTEGER NOT NULL DEFAULT 0,
     chat_font TEXT NOT NULL DEFAULT 'system',
@@ -46,9 +47,87 @@ CREATE TABLE IF NOT EXISTS chat_log (
     username TEXT NOT NULL,
     display_name TEXT NOT NULL,
     text TEXT NOT NULL,
-    ts INTEGER NOT NULL
+    ts INTEGER NOT NULL,
+    deleted_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_log (ts);
+
+-- Channel level settings the streamer edits: the title and description shown on
+-- the home card and stamped onto each VOD when a broadcast begins. A single row.
+CREATE TABLE IF NOT EXISTS channel_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    stream_title TEXT NOT NULL DEFAULT 'Live Stream',
+    stream_description TEXT NOT NULL DEFAULT '',
+    clip_limit_user INTEGER NOT NULL DEFAULT 5,
+    clip_limit_mod INTEGER NOT NULL DEFAULT 10
+);
+
+-- One row per broadcast we record. The file is written to local scratch while
+-- live, then archived to the media store and marked ready when the stream ends.
+CREATE TABLE IF NOT EXISTS vods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    filename TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    duration INTEGER,
+    views INTEGER NOT NULL DEFAULT 0,
+    ready INTEGER NOT NULL DEFAULT 0
+);
+
+-- A viewer made clip: a short cut of the last 30 seconds of the live stream.
+CREATE TABLE IF NOT EXISTS clips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    creator TEXT NOT NULL,
+    vod_id INTEGER,
+    start_ts INTEGER NOT NULL,
+    end_ts INTEGER NOT NULL,
+    duration INTEGER NOT NULL,
+    views INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+-- Chat snapshotted at the moment a VOD or clip is finalized, with each line's
+-- offset in seconds from the start of the media, so playback can replay chat in
+-- sync. Kept apart from chat_log, which is purged on the retention schedule.
+CREATE TABLE IF NOT EXISTS replay_chat (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    avatar_version INTEGER NOT NULL DEFAULT 0,
+    font TEXT NOT NULL DEFAULT 'system',
+    admin INTEGER NOT NULL DEFAULT 0,
+    moderator INTEGER NOT NULL DEFAULT 0,
+    text TEXT NOT NULL,
+    offset_s INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_replay ON replay_chat (kind, ref_id, offset_s);
+
+-- One row per (item, viewer) so a refresh or a seek cannot inflate a view
+-- count: the parent's views is bumped only when a new row is inserted here.
+CREATE TABLE IF NOT EXISTS media_views (
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    PRIMARY KEY (kind, ref_id, username)
+);
+
+-- A persistent chat ban (unlike a timeout, it survives restarts). banned_by
+-- records who issued it, so a moderator can later lift only their own bans,
+-- while an admin can lift any.
+CREATE TABLE IF NOT EXISTS bans (
+    username TEXT PRIMARY KEY,
+    banned_by TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+);
 """
 
 
@@ -71,6 +150,19 @@ def init_db():
         _ensure_column(conn, "users", "avatar_version", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "chat_font", "TEXT NOT NULL DEFAULT 'system'")
         _ensure_column(conn, "users", "bio", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "users", "is_moderator", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
+        _ensure_column(
+            conn, "channel_settings", "clip_limit_user", "INTEGER NOT NULL DEFAULT 5"
+        )
+        _ensure_column(
+            conn, "channel_settings", "clip_limit_mod", "INTEGER NOT NULL DEFAULT 10"
+        )
+        # Ensure the single channel_settings row exists so getters always find it.
+        conn.execute(
+            "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
+            "VALUES (1, 'Live Stream')"
+        )
         # If the gate restarted while people were watching, their sessions never
         # got a left_at. Close them at their start so they do not count as one
         # endless session, and so the next start is clean.
@@ -120,7 +212,7 @@ def get_user(username):
 def list_users():
     with connect() as conn:
         rows = conn.execute(
-            "SELECT username, display_name, is_admin, created_at "
+            "SELECT username, display_name, is_admin, is_moderator, created_at "
             "FROM users ORDER BY username"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -146,8 +238,10 @@ def set_password(username, password):
         return cur.rowcount > 0
 
 
-def update_user(username, display_name=None, is_admin=None):
-    """Change a display name and/or the admin flag. Returns True if a row matched."""
+def update_user(username, display_name=None, is_admin=None, is_moderator=None):
+    """Change a display name, admin flag, and/or moderator flag. The two role
+    flags are independent; setting one never touches the other. Returns True if a
+    row matched."""
     sets = []
     values = []
     if display_name is not None:
@@ -156,6 +250,9 @@ def update_user(username, display_name=None, is_admin=None):
     if is_admin is not None:
         sets.append("is_admin = ?")
         values.append(1 if is_admin else 0)
+    if is_moderator is not None:
+        sets.append("is_moderator = ?")
+        values.append(1 if is_moderator else 0)
     if not sets:
         return False
     values.append(username)
@@ -182,6 +279,59 @@ def channel_owner():
             "WHERE is_admin = 1 ORDER BY created_at ASC, rowid ASC LIMIT 1"
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_stream_info():
+    """The channel settings the streamer controls: the title and description
+    shown on the home card (and stamped onto each VOD), plus the per role daily
+    clip limits."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT stream_title, stream_description, clip_limit_user, clip_limit_mod "
+            "FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {
+                "stream_title": "Live Stream",
+                "stream_description": "",
+                "clip_limit_user": 5,
+                "clip_limit_mod": 10,
+            }
+        return dict(row)
+
+
+def set_stream_info(title=None, description=None, clip_limit_user=None,
+                    clip_limit_mod=None):
+    sets = []
+    values = []
+    if title is not None:
+        sets.append("stream_title = ?")
+        values.append(title)
+    if description is not None:
+        sets.append("stream_description = ?")
+        values.append(description)
+    if clip_limit_user is not None:
+        sets.append("clip_limit_user = ?")
+        values.append(int(clip_limit_user))
+    if clip_limit_mod is not None:
+        sets.append("clip_limit_mod = ?")
+        values.append(int(clip_limit_mod))
+    if not sets:
+        return
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE channel_settings SET {', '.join(sets)} WHERE id = 1", values
+        )
+
+
+def count_user_clips_since(username, since):
+    """How many clips a user has made since a given epoch, for the daily cap."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM clips WHERE creator = ? AND created_at >= ?",
+            (username, since),
+        ).fetchone()
+        return row["n"]
 
 
 def bump_avatar_version(username):
@@ -213,11 +363,64 @@ def set_bio(username, bio):
 def delete_user(username):
     with connect() as conn:
         # Remove the account and everything tied to it, so a deleted user leaves
-        # no orphaned watch history or chat behind.
+        # no orphaned watch history, chat, or ban behind.
         conn.execute("DELETE FROM watch_sessions WHERE username = ?", (username,))
         conn.execute("DELETE FROM chat_log WHERE username = ?", (username,))
+        conn.execute("DELETE FROM bans WHERE username = ?", (username,))
         cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
         return cur.rowcount > 0
+
+
+# ---- Bans -----------------------------------------------------------------
+
+def add_ban(username, by, reason, when):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO bans (username, banned_by, reason, created_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "banned_by = excluded.banned_by, reason = excluded.reason, "
+            "created_at = excluded.created_at",
+            (username, by, reason, when),
+        )
+
+
+def remove_ban(username):
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM bans WHERE username = ?", (username,))
+        return cur.rowcount > 0
+
+
+def get_ban(username):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM bans WHERE username = ?", (username,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def banned_usernames():
+    with connect() as conn:
+        rows = conn.execute("SELECT username FROM bans").fetchall()
+        return [r["username"] for r in rows]
+
+
+def list_bans():
+    """Every active ban with display names, newest first. Used by the mod and
+    admin dashboards. No admin is ever banned, so none appear here."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT b.username, b.banned_by, b.reason, b.created_at,
+                   u.display_name AS display_name,
+                   bu.display_name AS banned_by_name
+            FROM bans b
+            LEFT JOIN users u ON u.username = b.username
+            LEFT JOIN users bu ON bu.username = b.banned_by
+            ORDER BY b.created_at DESC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---- Watch activity -------------------------------------------------------
@@ -242,11 +445,23 @@ def end_watch_session(session_id, when):
 # ---- Chat log -------------------------------------------------------------
 
 def log_chat(username, display_name, text, ts):
+    """Record a chat line and return its row id, which doubles as the message id
+    the client uses so a moderator can later delete a specific message."""
     with connect() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO chat_log (username, display_name, text, ts) "
             "VALUES (?, ?, ?, ?)",
             (username, display_name, text, ts),
+        )
+        return cur.lastrowid
+
+
+def mark_chat_deleted(msg_id, by):
+    """Flag a logged message as removed by a moderator. The row stays in the log
+    so the admin can still see it, labeled as deleted."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE chat_log SET deleted_by = ? WHERE id = ?", (by, msg_id)
         )
 
 
@@ -257,27 +472,229 @@ def purge_old_chat(cutoff):
         return cur.rowcount
 
 
-def recent_chat(limit=200):
+def recent_chat(limit=200, exclude_admins=False):
+    """Recent chat for the dashboards. The mod dashboard passes
+    exclude_admins=True so messages from admin accounts are hidden there."""
+    where = ""
+    if exclude_admins:
+        where = (
+            "WHERE username NOT IN (SELECT username FROM users WHERE is_admin = 1) "
+        )
     with connect() as conn:
         rows = conn.execute(
-            "SELECT username, display_name, text, ts FROM chat_log "
-            "ORDER BY ts DESC LIMIT ?",
+            "SELECT username, display_name, text, ts, deleted_by FROM chat_log "
+            f"{where}ORDER BY ts DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-# ---- Admin views ----------------------------------------------------------
+# ---- VODs, clips, chat replay, and views ----------------------------------
 
-def admin_list_users():
-    """Every account with rolled-up activity stats, for the admin dashboard."""
+def _media_table(kind):
+    # Guard the kind so it can never be used to build an unexpected table name.
+    if kind not in ("vod", "clip"):
+        raise ValueError("kind must be 'vod' or 'clip'")
+    return "vods" if kind == "vod" else "clips"
+
+
+def create_vod(title, description, started_at):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO vods (title, description, started_at, ready) "
+            "VALUES (?, ?, ?, 0)",
+            (title, description, started_at),
+        )
+        return cur.lastrowid
+
+
+def finalize_vod(vod_id, ended_at, duration, filename):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE vods SET ended_at = ?, duration = ?, filename = ?, ready = 1 "
+            "WHERE id = ?",
+            (ended_at, duration, filename, vod_id),
+        )
+
+
+def list_vods():
+    """Finished VODs for the landing page, most recent first."""
     with connect() as conn:
         rows = conn.execute(
+            "SELECT id, title, description, filename, started_at, duration, views "
+            "FROM vods WHERE ready = 1 ORDER BY started_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_vod(vod_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM vods WHERE id = ?", (vod_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_clip(name, filename, creator, vod_id, start_ts, end_ts, duration, created_at):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO clips "
+            "(name, filename, creator, vod_id, start_ts, end_ts, duration, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, filename, creator, vod_id, start_ts, end_ts, duration, created_at),
+        )
+        return cur.lastrowid
+
+
+def set_clip_filename(clip_id, filename):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE clips SET filename = ? WHERE id = ?", (filename, clip_id)
+        )
+
+
+def clear_unfinished_vods():
+    """Remove VOD rows whose recording never finished (ready = 0), e.g. if the
+    gate restarted mid broadcast. Called at startup so no half rows linger."""
+    with connect() as conn:
+        rows = conn.execute("SELECT id FROM vods WHERE ready = 0").fetchall()
+        for row in rows:
+            conn.execute(
+                "DELETE FROM replay_chat WHERE kind = 'vod' AND ref_id = ?", (row["id"],)
+            )
+            conn.execute(
+                "DELETE FROM media_views WHERE kind = 'vod' AND ref_id = ?", (row["id"],)
+            )
+        conn.execute("DELETE FROM vods WHERE ready = 0")
+        return [r["id"] for r in rows]
+
+
+def list_clips():
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, filename, creator, start_ts, duration, views, created_at "
+            "FROM clips ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_clip(clip_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_media(kind, ref_id):
+    """Delete a VOD or clip row and everything tied to it, returning the deleted
+    row (so the caller can remove the files on disk). None if it did not exist."""
+    table = _media_table(kind)
+    with connect() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {table} WHERE id = ?", (ref_id,)
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id)
+        )
+        conn.execute(
+            "DELETE FROM media_views WHERE kind = ? AND ref_id = ?", (kind, ref_id)
+        )
+        conn.execute(f"DELETE FROM {table} WHERE id = ?", (ref_id,))
+        return dict(row)
+
+
+def add_view(kind, ref_id, username):
+    """Record a view and return the item's view count. The (item, viewer) row is
+    unique, so a refresh or a seek never inflates the count."""
+    table = _media_table(kind)
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO media_views (kind, ref_id, username, ts) "
+            "VALUES (?, ?, ?, ?)",
+            (kind, ref_id, username, int(time.time())),
+        )
+        if cur.rowcount:
+            conn.execute(
+                f"UPDATE {table} SET views = views + 1 WHERE id = ?", (ref_id,)
+            )
+        row = conn.execute(
+            f"SELECT views FROM {table} WHERE id = ?", (ref_id,)
+        ).fetchone()
+        return row["views"] if row else 0
+
+
+def snapshot_chat(kind, ref_id, start_ts, end_ts):
+    """Copy the chat said during a media window into replay_chat, each line tagged
+    with its offset in seconds from the start, so playback can replay it in sync.
+    Avatars, fonts, and role flags are taken from the author's account as it
+    stands now (a good enough likeness for replay)."""
+    with connect() as conn:
+        conn.execute(
             """
+            INSERT INTO replay_chat
+                (kind, ref_id, username, display_name, avatar_version, font,
+                 admin, moderator, text, offset_s, deleted)
+            SELECT ?, ?, c.username, c.display_name,
+                   COALESCE(u.avatar_version, 0), COALESCE(u.chat_font, 'system'),
+                   COALESCE(u.is_admin, 0), COALESCE(u.is_moderator, 0),
+                   c.text, MAX(0, c.ts - ?),
+                   CASE WHEN c.deleted_by IS NOT NULL THEN 1 ELSE 0 END
+            FROM chat_log c LEFT JOIN users u ON u.username = c.username
+            WHERE c.ts >= ? AND c.ts <= ?
+            """,
+            (kind, ref_id, start_ts, start_ts, end_ts),
+        )
+
+
+def get_replay(kind, ref_id):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT username, display_name, avatar_version, font, admin, moderator, "
+            "text, offset_s, deleted FROM replay_chat "
+            "WHERE kind = ? AND ref_id = ? ORDER BY offset_s, id",
+            (kind, ref_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def prune_vods(keep_count, keep_days, now):
+    """Drop VODs past the retention limits, newest kept. Returns the deleted rows
+    so the caller can remove the files (and posters) from disk."""
+    with connect() as conn:
+        ready = conn.execute(
+            "SELECT id, filename, started_at FROM vods WHERE ready = 1 "
+            "ORDER BY started_at DESC"
+        ).fetchall()
+        doomed = []
+        for idx, row in enumerate(ready):
+            too_many = keep_count > 0 and idx >= keep_count
+            too_old = keep_days > 0 and row["started_at"] < now - keep_days * 86400
+            if too_many or too_old:
+                doomed.append(dict(row))
+        for d in doomed:
+            conn.execute(
+                "DELETE FROM replay_chat WHERE kind = 'vod' AND ref_id = ?", (d["id"],)
+            )
+            conn.execute(
+                "DELETE FROM media_views WHERE kind = 'vod' AND ref_id = ?", (d["id"],)
+            )
+            conn.execute("DELETE FROM vods WHERE id = ?", (d["id"],))
+        return doomed
+
+
+# ---- Admin views ----------------------------------------------------------
+
+def admin_list_users(include_admins=True):
+    """Every account with rolled-up activity stats, for the dashboards. The mod
+    dashboard passes include_admins=False so admin accounts never appear there."""
+    where = "" if include_admins else "WHERE u.is_admin = 0"
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
             SELECT
                 u.username,
                 u.display_name,
                 u.is_admin,
+                u.is_moderator,
                 u.created_at,
                 u.avatar_version,
                 (SELECT MAX(COALESCE(left_at, joined_at))
@@ -289,6 +706,7 @@ def admin_list_users():
                 (SELECT COUNT(*)
                    FROM chat_log c WHERE c.username = u.username) AS messages
             FROM users u
+            {where}
             ORDER BY u.is_admin DESC, u.username
             """
         ).fetchall()
@@ -304,7 +722,7 @@ def user_activity(username, watch_limit=50, chat_limit=100):
             (username, watch_limit),
         ).fetchall()
         chats = conn.execute(
-            "SELECT text, ts FROM chat_log WHERE username = ? "
+            "SELECT text, ts, deleted_by FROM chat_log WHERE username = ? "
             "ORDER BY ts DESC LIMIT ?",
             (username, chat_limit),
         ).fetchall()

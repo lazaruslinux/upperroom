@@ -71,6 +71,122 @@ async function loadUsers() {
   users = (await reply.json()).users || [];
   renderStats();
   renderUsers();
+  loadBans();
+  loadContent();
+}
+
+// ---- content (VODs + clips: review and delete) ----
+
+let contentTab = "vods";
+
+function durationClock(secs) {
+  secs = Math.max(0, Math.round(secs || 0));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+async function loadContent() {
+  const kind = contentTab === "vods" ? "vod" : "clip";
+  let items = [];
+  try { items = (await (await fetch(`/api/${contentTab}`)).json())[contentTab] || []; }
+  catch { items = []; }
+  const list = document.getElementById("content-list");
+  document.getElementById("content-empty").hidden = items.length > 0;
+  list.innerHTML = "";
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "activity-row ban-row";
+    const left = document.createElement("span");
+    const title = kind === "vod" ? item.title : item.name;
+    const when = new Date((kind === "vod" ? item.started_at : item.created_at) * 1000)
+      .toLocaleDateString();
+    left.innerHTML = `<a></a> <span class="muted"></span>`;
+    const link = left.querySelector("a");
+    link.href = `/media?type=${kind}&id=${item.id}`;
+    link.textContent = title;
+    left.querySelector(".muted").textContent =
+      `${durationClock(item.duration)} · ${item.views} views · ${when}` +
+      (kind === "clip" && item.creator ? ` · @${item.creator}` : "");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip-btn danger-chip";
+    btn.textContent = "Delete";
+    btn.addEventListener("click", () => deleteContent(kind, item.id, title, btn));
+    row.append(left, btn);
+    list.appendChild(row);
+  });
+}
+
+async function deleteContent(kind, id, title, btn) {
+  if (!confirm(`Delete "${title}"? This removes the file and its chat replay.`)) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/${kind}s/${id}`, { method: "DELETE" });
+    if (reply.ok) { loadContent(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not delete.");
+  } catch { alert("Could not delete."); }
+  btn.disabled = false;
+}
+
+document.querySelectorAll(".lib-tab[data-content]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    contentTab = tab.dataset.content;
+    document.querySelectorAll(".lib-tab[data-content]").forEach((t) => t.classList.toggle("selected", t === tab));
+    loadContent();
+  });
+});
+
+// ---- bans (shared with the mod dashboard via /api/mod/*) ----
+
+let bans = [];
+
+async function loadBans() {
+  try { bans = (await (await fetch("/api/mod/bans")).json()).bans || []; }
+  catch { bans = []; }
+  renderBans();
+}
+
+function renderBans() {
+  const list = document.getElementById("ban-list");
+  document.getElementById("ban-empty").hidden = bans.length > 0;
+  list.innerHTML = "";
+  bans.forEach((b) => {
+    const row = document.createElement("div");
+    row.className = "activity-row ban-row";
+    const left = document.createElement("span");
+    const name = b.display_name || b.username;
+    const by = b.banned_by_name || b.banned_by;
+    left.innerHTML = `<b></b> <span class="muted"></span>`;
+    left.querySelector("b").textContent = `${name} @${b.username}`;
+    left.querySelector(".muted").textContent =
+      `banned by ${by}${b.reason ? ` · ${b.reason}` : ""}`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip-btn";
+    btn.textContent = "Un-ban";
+    btn.addEventListener("click", () => unban(b.username, btn));
+    row.append(left, btn);
+    list.appendChild(row);
+  });
+}
+
+async function unban(username, btn) {
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/mod/unban", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    if (reply.ok) { loadBans(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not lift the ban.");
+  } catch { alert("Could not lift the ban."); }
+  btn.disabled = false;
 }
 
 function renderStats() {
@@ -178,6 +294,12 @@ function renderUsers() {
       badge.textContent = "admin";
       nameRow.appendChild(badge);
     }
+    if (u.is_moderator) {
+      const badge = document.createElement("span");
+      badge.className = "role-badge mod";
+      badge.textContent = "mod";
+      nameRow.appendChild(badge);
+    }
     const handle = document.createElement("div");
     handle.className = "user-handle muted";
     handle.textContent = "@" + u.username;
@@ -237,6 +359,7 @@ createForm.addEventListener("submit", async (e) => {
     display_name: document.getElementById("c-name").value,
     password: document.getElementById("c-password").value,
     is_admin: document.getElementById("c-admin").checked,
+    is_moderator: document.getElementById("c-mod").checked,
   };
   const reply = await fetch("/api/admin/users", {
     method: "POST",
@@ -265,6 +388,7 @@ function openEdit(user) {
   document.getElementById("e-name").value = user.display_name;
   document.getElementById("e-password").value = "";
   document.getElementById("e-admin").checked = !!user.is_admin;
+  document.getElementById("e-mod").checked = !!user.is_moderator;
   eError.hidden = true;
   openModal(editModal);
 }
@@ -275,6 +399,7 @@ editForm.addEventListener("submit", async (e) => {
   const body = {
     display_name: document.getElementById("e-name").value,
     is_admin: document.getElementById("e-admin").checked,
+    is_moderator: document.getElementById("e-mod").checked,
   };
   const pw = document.getElementById("e-password").value;
   if (pw) body.password = pw;

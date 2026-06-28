@@ -11,7 +11,7 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY *.py .
+COPY *.py ./
 
 # Bake the country database into the image (used for the US-only lock).
 RUN python fetch_geodb.py || true

@@ -43,6 +43,18 @@
 			reverse_proxy mediamtx:8888
 		}
 
+		# Saved recordings and clips. The files are served straight from the
+		# shared media volume (with range requests, so seeking works), behind the
+		# same session check as the live video, so large files never pass through
+		# the gate. /media/vods/<f> and /media/clips/<f> map onto the media dir.
+		handle_path /media/* {
+			forward_auth gate:8000 {
+				uri /api/verify
+			}
+			root * /srv/media
+			file_server
+		}
+
 		# Everything else is the static site: the login page, the watch page,
 		# and the CSS and JavaScript.
 		handle {

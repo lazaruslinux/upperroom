@@ -38,8 +38,20 @@ services:
       - SELFSTREAM_THUMB_INTERVAL=${SELFSTREAM_THUMB_INTERVAL:-15}
       # Where the gate pulls a frame for the home card preview thumbnail.
       - SELFSTREAM_RTMP_SOURCE=rtmp://mediamtx:1935/live
+      # Recordings are written to local scratch while live, then archived to the
+      # media store. The retention caps keep the media store from filling up.
+      - SELFSTREAM_RECORD_TMP=/rec
+      - SELFSTREAM_MEDIA_DIR=/media
+      - SELFSTREAM_VOD_KEEP=${SELFSTREAM_VOD_KEEP:-20}
+      - SELFSTREAM_VOD_KEEP_DAYS=${SELFSTREAM_VOD_KEEP_DAYS:-0}
     volumes:
       - gate_data:/data
+      - rec_scratch:/rec
+      # The media store (recordings and clips). By default a local docker volume,
+      # so a fresh checkout just works. To keep recordings on a big disk or a NAS
+      # instead, override the source of this mount in an uncommitted
+      # docker-compose.override.yml (see docs/04-run.md).
+      - media_data:/media
     networks:
       - selfstream
 
@@ -55,6 +67,9 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/web:ro
+      # Read-only view of the same media store the gate writes to, so Caddy can
+      # serve the recording and clip files directly.
+      - media_data:/srv/media:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
@@ -68,5 +83,7 @@ networks:
 
 volumes:
   gate_data:
+  rec_scratch:
+  media_data:
   caddy_data:
   caddy_config:
