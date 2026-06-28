@@ -10,6 +10,14 @@
 {$SELFSTREAM_DOMAIN} {
 	encode zstd gzip
 
+	# Caching policy. Versioned assets (their URLs carry ?v=N) can be cached hard
+	# and forever. Everything else, above all the HTML documents, must always be
+	# revalidated so a new deploy is picked up without anyone clearing their cache.
+	@assets path /assets/*
+	@dynamic not path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	header @dynamic Cache-Control "no-cache"
+
 	route {
 		# The chat and presence WebSocket, handled before the geo gate below. A
 		# forward_auth cannot proxy a WebSocket upgrade (it 403s it), and the

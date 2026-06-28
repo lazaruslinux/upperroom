@@ -26,7 +26,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at INTEGER NOT NULL,
     avatar_version INTEGER NOT NULL DEFAULT 0,
     chat_font TEXT NOT NULL DEFAULT 'system',
-    bio TEXT NOT NULL DEFAULT ''
+    bio TEXT NOT NULL DEFAULT '',
+    -- Optional address for the "channel is live" email. notify_live is the
+    -- viewer's own opt-out; it defaults on since the admin only makes accounts
+    -- for known people, and an email is sent only when both are set.
+    email TEXT NOT NULL DEFAULT '',
+    notify_live INTEGER NOT NULL DEFAULT 1
 );
 
 -- One row per time someone opened the watch page. left_at is filled in when
@@ -58,8 +63,16 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     stream_title TEXT NOT NULL DEFAULT 'Live Stream',
     stream_description TEXT NOT NULL DEFAULT '',
-    clip_limit_user INTEGER NOT NULL DEFAULT 5,
-    clip_limit_mod INTEGER NOT NULL DEFAULT 10
+    -- Per-role minimum minutes between clips (0 disables the cooldown for that
+    -- role). Replaces the old per-day clip caps.
+    clip_cooldown_user INTEGER NOT NULL DEFAULT 15,
+    clip_cooldown_mod INTEGER NOT NULL DEFAULT 5,
+    clip_cooldown_admin INTEGER NOT NULL DEFAULT 1,
+    -- Go-live notifications. discord_webhook is an optional Discord incoming
+    -- webhook URL; last_notified_at guards against re-announcing on a brief
+    -- stream blip or a gate restart mid-broadcast.
+    discord_webhook TEXT NOT NULL DEFAULT '',
+    last_notified_at INTEGER NOT NULL DEFAULT 0
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -135,6 +148,11 @@ CREATE TABLE IF NOT EXISTS bans (
 def connect():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # Wait up to five seconds for a lock rather than failing at once, so a burst
+    # of concurrent chat writes and dashboard reads does not raise "database is
+    # locked". synchronous=NORMAL is the durable, faster pairing for WAL.
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
     try:
         yield conn
         conn.commit()
@@ -144,6 +162,10 @@ def connect():
 
 def init_db():
     with connect() as conn:
+        # WAL lets readers and a writer work at the same time instead of taking
+        # turns on one global lock. It is a persistent property of the database
+        # file, so setting it once here is enough.
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
         # Older databases predate these columns. Add them in place so existing
         # accounts keep working after an update.
@@ -151,12 +173,23 @@ def init_db():
         _ensure_column(conn, "users", "chat_font", "TEXT NOT NULL DEFAULT 'system'")
         _ensure_column(conn, "users", "bio", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "is_moderator", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "users", "notify_live", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
         _ensure_column(
-            conn, "channel_settings", "clip_limit_user", "INTEGER NOT NULL DEFAULT 5"
+            conn, "channel_settings", "clip_cooldown_user", "INTEGER NOT NULL DEFAULT 15"
         )
         _ensure_column(
-            conn, "channel_settings", "clip_limit_mod", "INTEGER NOT NULL DEFAULT 10"
+            conn, "channel_settings", "clip_cooldown_mod", "INTEGER NOT NULL DEFAULT 5"
+        )
+        _ensure_column(
+            conn, "channel_settings", "clip_cooldown_admin", "INTEGER NOT NULL DEFAULT 1"
+        )
+        _ensure_column(
+            conn, "channel_settings", "discord_webhook", "TEXT NOT NULL DEFAULT ''"
+        )
+        _ensure_column(
+            conn, "channel_settings", "last_notified_at", "INTEGER NOT NULL DEFAULT 0"
         )
         # Ensure the single channel_settings row exists so getters always find it.
         conn.execute(
@@ -218,14 +251,14 @@ def list_users():
         return [dict(r) for r in rows]
 
 
-def add_user(username, display_name, password, is_admin=False):
+def add_user(username, display_name, password, is_admin=False, email=""):
     with connect() as conn:
         conn.execute(
             "INSERT INTO users "
-            "(username, display_name, password_hash, is_admin, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(username, display_name, password_hash, is_admin, created_at, email) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (username, display_name, hash_password(password),
-             1 if is_admin else 0, int(time.time())),
+             1 if is_admin else 0, int(time.time()), email or ""),
         )
 
 
@@ -283,25 +316,27 @@ def channel_owner():
 
 def get_stream_info():
     """The channel settings the streamer controls: the title and description
-    shown on the home card (and stamped onto each VOD), plus the per role daily
-    clip limits."""
+    shown on the home card (and stamped onto each VOD), plus the per role clip
+    cooldowns in minutes."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT stream_title, stream_description, clip_limit_user, clip_limit_mod "
+            "SELECT stream_title, stream_description, clip_cooldown_user, "
+            "clip_cooldown_mod, clip_cooldown_admin "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
             return {
                 "stream_title": "Live Stream",
                 "stream_description": "",
-                "clip_limit_user": 5,
-                "clip_limit_mod": 10,
+                "clip_cooldown_user": 15,
+                "clip_cooldown_mod": 5,
+                "clip_cooldown_admin": 1,
             }
         return dict(row)
 
 
-def set_stream_info(title=None, description=None, clip_limit_user=None,
-                    clip_limit_mod=None):
+def set_stream_info(title=None, description=None, clip_cooldown_user=None,
+                    clip_cooldown_mod=None, clip_cooldown_admin=None):
     sets = []
     values = []
     if title is not None:
@@ -310,12 +345,15 @@ def set_stream_info(title=None, description=None, clip_limit_user=None,
     if description is not None:
         sets.append("stream_description = ?")
         values.append(description)
-    if clip_limit_user is not None:
-        sets.append("clip_limit_user = ?")
-        values.append(int(clip_limit_user))
-    if clip_limit_mod is not None:
-        sets.append("clip_limit_mod = ?")
-        values.append(int(clip_limit_mod))
+    if clip_cooldown_user is not None:
+        sets.append("clip_cooldown_user = ?")
+        values.append(int(clip_cooldown_user))
+    if clip_cooldown_mod is not None:
+        sets.append("clip_cooldown_mod = ?")
+        values.append(int(clip_cooldown_mod))
+    if clip_cooldown_admin is not None:
+        sets.append("clip_cooldown_admin = ?")
+        values.append(int(clip_cooldown_admin))
     if not sets:
         return
     with connect() as conn:
@@ -324,14 +362,52 @@ def set_stream_info(title=None, description=None, clip_limit_user=None,
         )
 
 
+def get_notify_settings():
+    """The channel's go-live notification settings: the Discord webhook URL and
+    the epoch of the last announcement (used for the cooldown)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT discord_webhook, last_notified_at FROM channel_settings "
+            "WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"discord_webhook": "", "last_notified_at": 0}
+        return dict(row)
+
+
+def set_discord_webhook(url):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET discord_webhook = ? WHERE id = 1",
+            (url or "",),
+        )
+
+
+def mark_notified(when):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET last_notified_at = ? WHERE id = 1", (when,)
+        )
+
+
 def count_user_clips_since(username, since):
-    """How many clips a user has made since a given epoch, for the daily cap."""
+    """How many clips a user has made since a given epoch."""
     with connect() as conn:
         row = conn.execute(
             "SELECT COUNT(*) AS n FROM clips WHERE creator = ? AND created_at >= ?",
             (username, since),
         ).fetchone()
         return row["n"]
+
+
+def last_clip_at(username):
+    """Epoch of a user's most recent clip, or 0 if they have never clipped. Used
+    to enforce the per-role clip cooldown."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(created_at) AS last FROM clips WHERE creator = ?", (username,)
+        ).fetchone()
+        return row["last"] or 0
 
 
 def bump_avatar_version(username):
@@ -358,6 +434,32 @@ def set_chat_font(username, font):
 def set_bio(username, bio):
     with connect() as conn:
         conn.execute("UPDATE users SET bio = ? WHERE username = ?", (bio, username))
+
+
+def set_email(username, email):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET email = ? WHERE username = ?", (email or "", username)
+        )
+
+
+def set_notify_live(username, on):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET notify_live = ? WHERE username = ?",
+            (1 if on else 0, username),
+        )
+
+
+def list_live_recipients():
+    """Email addresses to notify when the channel goes live: accounts that have
+    an address and have not opted out. Returns a list of (display_name, email)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT display_name, email FROM users "
+            "WHERE notify_live = 1 AND email != ''"
+        ).fetchall()
+        return [(r["display_name"], r["email"]) for r in rows]
 
 
 def delete_user(username):
@@ -697,6 +799,8 @@ def admin_list_users(include_admins=True):
                 u.is_moderator,
                 u.created_at,
                 u.avatar_version,
+                u.email,
+                u.notify_live,
                 (SELECT MAX(COALESCE(left_at, joined_at))
                    FROM watch_sessions w WHERE w.username = u.username) AS last_seen,
                 (SELECT COUNT(*)

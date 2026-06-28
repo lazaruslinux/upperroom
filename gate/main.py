@@ -20,10 +20,12 @@ import os
 import re
 import shutil
 import signal
+import smtplib
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from email.message import EmailMessage
 
 import geoip2.database
 import httpx
@@ -61,6 +63,7 @@ MIN_PASSWORD = 8
 MAX_STREAM_TITLE = 100
 MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
+MAX_EMAIL = 254
 
 # How long the admin-only chat log is kept before old lines are purged. Viewers
 # always see chat as ephemeral; this only affects the history the admin reviews.
@@ -93,7 +96,21 @@ VOD_KEEP = int(os.environ.get("SELFSTREAM_VOD_KEEP", "20"))
 VOD_KEEP_DAYS = int(os.environ.get("SELFSTREAM_VOD_KEEP_DAYS", "0"))
 CLIP_SECONDS = 30                  # how much of the live edge a clip captures
 CLIP_LAG = 2                       # stay this far back from the very live edge
-CLIP_COOLDOWN = int(os.environ.get("SELFSTREAM_CLIP_COOLDOWN", "10"))
+
+# ---- Go-live notifications ------------------------------------------------
+# When a broadcast starts, announce it once over any channel the operator has
+# configured: a Discord webhook and/or email through an SMTP relay (e.g. Brevo).
+# Everything here is best effort and gated on configuration: with nothing set,
+# notifications are simply skipped.
+SITE_URL = os.environ.get("SELFSTREAM_SITE_URL", "").rstrip("/")
+# Re-announcing is suppressed within this window, so a brief HLS blip (offline ->
+# online flap) or a gate restart mid-broadcast cannot spam viewers.
+NOTIFY_COOLDOWN = int(os.environ.get("SELFSTREAM_NOTIFY_COOLDOWN", "1800"))
+SMTP_HOST = os.environ.get("SELFSTREAM_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SELFSTREAM_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SELFSTREAM_SMTP_USER", "")
+SMTP_PASS = os.environ.get("SELFSTREAM_SMTP_PASS", "")
+SMTP_FROM = os.environ.get("SELFSTREAM_SMTP_FROM", "")
 
 
 async def fetch_path():
@@ -121,6 +138,9 @@ async def stream_watcher():
             await hub.set_live(online)
             if online and not was_online:
                 await start_recording()
+                # Announce in the background so a slow webhook or mail relay never
+                # delays the status poll. notify_live enforces its own cooldown.
+                asyncio.create_task(notify_live())
             if was_online and not online:
                 await hub.wipe()
                 await stop_recording()
@@ -131,11 +151,22 @@ async def stream_watcher():
 
 
 async def capture_thumbnail():
-    """Pull one frame from the live stream into THUMB_PATH. Best effort."""
+    """Save one frame from the live stream into THUMB_PATH. Best effort.
+
+    While a broadcast is recording, the stream is already being written to local
+    disk, so we grab the freshest frame from that file instead of opening a
+    second full RTMP pull just for a thumbnail. When no recording is in progress
+    (a brief window right at go-live), fall back to a short RTMP read."""
+    rec_path = _rec["tmp_path"] if _rec["active"] else None
+    if rec_path and os.path.exists(rec_path):
+        # -sseof -1 seeks to one second before the end of the file, reading the
+        # most recent frame without decoding the whole recording.
+        source_args = ["-sseof", "-1", "-i", rec_path]
+    else:
+        source_args = ["-rw_timeout", "5000000", "-i", RTMP_SOURCE]
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-y", "-loglevel", "error",
-        "-rw_timeout", "5000000",          # give up on a stalled read after 5s
-        "-i", RTMP_SOURCE,
+        *source_args,
         "-frames:v", "1",
         "-vf", "scale=640:-2",             # 640px wide, height kept even
         "-q:v", "5",
@@ -320,15 +351,28 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         pass
 
 
-def clip_limit_for(user):
-    """The daily clip cap for a user. Admins are uncapped; moderators and viewers
-    use the admin-configured limits."""
+def cooldown_for(user):
+    """A user's clip cooldown in seconds (0 disables it). Per-role and
+    admin-configured: admins get the shortest, then moderators, then viewers."""
     info = db.get_stream_info()
     if user and user["is_admin"]:
-        return None  # unlimited
-    if user and user["is_moderator"]:
-        return int(info["clip_limit_mod"])
-    return int(info["clip_limit_user"])
+        minutes = int(info["clip_cooldown_admin"])
+    elif user and user["is_moderator"]:
+        minutes = int(info["clip_cooldown_mod"])
+    else:
+        minutes = int(info["clip_cooldown_user"])
+    return max(0, minutes) * 60
+
+
+def format_remaining(seconds):
+    """A short 'Xm Ys' / 'Ys' label for the cooldown message."""
+    seconds = max(0, int(seconds))
+    minutes, secs = divmod(seconds, 60)
+    if minutes and secs:
+        return f"{minutes}m {secs}s"
+    if minutes:
+        return f"{minutes}m"
+    return f"{secs}s"
 
 
 async def make_clip(user, name):
@@ -337,11 +381,14 @@ async def make_clip(user, name):
     if not _rec["active"]:
         return None, "The stream is not live."
     username = user["username"]
-    limit = clip_limit_for(user)
-    if limit is not None:
-        made = db.count_user_clips_since(username, int(time.time()) - 86400)
-        if made >= limit:
-            return None, f"You've reached your limit of {limit} clips per day."
+    cooldown = cooldown_for(user)
+    if cooldown:
+        elapsed = int(time.time()) - db.last_clip_at(username)
+        if elapsed < cooldown:
+            return None, (
+                f"Clip cooldown — you can clip again in "
+                f"{format_remaining(cooldown - elapsed)}."
+            )
     started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
     end = int(time.time()) - CLIP_LAG
     start = max(started_at, end - CLIP_SECONDS)
@@ -369,6 +416,78 @@ async def make_clip(user, name):
     await _make_poster(dst, os.path.join(CLIP_DIR, f"{clip_id}.jpg"), seek=1)
     db.snapshot_chat("clip", clip_id, start, end)
     return clip_id, None
+
+
+async def send_discord(webhook, content):
+    """Post a message to a Discord incoming webhook. Best effort."""
+    if not webhook:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            await http.post(webhook, json={"content": content})
+    except httpx.HTTPError:
+        pass
+
+
+def _send_emails_blocking(recipients, subject, body):
+    """Send the go-live email to each recipient over the SMTP relay. Blocking, so
+    it is called from a thread. One bad address never stops the rest."""
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            server.starttls()
+            if SMTP_USER:
+                server.login(SMTP_USER, SMTP_PASS)
+            for _name, address in recipients:
+                message = EmailMessage()
+                message["Subject"] = subject
+                message["From"] = SMTP_FROM
+                message["To"] = address
+                message.set_content(body)
+                try:
+                    server.send_message(message)
+                except smtplib.SMTPException:
+                    continue
+    except (smtplib.SMTPException, OSError):
+        pass
+
+
+async def send_live_emails(title):
+    """Email everyone who opted in that the channel is live. No-op unless an SMTP
+    relay is configured and at least one account has an address."""
+    if not (SMTP_HOST and SMTP_FROM):
+        return
+    recipients = db.list_live_recipients()
+    if not recipients:
+        return
+    lines = [title, "", "The stream just went live."]
+    if SITE_URL:
+        lines += ["", f"Watch: {SITE_URL}/home"]
+    body = "\n".join(lines)
+    await asyncio.to_thread(
+        _send_emails_blocking, recipients, "Lazarus Labs is live", body
+    )
+
+
+async def notify_live(force=False):
+    """Announce that the channel went live, over every configured channel. Sends
+    at most once per cooldown window unless force=True (a manual test). Best
+    effort throughout: a failure on any channel never touches the stream."""
+    now = int(time.time())
+    settings = db.get_notify_settings()
+    if not force:
+        if now - settings["last_notified_at"] < NOTIFY_COOLDOWN:
+            return
+        # Stamp the cooldown before sending so a slow relay cannot let a second
+        # transition slip through and double-announce. A test send leaves the
+        # real cooldown untouched.
+        db.mark_notified(now)
+    info = db.get_stream_info()
+    title = info["stream_title"] or "Live Stream"
+    discord_text = f"**{title}** is live now."
+    if SITE_URL:
+        discord_text += f"\n{SITE_URL}/home"
+    await send_discord(settings["discord_webhook"], discord_text)
+    await send_live_emails(title)
 
 
 async def chat_purge_worker():
@@ -927,6 +1046,8 @@ def me(request: Request):
         "avatar": user["avatar_version"] if user else 0,
         "font": user["chat_font"] if user else "system",
         "bio": user["bio"] if user else "",
+        "notify_live": bool(user["notify_live"]) if user else True,
+        "email": user["email"] if user else "",
     }
 
 
@@ -941,8 +1062,9 @@ def channel(request: Request):
     base = {
         "title": info["stream_title"],
         "description": info["stream_description"],
-        "clip_limit_user": info["clip_limit_user"],
-        "clip_limit_mod": info["clip_limit_mod"],
+        "clip_cooldown_user": info["clip_cooldown_user"],
+        "clip_cooldown_mod": info["clip_cooldown_mod"],
+        "clip_cooldown_admin": info["clip_cooldown_admin"],
     }
     if not owner:
         return {**base, "username": None, "name": "Lazarus Labs", "avatar": 0}
@@ -972,28 +1094,34 @@ async def set_stream_info(request: Request):
     if "description" in body:
         description = str(body.get("description") or "").strip()[:MAX_STREAM_DESC]
 
-    def clamp_limit(value):
+    def clamp_minutes(value):
+        # 0 disables the cooldown; cap at a day so a typo can't lock clips forever.
         try:
-            return max(0, min(1000, int(value)))
+            return max(0, min(1440, int(value)))
         except (TypeError, ValueError):
             return None
 
-    clip_limit_user = clamp_limit(body["clip_limit_user"]) if "clip_limit_user" in body else None
-    clip_limit_mod = clamp_limit(body["clip_limit_mod"]) if "clip_limit_mod" in body else None
+    cd_user = clamp_minutes(body["clip_cooldown_user"]) if "clip_cooldown_user" in body else None
+    cd_mod = clamp_minutes(body["clip_cooldown_mod"]) if "clip_cooldown_mod" in body else None
+    cd_admin = clamp_minutes(body["clip_cooldown_admin"]) if "clip_cooldown_admin" in body else None
 
     db.set_stream_info(
         title=title, description=description,
-        clip_limit_user=clip_limit_user, clip_limit_mod=clip_limit_mod,
+        clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
+        clip_cooldown_admin=cd_admin,
     )
     return {"ok": True}
 
 
 @app.get("/api/verify")
 def verify(request: Request):
-    # Caddy calls this before serving any video segment. A valid cookie returns
-    # 200 and the request continues. Anything else returns 401 and Caddy refuses
-    # to serve the video.
-    if read_session(request.cookies.get(COOKIE_NAME, "")):
+    # Caddy calls this before serving any video segment. A valid cookie whose
+    # account still exists returns 200 and the request continues. Anything else
+    # returns 401 and Caddy refuses to serve the video. Checking the account
+    # exists (not just that the token is valid) means deleting a user cuts off
+    # their video at once, rather than waiting for the token to expire.
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if session and db.get_user(session["sub"]):
         return Response(status_code=200)
     return Response(status_code=401)
 
@@ -1266,9 +1394,17 @@ async def admin_create(request: Request):
     display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
     is_admin = bool(body.get("is_admin"))
     is_moderator = bool(body.get("is_moderator"))
-    db.add_user(username, display_name, password, is_admin=is_admin)
+    email = (body.get("email") or "").strip()[:MAX_EMAIL]
+    if email and "@" not in email:
+        return JSONResponse(
+            {"error": "That email address looks invalid."}, status_code=400
+        )
+    notify_live = bool(body.get("notify_live", True))
+    db.add_user(username, display_name, password, is_admin=is_admin, email=email)
     if is_moderator:
         db.update_user(username, is_moderator=True)
+    if not notify_live:
+        db.set_notify_live(username, False)
     return {"ok": True, "username": username}
 
 
@@ -1315,6 +1451,17 @@ async def admin_update(username: str, request: Request):
         if is_moderator is not None:
             await hub.update_role(username, mod=is_moderator)
 
+    if "email" in body:
+        email = (body.get("email") or "").strip()[:MAX_EMAIL]
+        if email and "@" not in email:
+            return JSONResponse(
+                {"error": "That email address looks invalid."}, status_code=400
+            )
+        db.set_email(username, email)
+
+    if "notify_live" in body:
+        db.set_notify_live(username, bool(body.get("notify_live")))
+
     if "password" in body:
         password = body.get("password", "")
         if len(password) < MIN_PASSWORD:
@@ -1359,6 +1506,42 @@ def admin_chat(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     return {"messages": db.recent_chat()}
+
+
+@app.get("/api/admin/notify")
+def admin_notify_get(request: Request):
+    # Current go-live notification config, plus what is wired up, so the dashboard
+    # can show whether email is available and how many people would be emailed.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    settings = db.get_notify_settings()
+    return {
+        "discord_webhook": settings["discord_webhook"],
+        "last_notified_at": settings["last_notified_at"],
+        "smtp_configured": bool(SMTP_HOST and SMTP_FROM),
+        "site_url": SITE_URL,
+        "recipients": len(db.list_live_recipients()),
+    }
+
+
+@app.post("/api/admin/notify")
+async def admin_notify_set(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    if "discord_webhook" in body:
+        url = (body.get("discord_webhook") or "").strip()
+        if url and not url.startswith("https://"):
+            return JSONResponse(
+                {"error": "A webhook URL must start with https://."}, status_code=400
+            )
+        db.set_discord_webhook(url)
+    if body.get("test"):
+        # Fire a one-off announcement now, ignoring the cooldown, so the operator
+        # can confirm Discord and email are actually wired up.
+        await notify_live(force=True)
+        return {"ok": True, "tested": True}
+    return {"ok": True}
 
 
 # ---- Moderator dashboard --------------------------------------------------
@@ -1519,6 +1702,17 @@ async def set_profile(request: Request):
         bio = str(body.get("bio") or "").strip()[:MAX_BIO_LENGTH]
         db.set_bio(username, bio)
 
+    if "notify_live" in body:
+        db.set_notify_live(username, bool(body.get("notify_live")))
+
+    if "email" in body:
+        email = str(body.get("email") or "").strip()[:MAX_EMAIL]
+        if email and "@" not in email:
+            return JSONResponse(
+                {"error": "That email address looks invalid."}, status_code=400
+            )
+        db.set_email(username, email)
+
     name = None
     if "display_name" in body:
         name = str(body.get("display_name") or "").strip()[:MAX_DISPLAY_NAME]
@@ -1636,13 +1830,18 @@ async def chat_socket(websocket: WebSocket):
         return
 
     user = db.get_user(session["sub"])
+    # If the account was deleted, the token may still be valid but there is no
+    # one to be: refuse the socket rather than seating a ghost in chat.
+    if not user:
+        await websocket.close(code=4401)
+        return
     who = {
         "username": session["sub"],
-        "name": session["name"],
-        "admin": bool(user["is_admin"]) if user else bool(session.get("admin")),
-        "mod": bool(user["is_moderator"]) if user else False,
-        "avatar": user["avatar_version"] if user else 0,
-        "font": user["chat_font"] if user else "system",
+        "name": user["display_name"],
+        "admin": bool(user["is_admin"]),
+        "mod": bool(user["is_moderator"]),
+        "avatar": user["avatar_version"],
+        "font": user["chat_font"],
     }
     await websocket.accept()
     await hub.join(websocket, who)

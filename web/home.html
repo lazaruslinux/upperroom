@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=11">
+  <link rel="stylesheet" href="/assets/style.css?v=14">
 </head>
 <body class="home">
   <header class="home-bar">
@@ -54,6 +54,9 @@
         <button type="button" class="lib-tab selected" data-tab="vods">VODs</button>
         <button type="button" class="lib-tab" data-tab="clips">Clips</button>
       </div>
+      <label id="clip-filter" class="switch lib-filter" hidden>
+        <input id="mine-only" type="checkbox"> My clips only
+      </label>
       <div id="lib-grid" class="lib-grid"></div>
       <p id="lib-empty" class="muted" hidden></p>
     </section>
@@ -65,37 +68,22 @@
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
       <h3>Your settings</h3>
 
-      <!-- Stream title + description: only the channel owner (an admin) sees this. -->
-      <div id="stream-info-settings" class="stream-info-settings" hidden>
-        <p class="settings-heading muted">Stream</p>
-        <div class="setting setting-name">
-          <span>Title</span>
-          <div class="name-edit">
-            <input id="stream-title-input" type="text" maxlength="100" placeholder="What you're streaming" autocomplete="off">
-            <button id="stream-title-save" type="button" class="pill">Save</button>
-          </div>
-        </div>
-        <div class="setting setting-bio">
-          <span>Description</span>
-          <div class="bio-edit">
-            <textarea id="stream-desc-input" maxlength="500" rows="2" placeholder="A short description shown on the home card"></textarea>
-            <button id="stream-desc-save" type="button" class="pill">Save</button>
-          </div>
-        </div>
-        <div class="setting setting-name">
-          <span>Clips per day</span>
-          <div class="clip-limit-edit">
-            <label>Viewers <input id="clip-limit-user" type="number" min="0" max="1000" inputmode="numeric"></label>
-            <label>Mods <input id="clip-limit-mod" type="number" min="0" max="1000" inputmode="numeric"></label>
-            <button id="clip-limit-save" type="button" class="pill">Save</button>
-          </div>
-        </div>
-        <p class="settings-heading muted">You</p>
-      </div>
-
       <div class="setting">
         <span>Theme</span>
         <button id="theme-toggle" type="button" class="pill">Dark</button>
+      </div>
+      <div class="setting setting-name">
+        <span>Go-live email</span>
+        <div class="name-edit">
+          <input id="email-input" type="email" placeholder="name@example.com" autocomplete="email">
+          <button id="email-save" type="button" class="pill">Save</button>
+        </div>
+      </div>
+      <div class="setting setting-check">
+        <label class="switch">
+          <input id="notify-toggle" type="checkbox">
+          Receive an email when streams start
+        </label>
       </div>
       <div class="setting setting-name">
         <span>Display name</span>
@@ -119,16 +107,39 @@
           <button id="bio-save" type="button" class="pill">Save</button>
         </div>
       </div>
-      <div class="setting setting-password">
+      <div class="setting">
         <span>Password</span>
-        <div class="pw-edit">
-          <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password">
-          <input id="pw-new" type="password" placeholder="New password (8+ characters)" autocomplete="new-password">
-          <div class="pw-row">
-            <button id="pw-save" type="button" class="pill primary">Change password</button>
-            <span id="pw-msg" class="pw-msg"></span>
-          </div>
+        <button id="pw-open" type="button" class="pill">Change password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change password -->
+  <div id="password-modal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3>Change password</h3>
+      <div class="pw-edit">
+        <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password">
+        <input id="pw-new" type="password" placeholder="New password (8+ characters)" autocomplete="new-password">
+        <div class="pw-row">
+          <button id="pw-save" type="button" class="pill primary">Change password</button>
+          <span id="pw-msg" class="pw-msg"></span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- First-login nudge to add a go-live email (only if none on file) -->
+  <div id="email-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3>Get a heads-up when the stream goes live?</h3>
+      <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime in Settings.</p>
+      <input id="email-prompt-input" type="email" placeholder="name@example.com" autocomplete="email">
+      <p id="email-prompt-msg" class="pw-msg"></p>
+      <div class="crop-actions">
+        <button id="email-ignore" type="button" class="pill" data-close>Not now</button>
+        <button id="email-prompt-save" type="button" class="pill primary">Save</button>
       </div>
     </div>
   </div>
@@ -148,6 +159,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=5"></script>
+  <script src="/assets/home.js?v=8"></script>
 </body>
 </html>
