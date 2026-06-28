@@ -190,77 +190,40 @@ function renderMyAvatar() {
   myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
 }
 
-const streamInfoSettings = document.getElementById("stream-info-settings");
-const streamTitleInput = document.getElementById("stream-title-input");
-const streamTitleSave = document.getElementById("stream-title-save");
-const streamDescInput = document.getElementById("stream-desc-input");
-const streamDescSave = document.getElementById("stream-desc-save");
-const cdUser = document.getElementById("cd-user");
-const cdMod = document.getElementById("cd-mod");
-const cdAdmin = document.getElementById("cd-admin");
-const cdSave = document.getElementById("cd-save");
+const emailInput = document.getElementById("email-input");
+const emailSave = document.getElementById("email-save");
+const passwordModal = document.getElementById("password-modal");
 
 document.getElementById("settings-btn").addEventListener("click", () => {
   nameInput.value = me.name || "";
   bioInput.value = me.bio || "";
-  pwCurrent.value = "";
-  pwNew.value = "";
-  pwMsg.textContent = "";
-  // Only the channel owner (an admin) edits the stream title, description, and
-  // the per-role daily clip limits.
-  if (me.admin) {
-    streamInfoSettings.hidden = false;
-    streamTitleInput.value = (channel && channel.title) || "";
-    streamDescInput.value = (channel && channel.description) || "";
-    cdUser.value = channel && channel.clip_cooldown_user != null ? channel.clip_cooldown_user : 15;
-    cdMod.value = channel && channel.clip_cooldown_mod != null ? channel.clip_cooldown_mod : 5;
-    cdAdmin.value = channel && channel.clip_cooldown_admin != null ? channel.clip_cooldown_admin : 1;
-  }
   renderMyAvatar();
   renderNotifySetting();
   openModal(userModal);
 });
 
-async function saveStreamInfo(patch, btn) {
-  let ok = false;
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    ok = reply.ok;
-  } catch { ok = false; }
-  if (ok && channel) {
-    if ("title" in patch) { channel.title = patch.title; }
-    if ("description" in patch) { channel.description = patch.description; }
-    if ("clip_cooldown_user" in patch) { channel.clip_cooldown_user = patch.clip_cooldown_user; }
-    if ("clip_cooldown_mod" in patch) { channel.clip_cooldown_mod = patch.clip_cooldown_mod; }
-    if ("clip_cooldown_admin" in patch) { channel.clip_cooldown_admin = patch.clip_cooldown_admin; }
-    renderChannel();
-  }
-  btn.textContent = ok ? "Saved" : "Error";
-  setTimeout(() => { btn.textContent = "Save"; }, 1500);
-}
+// Password lives in its own modal, opened from the settings panel.
+document.getElementById("pw-open").addEventListener("click", () => {
+  pwCurrent.value = "";
+  pwNew.value = "";
+  pwMsg.textContent = "";
+  pwMsg.className = "pw-msg";
+  openModal(passwordModal);
+  pwCurrent.focus();
+});
 
-streamTitleSave.addEventListener("click", () => {
-  const next = streamTitleInput.value.trim();
-  if (!next) { streamTitleSave.textContent = "Empty"; setTimeout(() => { streamTitleSave.textContent = "Save"; }, 1500); return; }
-  saveStreamInfo({ title: next }, streamTitleSave);
-});
-streamDescSave.addEventListener("click", () => {
-  saveStreamInfo({ description: streamDescInput.value.trim() }, streamDescSave);
-});
-cdSave.addEventListener("click", () => {
-  const u = parseInt(cdUser.value, 10);
-  const m = parseInt(cdMod.value, 10);
-  const a = parseInt(cdAdmin.value, 10);
-  if ([u, m, a].some(Number.isNaN)) {
-    cdSave.textContent = "Number?"; setTimeout(() => { cdSave.textContent = "Save"; }, 1500); return;
+// Add, change, or clear your own go-live email.
+emailSave.addEventListener("click", async () => {
+  const email = emailInput.value.trim();
+  if (email && !email.includes("@")) {
+    emailSave.textContent = "Invalid";
+    setTimeout(() => { emailSave.textContent = "Save"; }, 1500);
+    return;
   }
-  saveStreamInfo(
-    { clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a }, cdSave
-  );
+  const ok = await saveProfile({ email });
+  if (ok) me.email = email;
+  emailSave.textContent = ok ? "Saved" : "Error";
+  setTimeout(() => { emailSave.textContent = "Save"; }, 1500);
 });
 
 nameSave.addEventListener("click", async () => {
@@ -317,13 +280,10 @@ bioSave.addEventListener("click", async () => {
 // ---- go-live email opt-in ----
 
 const notifyToggle = document.getElementById("notify-toggle");
-const notifyHint = document.getElementById("notify-hint");
 
 function renderNotifySetting() {
   notifyToggle.checked = me.notify_live !== false;
-  notifyHint.textContent = me.email
-    ? `Email me at ${me.email} when the stream starts`
-    : "Email me when the stream starts (ask the admin to add your address)";
+  emailInput.value = me.email || "";
 }
 
 notifyToggle.addEventListener("change", async () => {
@@ -390,6 +350,7 @@ pwSave.addEventListener("click", async () => {
       pwCurrent.value = "";
       pwNew.value = "";
       showPwMsg("Password changed.", true);
+      setTimeout(() => closeModal(passwordModal), 1200);
     } else {
       const data = await reply.json().catch(() => ({}));
       showPwMsg(data.error || "Could not change password.", false);

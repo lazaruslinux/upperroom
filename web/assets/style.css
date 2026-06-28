@@ -332,6 +332,10 @@ button:hover { filter: brightness(1.1); }
   font-size: 0.9rem;
 }
 .setting > span:first-child { color: var(--muted); }
+/* vertical rhythm between stacked setting rows, so single-line rows like Theme
+   and the go-live checkbox do not crowd each other */
+.setting + .setting { margin-top: 0.85rem; }
+.setting-check .switch { color: var(--text); }
 
 .setting select,
 .setting .pill {
@@ -1121,14 +1125,19 @@ body.media {
   gap: 0.35rem;
   font-size: 0.85rem;
 }
-.notify-panel input[type="text"] {
+.notify-panel input[type="text"],
+.notify-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.55rem 0.7rem;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
+  font: inherit;
   font-size: 0.9rem;
 }
+.notify-panel textarea { resize: vertical; min-height: 2.5rem; }
 .notify-msg { margin: 0; font-size: 0.85rem; }
 .notify-msg.good { color: var(--live); }
 .notify-msg.bad { color: var(--error); }
