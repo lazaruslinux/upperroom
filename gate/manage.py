@@ -44,10 +44,15 @@ def main():
     p_add.add_argument("--name", help="display name shown in chat")
     p_add.add_argument("--admin", action="store_true", help="give the admin badge")
     p_add.add_argument("--password", help="set the password without a prompt")
+    p_add.add_argument("--email", help="address for the go-live email (optional)")
 
     p_pw = sub.add_parser("passwd", help="change a password")
     p_pw.add_argument("username")
     p_pw.add_argument("--password")
+
+    p_email = sub.add_parser("setemail", help="set or clear the go-live email")
+    p_email.add_argument("username")
+    p_email.add_argument("email", nargs="?", default="", help="leave blank to clear")
 
     p_del = sub.add_parser("deluser", help="delete an account")
     p_del.add_argument("username")
@@ -70,9 +75,21 @@ def main():
             sys.exit(1)
         name = args.name or args.username
         password = args.password or prompt_password()
-        db.add_user(username, name, password, is_admin=args.admin)
+        db.add_user(username, name, password, is_admin=args.admin,
+                    email=(args.email or "").strip())
         role = "admin" if args.admin else "viewer"
         print(f"Created {role} account {username} (shown as {name}).")
+
+    elif args.command == "setemail":
+        username = args.username.strip().lower()
+        if not db.get_user(username):
+            print(f"No such user {username}.")
+            sys.exit(1)
+        db.set_email(username, args.email.strip())
+        if args.email.strip():
+            print(f"Set {username}'s go-live email to {args.email.strip()}.")
+        else:
+            print(f"Cleared {username}'s go-live email.")
 
     elif args.command == "passwd":
         username = args.username.strip().lower()

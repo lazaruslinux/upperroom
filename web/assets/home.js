@@ -195,9 +195,10 @@ const streamTitleInput = document.getElementById("stream-title-input");
 const streamTitleSave = document.getElementById("stream-title-save");
 const streamDescInput = document.getElementById("stream-desc-input");
 const streamDescSave = document.getElementById("stream-desc-save");
-const clipLimitUser = document.getElementById("clip-limit-user");
-const clipLimitMod = document.getElementById("clip-limit-mod");
-const clipLimitSave = document.getElementById("clip-limit-save");
+const cdUser = document.getElementById("cd-user");
+const cdMod = document.getElementById("cd-mod");
+const cdAdmin = document.getElementById("cd-admin");
+const cdSave = document.getElementById("cd-save");
 
 document.getElementById("settings-btn").addEventListener("click", () => {
   nameInput.value = me.name || "";
@@ -211,10 +212,12 @@ document.getElementById("settings-btn").addEventListener("click", () => {
     streamInfoSettings.hidden = false;
     streamTitleInput.value = (channel && channel.title) || "";
     streamDescInput.value = (channel && channel.description) || "";
-    clipLimitUser.value = channel && channel.clip_limit_user != null ? channel.clip_limit_user : 5;
-    clipLimitMod.value = channel && channel.clip_limit_mod != null ? channel.clip_limit_mod : 10;
+    cdUser.value = channel && channel.clip_cooldown_user != null ? channel.clip_cooldown_user : 15;
+    cdMod.value = channel && channel.clip_cooldown_mod != null ? channel.clip_cooldown_mod : 5;
+    cdAdmin.value = channel && channel.clip_cooldown_admin != null ? channel.clip_cooldown_admin : 1;
   }
   renderMyAvatar();
+  renderNotifySetting();
   openModal(userModal);
 });
 
@@ -231,8 +234,9 @@ async function saveStreamInfo(patch, btn) {
   if (ok && channel) {
     if ("title" in patch) { channel.title = patch.title; }
     if ("description" in patch) { channel.description = patch.description; }
-    if ("clip_limit_user" in patch) { channel.clip_limit_user = patch.clip_limit_user; }
-    if ("clip_limit_mod" in patch) { channel.clip_limit_mod = patch.clip_limit_mod; }
+    if ("clip_cooldown_user" in patch) { channel.clip_cooldown_user = patch.clip_cooldown_user; }
+    if ("clip_cooldown_mod" in patch) { channel.clip_cooldown_mod = patch.clip_cooldown_mod; }
+    if ("clip_cooldown_admin" in patch) { channel.clip_cooldown_admin = patch.clip_cooldown_admin; }
     renderChannel();
   }
   btn.textContent = ok ? "Saved" : "Error";
@@ -247,13 +251,16 @@ streamTitleSave.addEventListener("click", () => {
 streamDescSave.addEventListener("click", () => {
   saveStreamInfo({ description: streamDescInput.value.trim() }, streamDescSave);
 });
-clipLimitSave.addEventListener("click", () => {
-  const u = parseInt(clipLimitUser.value, 10);
-  const m = parseInt(clipLimitMod.value, 10);
-  if (Number.isNaN(u) || Number.isNaN(m)) {
-    clipLimitSave.textContent = "Number?"; setTimeout(() => { clipLimitSave.textContent = "Save"; }, 1500); return;
+cdSave.addEventListener("click", () => {
+  const u = parseInt(cdUser.value, 10);
+  const m = parseInt(cdMod.value, 10);
+  const a = parseInt(cdAdmin.value, 10);
+  if ([u, m, a].some(Number.isNaN)) {
+    cdSave.textContent = "Number?"; setTimeout(() => { cdSave.textContent = "Save"; }, 1500); return;
   }
-  saveStreamInfo({ clip_limit_user: u, clip_limit_mod: m }, clipLimitSave);
+  saveStreamInfo(
+    { clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a }, cdSave
+  );
 });
 
 nameSave.addEventListener("click", async () => {
@@ -305,6 +312,62 @@ bioSave.addEventListener("click", async () => {
   const ok = await saveProfile({ bio: me.bio });
   bioSave.textContent = ok ? "Saved" : "Error";
   setTimeout(() => { bioSave.textContent = "Save"; }, 1500);
+});
+
+// ---- go-live email opt-in ----
+
+const notifyToggle = document.getElementById("notify-toggle");
+const notifyHint = document.getElementById("notify-hint");
+
+function renderNotifySetting() {
+  notifyToggle.checked = me.notify_live !== false;
+  notifyHint.textContent = me.email
+    ? `Email me at ${me.email} when the stream starts`
+    : "Email me when the stream starts (ask the admin to add your address)";
+}
+
+notifyToggle.addEventListener("change", async () => {
+  const on = notifyToggle.checked;
+  const ok = await saveProfile({ notify_live: on });
+  if (ok) me.notify_live = on;
+  else notifyToggle.checked = !on;   // revert if the save failed
+});
+
+// ---- first-login email prompt ----
+// If a viewer has no email on file, nudge them once to add one so they can get
+// the go-live alert. "Not now" is remembered so it does not nag every login.
+
+const EMAIL_PROMPT_KEY = "selfstream_email_prompt_dismissed";
+const emailModal = document.getElementById("email-modal");
+const emailPromptInput = document.getElementById("email-prompt-input");
+const emailPromptMsg = document.getElementById("email-prompt-msg");
+
+function maybePromptEmail() {
+  if (me.email) return;                                   // already has one
+  try { if (localStorage.getItem(EMAIL_PROMPT_KEY)) return; } catch {}
+  openModal(emailModal);
+  emailPromptInput.focus();
+}
+
+document.getElementById("email-ignore").addEventListener("click", () => {
+  try { localStorage.setItem(EMAIL_PROMPT_KEY, "1"); } catch {}
+});
+
+document.getElementById("email-prompt-save").addEventListener("click", async () => {
+  const email = emailPromptInput.value.trim();
+  if (!email || !email.includes("@")) {
+    emailPromptMsg.textContent = "Enter a valid email, or choose Not now.";
+    return;
+  }
+  const ok = await saveProfile({ email });
+  if (ok) {
+    me.email = email;
+    try { localStorage.removeItem(EMAIL_PROMPT_KEY); } catch {}
+    closeModal(emailModal);
+    renderNotifySetting();        // keep the Settings panel in sync
+  } else {
+    emailPromptMsg.textContent = "Could not save. Try again.";
+  }
 });
 
 function showPwMsg(text, ok) {
@@ -443,7 +506,10 @@ document.addEventListener("keydown", (e) => {
 
 const libGrid = document.getElementById("lib-grid");
 const libEmpty = document.getElementById("lib-empty");
+const clipFilter = document.getElementById("clip-filter");
+const mineOnlyToggle = document.getElementById("mine-only");
 let libTab = "vods";
+let mineOnly = false;
 const libCache = { vods: null, clips: null };
 
 function durationClock(secs) {
@@ -517,16 +583,27 @@ async function renderLibrary() {
     catch { items = []; }
     libCache[libTab] = items;
   }
+  // The "my clips only" filter applies to the clips tab for every role.
+  clipFilter.hidden = libTab !== "clips";
+  let display = items;
+  if (libTab === "clips" && mineOnly && me) {
+    display = items.filter((c) => c.creator === me.username);
+  }
+
   libGrid.innerHTML = "";
-  if (!items.length) {
+  if (!display.length) {
     libEmpty.hidden = false;
-    libEmpty.textContent = libTab === "vods"
-      ? "No past broadcasts yet. Recordings appear here after a stream ends."
-      : "No clips yet. Viewers can clip the last 30 seconds while live.";
+    if (libTab === "vods") {
+      libEmpty.textContent = "No past broadcasts yet. Recordings appear here after a stream ends.";
+    } else if (mineOnly) {
+      libEmpty.textContent = "You haven't made any clips yet.";
+    } else {
+      libEmpty.textContent = "No clips yet. Viewers can clip the last 30 seconds while live.";
+    }
     return;
   }
   libEmpty.hidden = true;
-  items.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
+  display.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
 }
 
 document.querySelectorAll(".lib-tab").forEach((tab) => {
@@ -537,9 +614,15 @@ document.querySelectorAll(".lib-tab").forEach((tab) => {
   });
 });
 
+mineOnlyToggle.addEventListener("change", () => {
+  mineOnly = mineOnlyToggle.checked;
+  renderLibrary();
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
   setupIdentity();
+  maybePromptEmail();
   loadChannel();
   renderLibrary();
   await refreshStatus();

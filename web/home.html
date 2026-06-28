@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=11">
+  <link rel="stylesheet" href="/assets/style.css?v=13">
 </head>
 <body class="home">
   <header class="home-bar">
@@ -54,6 +54,9 @@
         <button type="button" class="lib-tab selected" data-tab="vods">VODs</button>
         <button type="button" class="lib-tab" data-tab="clips">Clips</button>
       </div>
+      <label id="clip-filter" class="switch lib-filter" hidden>
+        <input id="mine-only" type="checkbox"> My clips only
+      </label>
       <div id="lib-grid" class="lib-grid"></div>
       <p id="lib-empty" class="muted" hidden></p>
     </section>
@@ -83,11 +86,12 @@
           </div>
         </div>
         <div class="setting setting-name">
-          <span>Clips per day</span>
+          <span>Clip cooldown <span class="muted">(minutes between clips, 0 = off)</span></span>
           <div class="clip-limit-edit">
-            <label>Viewers <input id="clip-limit-user" type="number" min="0" max="1000" inputmode="numeric"></label>
-            <label>Mods <input id="clip-limit-mod" type="number" min="0" max="1000" inputmode="numeric"></label>
-            <button id="clip-limit-save" type="button" class="pill">Save</button>
+            <label>Viewers <input id="cd-user" type="number" min="0" max="1440" inputmode="numeric"></label>
+            <label>Mods <input id="cd-mod" type="number" min="0" max="1440" inputmode="numeric"></label>
+            <label>Admin <input id="cd-admin" type="number" min="0" max="1440" inputmode="numeric"></label>
+            <button id="cd-save" type="button" class="pill">Save</button>
           </div>
         </div>
         <p class="settings-heading muted">You</p>
@@ -96,6 +100,13 @@
       <div class="setting">
         <span>Theme</span>
         <button id="theme-toggle" type="button" class="pill">Dark</button>
+      </div>
+      <div class="setting">
+        <span>Go-live emails</span>
+        <label class="switch">
+          <input id="notify-toggle" type="checkbox">
+          <span id="notify-hint" class="muted">Email me when the stream starts</span>
+        </label>
       </div>
       <div class="setting setting-name">
         <span>Display name</span>
@@ -133,6 +144,20 @@
     </div>
   </div>
 
+  <!-- First-login nudge to add a go-live email (only if none on file) -->
+  <div id="email-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3>Get a heads-up when the stream goes live?</h3>
+      <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime in Settings.</p>
+      <input id="email-prompt-input" type="email" placeholder="name@example.com" autocomplete="email">
+      <p id="email-prompt-msg" class="pw-msg"></p>
+      <div class="crop-actions">
+        <button id="email-ignore" type="button" class="pill" data-close>Not now</button>
+        <button id="email-prompt-save" type="button" class="pill primary">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Avatar crop (drag + zoom) -->
   <div id="crop-modal" class="modal" hidden>
     <div class="modal-card crop-card">
@@ -148,6 +173,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=5"></script>
+  <script src="/assets/home.js?v=7"></script>
 </body>
 </html>
