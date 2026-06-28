@@ -292,6 +292,9 @@ button:hover { filter: brightness(1.1); }
 
 .chat-form input {
   flex: 1;
+  min-width: 0;        /* let the input shrink instead of pushing Send off the
+                          right edge; a flex item defaults to min-width:auto,
+                          which here is the input's intrinsic ~20ch width */
   padding: 0.6rem;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -299,7 +302,7 @@ button:hover { filter: brightness(1.1); }
   color: var(--text);
   font-size: 16px;     /* 16px stops iOS Safari from zooming in on focus */
 }
-.chat-form button { width: auto; padding: 0.6rem 1rem; }
+.chat-form button { flex: none; width: auto; padding: 0.6rem 1rem; white-space: nowrap; }
 
 /* On narrow screens, stack the video on top and the chat below it. */
 @media (max-width: 720px) {
@@ -329,6 +332,10 @@ button:hover { filter: brightness(1.1); }
   font-size: 0.9rem;
 }
 .setting > span:first-child { color: var(--muted); }
+/* vertical rhythm between stacked setting rows, so single-line rows like Theme
+   and the go-live checkbox do not crowd each other */
+.setting + .setting { margin-top: 0.85rem; }
+.setting-check .switch { color: var(--text); }
 
 .setting select,
 .setting .pill {
@@ -1100,3 +1107,48 @@ body.media {
   color: var(--text);
   font-size: 16px;
 }
+
+/* ---- go-live notifications (admin panel + account toggle) ---- */
+.notify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 640px;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.notify-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+.notify-panel input[type="text"],
+.notify-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.notify-panel textarea { resize: vertical; min-height: 2.5rem; }
+.notify-msg { margin: 0; font-size: 0.85rem; }
+.notify-msg.good { color: var(--live); }
+.notify-msg.bad { color: var(--error); }
+/* checkbox + inline hint, e.g. the "email me when live" account toggle */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.switch input { width: auto; flex: none; }
+/* "My clips only" filter above the library grid */
+.lib-filter { margin: 0 0 0.85rem; }

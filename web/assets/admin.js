@@ -357,9 +357,11 @@ createForm.addEventListener("submit", async (e) => {
   const body = {
     username: document.getElementById("c-username").value,
     display_name: document.getElementById("c-name").value,
+    email: document.getElementById("c-email").value,
     password: document.getElementById("c-password").value,
     is_admin: document.getElementById("c-admin").checked,
     is_moderator: document.getElementById("c-mod").checked,
+    notify_live: document.getElementById("c-notify").checked,
   };
   const reply = await fetch("/api/admin/users", {
     method: "POST",
@@ -386,9 +388,11 @@ function openEdit(user) {
   editing = user.username;
   document.getElementById("e-title").textContent = `Edit @${user.username}`;
   document.getElementById("e-name").value = user.display_name;
+  document.getElementById("e-email").value = user.email || "";
   document.getElementById("e-password").value = "";
   document.getElementById("e-admin").checked = !!user.is_admin;
   document.getElementById("e-mod").checked = !!user.is_moderator;
+  document.getElementById("e-notify").checked = user.notify_live !== 0;
   eError.hidden = true;
   openModal(editModal);
 }
@@ -398,8 +402,10 @@ editForm.addEventListener("submit", async (e) => {
   eError.hidden = true;
   const body = {
     display_name: document.getElementById("e-name").value,
+    email: document.getElementById("e-email").value,
     is_admin: document.getElementById("e-admin").checked,
     is_moderator: document.getElementById("e-mod").checked,
+    notify_live: document.getElementById("e-notify").checked,
   };
   const pw = document.getElementById("e-password").value;
   if (pw) body.password = pw;
@@ -490,6 +496,108 @@ document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
   t.addEventListener("click", () => switchTab(t.dataset.tab));
 });
 
+// ---- channel settings (title, description, clip cooldowns) ----
+
+const chTitle = document.getElementById("ch-title");
+const chDesc = document.getElementById("ch-desc");
+const chCdUser = document.getElementById("ch-cd-user");
+const chCdMod = document.getElementById("ch-cd-mod");
+const chCdAdmin = document.getElementById("ch-cd-admin");
+const chMsg = document.getElementById("ch-msg");
+
+function showChMsg(text, ok) {
+  chMsg.textContent = text;
+  chMsg.classList.toggle("good", !!ok);
+  chMsg.classList.toggle("bad", !ok);
+  chMsg.hidden = false;
+}
+
+async function loadChannel() {
+  let data = {};
+  try { data = await (await fetch("/api/channel")).json(); } catch { return; }
+  chTitle.value = data.title || "";
+  chDesc.value = data.description || "";
+  chCdUser.value = data.clip_cooldown_user != null ? data.clip_cooldown_user : 15;
+  chCdMod.value = data.clip_cooldown_mod != null ? data.clip_cooldown_mod : 5;
+  chCdAdmin.value = data.clip_cooldown_admin != null ? data.clip_cooldown_admin : 1;
+}
+
+document.getElementById("ch-save").addEventListener("click", async () => {
+  const title = chTitle.value.trim();
+  if (!title) { showChMsg("Stream title cannot be empty.", false); return; }
+  const u = parseInt(chCdUser.value, 10);
+  const m = parseInt(chCdMod.value, 10);
+  const a = parseInt(chCdAdmin.value, 10);
+  if ([u, m, a].some(Number.isNaN)) { showChMsg("Cooldowns must be whole numbers.", false); return; }
+  chMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title, description: chDesc.value.trim(),
+        clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a,
+      }),
+    });
+    if (!reply.ok) {
+      const d = await reply.json().catch(() => ({}));
+      showChMsg(d.error || "Could not save.", false);
+      return;
+    }
+  } catch { showChMsg("Could not reach the server.", false); return; }
+  showChMsg("Saved.", true);
+});
+
+// ---- go-live notifications ----
+
+const notifyWebhook = document.getElementById("notify-webhook");
+const notifyStatus = document.getElementById("notify-status");
+const notifyMsg = document.getElementById("notify-msg");
+
+function showNotifyMsg(text, ok) {
+  notifyMsg.textContent = text;
+  notifyMsg.classList.toggle("good", !!ok);
+  notifyMsg.classList.toggle("bad", !ok);
+  notifyMsg.hidden = false;
+}
+
+async function loadNotify() {
+  let data = {};
+  try { data = await (await fetch("/api/admin/notify")).json(); } catch { return; }
+  notifyWebhook.value = data.discord_webhook || "";
+  const bits = [];
+  bits.push(data.smtp_configured
+    ? `Email is set up — ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`
+    : "Email is not configured on the server (set the SMTP variables to enable it).");
+  if (!data.site_url) bits.push("Set SELFSTREAM_SITE_URL so messages include a watch link.");
+  if (data.last_notified_at) bits.push(`Last announced ${relativeTime(data.last_notified_at)}.`);
+  notifyStatus.textContent = bits.join(" ");
+}
+
+async function saveNotify(test) {
+  notifyMsg.hidden = true;
+  const body = { discord_webhook: notifyWebhook.value };
+  if (test) body.test = true;
+  let reply;
+  try {
+    reply = await fetch("/api/admin/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch { showNotifyMsg("Could not reach the server.", false); return; }
+  if (reply.ok) {
+    showNotifyMsg(test ? "Test announcement sent." : "Saved.", true);
+    loadNotify();
+  } else {
+    const data = await reply.json().catch(() => ({}));
+    showNotifyMsg(data.error || "Could not save.", false);
+  }
+}
+
+document.getElementById("notify-save").addEventListener("click", () => saveNotify(false));
+document.getElementById("notify-test").addEventListener("click", () => saveNotify(true));
+
 // ---- modal helpers ----
 
 function openModal(m) { m.hidden = false; }
@@ -506,6 +614,8 @@ document.addEventListener("keydown", (e) => {
 async function boot() {
   if (!(await requireAdmin())) return;
   loadUsers();
+  loadChannel();
+  loadNotify();
 }
 
 boot();

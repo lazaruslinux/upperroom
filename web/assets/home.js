@@ -190,70 +190,40 @@ function renderMyAvatar() {
   myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
 }
 
-const streamInfoSettings = document.getElementById("stream-info-settings");
-const streamTitleInput = document.getElementById("stream-title-input");
-const streamTitleSave = document.getElementById("stream-title-save");
-const streamDescInput = document.getElementById("stream-desc-input");
-const streamDescSave = document.getElementById("stream-desc-save");
-const clipLimitUser = document.getElementById("clip-limit-user");
-const clipLimitMod = document.getElementById("clip-limit-mod");
-const clipLimitSave = document.getElementById("clip-limit-save");
+const emailInput = document.getElementById("email-input");
+const emailSave = document.getElementById("email-save");
+const passwordModal = document.getElementById("password-modal");
 
 document.getElementById("settings-btn").addEventListener("click", () => {
   nameInput.value = me.name || "";
   bioInput.value = me.bio || "";
-  pwCurrent.value = "";
-  pwNew.value = "";
-  pwMsg.textContent = "";
-  // Only the channel owner (an admin) edits the stream title, description, and
-  // the per-role daily clip limits.
-  if (me.admin) {
-    streamInfoSettings.hidden = false;
-    streamTitleInput.value = (channel && channel.title) || "";
-    streamDescInput.value = (channel && channel.description) || "";
-    clipLimitUser.value = channel && channel.clip_limit_user != null ? channel.clip_limit_user : 5;
-    clipLimitMod.value = channel && channel.clip_limit_mod != null ? channel.clip_limit_mod : 10;
-  }
   renderMyAvatar();
+  renderNotifySetting();
   openModal(userModal);
 });
 
-async function saveStreamInfo(patch, btn) {
-  let ok = false;
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-    ok = reply.ok;
-  } catch { ok = false; }
-  if (ok && channel) {
-    if ("title" in patch) { channel.title = patch.title; }
-    if ("description" in patch) { channel.description = patch.description; }
-    if ("clip_limit_user" in patch) { channel.clip_limit_user = patch.clip_limit_user; }
-    if ("clip_limit_mod" in patch) { channel.clip_limit_mod = patch.clip_limit_mod; }
-    renderChannel();
-  }
-  btn.textContent = ok ? "Saved" : "Error";
-  setTimeout(() => { btn.textContent = "Save"; }, 1500);
-}
+// Password lives in its own modal, opened from the settings panel.
+document.getElementById("pw-open").addEventListener("click", () => {
+  pwCurrent.value = "";
+  pwNew.value = "";
+  pwMsg.textContent = "";
+  pwMsg.className = "pw-msg";
+  openModal(passwordModal);
+  pwCurrent.focus();
+});
 
-streamTitleSave.addEventListener("click", () => {
-  const next = streamTitleInput.value.trim();
-  if (!next) { streamTitleSave.textContent = "Empty"; setTimeout(() => { streamTitleSave.textContent = "Save"; }, 1500); return; }
-  saveStreamInfo({ title: next }, streamTitleSave);
-});
-streamDescSave.addEventListener("click", () => {
-  saveStreamInfo({ description: streamDescInput.value.trim() }, streamDescSave);
-});
-clipLimitSave.addEventListener("click", () => {
-  const u = parseInt(clipLimitUser.value, 10);
-  const m = parseInt(clipLimitMod.value, 10);
-  if (Number.isNaN(u) || Number.isNaN(m)) {
-    clipLimitSave.textContent = "Number?"; setTimeout(() => { clipLimitSave.textContent = "Save"; }, 1500); return;
+// Add, change, or clear your own go-live email.
+emailSave.addEventListener("click", async () => {
+  const email = emailInput.value.trim();
+  if (email && !email.includes("@")) {
+    emailSave.textContent = "Invalid";
+    setTimeout(() => { emailSave.textContent = "Save"; }, 1500);
+    return;
   }
-  saveStreamInfo({ clip_limit_user: u, clip_limit_mod: m }, clipLimitSave);
+  const ok = await saveProfile({ email });
+  if (ok) me.email = email;
+  emailSave.textContent = ok ? "Saved" : "Error";
+  setTimeout(() => { emailSave.textContent = "Save"; }, 1500);
 });
 
 nameSave.addEventListener("click", async () => {
@@ -307,6 +277,59 @@ bioSave.addEventListener("click", async () => {
   setTimeout(() => { bioSave.textContent = "Save"; }, 1500);
 });
 
+// ---- go-live email opt-in ----
+
+const notifyToggle = document.getElementById("notify-toggle");
+
+function renderNotifySetting() {
+  notifyToggle.checked = me.notify_live !== false;
+  emailInput.value = me.email || "";
+}
+
+notifyToggle.addEventListener("change", async () => {
+  const on = notifyToggle.checked;
+  const ok = await saveProfile({ notify_live: on });
+  if (ok) me.notify_live = on;
+  else notifyToggle.checked = !on;   // revert if the save failed
+});
+
+// ---- first-login email prompt ----
+// If a viewer has no email on file, nudge them once to add one so they can get
+// the go-live alert. "Not now" is remembered so it does not nag every login.
+
+const EMAIL_PROMPT_KEY = "selfstream_email_prompt_dismissed";
+const emailModal = document.getElementById("email-modal");
+const emailPromptInput = document.getElementById("email-prompt-input");
+const emailPromptMsg = document.getElementById("email-prompt-msg");
+
+function maybePromptEmail() {
+  if (me.email) return;                                   // already has one
+  try { if (localStorage.getItem(EMAIL_PROMPT_KEY)) return; } catch {}
+  openModal(emailModal);
+  emailPromptInput.focus();
+}
+
+document.getElementById("email-ignore").addEventListener("click", () => {
+  try { localStorage.setItem(EMAIL_PROMPT_KEY, "1"); } catch {}
+});
+
+document.getElementById("email-prompt-save").addEventListener("click", async () => {
+  const email = emailPromptInput.value.trim();
+  if (!email || !email.includes("@")) {
+    emailPromptMsg.textContent = "Enter a valid email, or choose Not now.";
+    return;
+  }
+  const ok = await saveProfile({ email });
+  if (ok) {
+    me.email = email;
+    try { localStorage.removeItem(EMAIL_PROMPT_KEY); } catch {}
+    closeModal(emailModal);
+    renderNotifySetting();        // keep the Settings panel in sync
+  } else {
+    emailPromptMsg.textContent = "Could not save. Try again.";
+  }
+});
+
 function showPwMsg(text, ok) {
   pwMsg.textContent = text;
   pwMsg.className = "pw-msg " + (ok ? "ok" : "bad");
@@ -327,6 +350,7 @@ pwSave.addEventListener("click", async () => {
       pwCurrent.value = "";
       pwNew.value = "";
       showPwMsg("Password changed.", true);
+      setTimeout(() => closeModal(passwordModal), 1200);
     } else {
       const data = await reply.json().catch(() => ({}));
       showPwMsg(data.error || "Could not change password.", false);
@@ -443,7 +467,10 @@ document.addEventListener("keydown", (e) => {
 
 const libGrid = document.getElementById("lib-grid");
 const libEmpty = document.getElementById("lib-empty");
+const clipFilter = document.getElementById("clip-filter");
+const mineOnlyToggle = document.getElementById("mine-only");
 let libTab = "vods";
+let mineOnly = false;
 const libCache = { vods: null, clips: null };
 
 function durationClock(secs) {
@@ -517,16 +544,27 @@ async function renderLibrary() {
     catch { items = []; }
     libCache[libTab] = items;
   }
+  // The "my clips only" filter applies to the clips tab for every role.
+  clipFilter.hidden = libTab !== "clips";
+  let display = items;
+  if (libTab === "clips" && mineOnly && me) {
+    display = items.filter((c) => c.creator === me.username);
+  }
+
   libGrid.innerHTML = "";
-  if (!items.length) {
+  if (!display.length) {
     libEmpty.hidden = false;
-    libEmpty.textContent = libTab === "vods"
-      ? "No past broadcasts yet. Recordings appear here after a stream ends."
-      : "No clips yet. Viewers can clip the last 30 seconds while live.";
+    if (libTab === "vods") {
+      libEmpty.textContent = "No past broadcasts yet. Recordings appear here after a stream ends.";
+    } else if (mineOnly) {
+      libEmpty.textContent = "You haven't made any clips yet.";
+    } else {
+      libEmpty.textContent = "No clips yet. Viewers can clip the last 30 seconds while live.";
+    }
     return;
   }
   libEmpty.hidden = true;
-  items.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
+  display.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
 }
 
 document.querySelectorAll(".lib-tab").forEach((tab) => {
@@ -537,9 +575,15 @@ document.querySelectorAll(".lib-tab").forEach((tab) => {
   });
 });
 
+mineOnlyToggle.addEventListener("change", () => {
+  mineOnly = mineOnlyToggle.checked;
+  renderLibrary();
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
   setupIdentity();
+  maybePromptEmail();
   loadChannel();
   renderLibrary();
   await refreshStatus();
