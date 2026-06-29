@@ -337,7 +337,25 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         # Poster first, while the file is still on fast local scratch.
         await _make_poster(tmp_path, os.path.join(VOD_DIR, f"{vod_id}.jpg"))
         dst = os.path.join(VOD_DIR, filename)
-        await asyncio.to_thread(shutil.move, tmp_path, dst)
+        # Remux the recording into a regular, faststart MP4. The live recording is
+        # a fragmented MP4 (empty_moov + keyframe fragments) so it survives an
+        # abrupt stop, but fragmented files load slowly and break some mobile
+        # players. A plain stream copy with +faststart rewrites it to a single
+        # moov-at-front file that seeks and plays everywhere; no re-encode, so it
+        # stays quick. If the remux fails, fall back to moving the raw recording
+        # so the VOD is never lost, even if playback is degraded.
+        code, _ = await _run_ffmpeg(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", tmp_path,
+             "-c", "copy", "-movflags", "+faststart", dst],
+            timeout=600,
+        )
+        if code == 0 and os.path.exists(dst) and os.path.getsize(dst) > 100_000:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        else:
+            await asyncio.to_thread(shutil.move, tmp_path, dst)
         duration = await _probe_duration(dst) or max(0, ended_at - started_at)
         db.finalize_vod(vod_id, ended_at, duration, filename)
         db.snapshot_chat("vod", vod_id, started_at, ended_at)
