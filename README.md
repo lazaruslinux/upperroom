@@ -1,4 +1,4 @@
-# selfstream
+# upperroom
 
 Self hosted, single channel live streaming with accounts and chat. You
 broadcast from OBS. Your viewers open one link, sign in with an account you made
@@ -84,5 +84,5 @@ MIT. See `LICENSE`.
 
 ## A note on how this was built
 
-Parts of this project were written with the help of an AI coding assistant. The
-design choices, the review, and running it are my own.
+Parts of this project were written with the help of Claude Code. The design
+choices, the review, and running it are my own.
