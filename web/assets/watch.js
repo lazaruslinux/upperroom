@@ -429,16 +429,23 @@ unmuteButton.addEventListener("click", () => {
 
 // Keep the page exactly as tall as the visible viewport so the video, the last
 // message, and the send box stay on screen on mobile as the address bar or the
-// keyboard slides in and out.
+// keyboard slides in and out. When the keyboard opens the ONLY thing that should
+// change is the messages list shrinking - the video stays put and the input
+// stays pinned above the keyboard. The body is overflow:hidden, but iOS still
+// scrolls the visual viewport and displaces the whole layout, so we re-measure
+// --vvh and force the window back to the top on every viewport change.
 function lockHeight() {
   const vv = window.visualViewport;
   const height = (vv && vv.height) || window.innerHeight;
   document.documentElement.style.setProperty("--vvh", height + "px");
+  // Counteract any page displacement the keyboard caused. offsetTop is the
+  // visual viewport's own shift; pageX/YOffset is the layout scroll. Zero both.
+  if (window.pageYOffset !== 0 || window.pageXOffset !== 0) window.scrollTo(0, 0);
 }
 if (window.visualViewport) {
   // Some mobile browsers only fire "scroll" (not "resize") when the bottom
-  // toolbar slides in or out, which changes the visible height, so listen to
-  // both. Otherwise the send box can end up hidden behind the toolbar.
+  // toolbar or the keyboard slides in or out, which changes the visible height,
+  // so listen to both. Otherwise the send box can end up hidden behind them.
   window.visualViewport.addEventListener("resize", lockHeight);
   window.visualViewport.addEventListener("scroll", lockHeight);
 }
@@ -448,6 +455,27 @@ window.addEventListener("orientationchange", lockHeight);
 // browser chrome has settled.
 window.addEventListener("load", () => setTimeout(lockHeight, 200));
 lockHeight();
+
+// Focusing the chat input opens the keyboard. Animate the layout height change
+// (so the video resizes smoothly, not in a jump) and, once the viewport has
+// settled, re-measure and pin the newest message to the bottom so it stays in
+// view above the keyboard. Blur reverses it.
+function settleAfterKeyboard() {
+  // 300ms covers the keyboard slide-in on both iOS and Android; re-measure a
+  // couple of times because the viewport height arrives in stages.
+  [120, 300].forEach((t) => setTimeout(() => {
+    lockHeight();
+    messages.scrollTop = messages.scrollHeight;
+  }, t));
+}
+chatInput.addEventListener("focus", () => {
+  document.body.classList.add("kb-anim");
+  settleAfterKeyboard();
+});
+chatInput.addEventListener("blur", () => {
+  settleAfterKeyboard();
+  setTimeout(() => document.body.classList.remove("kb-anim"), 320);
+});
 
 // ---- clip the last 30 seconds ----
 
