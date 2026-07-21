@@ -1,9 +1,24 @@
 /* =========================================================================
    upperroom - square-edged terminal theme
-   Organization: tokens -> base -> chrome (brand, buttons, tags, forms)
-   -> login -> home -> watch -> media -> admin/mod -> modals -> chat fonts.
-   Every class name and id here is a hook used by the HTML or JS; the look
-   changed, the hooks did not. Comments call out rules that fix real bugs.
+   Organization: tokens -> base -> motion -> chrome (brand, buttons, tags,
+   inputs) -> login -> home -> watch -> media -> admin/mod -> modals -> fonts.
+
+   Type scale (px), enforced globally - no ad-hoc sizes:
+     11 mono   micro       timestamps, tags, stat/section labels, meta
+     12 mono   ui          buttons, tabs, nav links, settings labels, chat head
+     13 mono   identifier  @handles, greeting, usernames
+     14 sans   body        chat messages, bios, descriptions, modal copy
+     15 sans   title-sm    VOD card titles, modal headings
+     17 sans   title       stream title, media page title
+     20 mono   stat        stat numbers
+     16 mono   brand       brand mark (bold)
+   Text inputs stay 16px (iOS zoom rule) and are exempt from the scale.
+
+   Buttons: three variants (ghost / accent / danger), two sizes (sm 28px /
+   md 36px). Same lowercase mono everywhere. See the button system below.
+
+   Every class name and id here is a hook used by the HTML or JS; comments call
+   out the rules that fix real bugs.
    ========================================================================= */
 
 /* ---- design tokens ---- */
@@ -15,8 +30,8 @@
   --muted: #7c8278;
   --border: #232622;
   --accent: #6ab48a;          /* smoky phosphor green */
-  --live-red: #ff4d4d;
-  --error: #ff6b6b;           /* error red family, errors only */
+  --live-red: #ff4d4d;        /* reserved for LIVE only */
+  --error: #ff6b6b;           /* error + destructive red */
   /* Role colors are constant across themes so op/mod always read the same. */
   --op: #f5b840;              /* admin  - amber */
   --mod: #3f7cff;            /* moderator - blue */
@@ -24,6 +39,8 @@
   --avatar-default: #1c3a29;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --accent-tint: rgba(106, 180, 138, 0.08);
+  --error-tint: rgba(255, 107, 107, 0.08);
 }
 
 [data-theme="light"] {
@@ -35,6 +52,8 @@
   --accent: #4a8a67;          /* darker green for contrast on paper */
   --live-red: #d9363e;
   --error: #d9363e;
+  --accent-tint: rgba(74, 138, 103, 0.1);
+  --error-tint: rgba(217, 54, 62, 0.1);
   /* --op / --mod / --avatar-default deliberately not overridden: constant. */
 }
 
@@ -64,13 +83,35 @@ body {
 
 @keyframes blink { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
 
+/* ---- motion: restrained, fast, professional ---- */
+
+@keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes card-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes panel-slide { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* live-appended chat lines rise in; history/replay lines get no `enter` class */
+@keyframes msg-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+.msg.enter { animation: msg-in 0.15s ease-out; }
+
+/* One place to switch it all off. Transitions are near-instant; the blinking
+   cursor and live dots are left running so the mark never vanishes. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+  .modal:not([hidden]),
+  .modal:not([hidden]) .modal-card,
+  .settings-panel:not([hidden]),
+  .msg.enter { animation: none !important; }
+  .stream-card:hover, .media-card:hover { transform: none !important; }
+  .watch.kb-anim { transition: none !important; }
+}
+
 /* ---- brand mark ---- */
 
 .brand {
   font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
   color: var(--text);
 }
 /* The cursor is the only glow in the whole app. */
@@ -86,95 +127,103 @@ body {
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.4px;
   text-transform: lowercase;
   border: 1px solid var(--border);
-  padding: 2px 6px;
+  padding: 1px 5px;
   vertical-align: middle;
 }
 
-/* ---- buttons ----
-   Everything is flat, square, 1px-bordered, mono, lowercase. Ghost by default;
-   the primary action gets an accent border + accent text; destructive is red.
-   Bare submit buttons (login "Sign in", chat "Send") have no class, so the base
-   button rule gives them the primary accent look the mockup shows on "send". */
+/* =========================================================================
+   Button system: ghost | accent | danger, sizes sm (28px) | md (36px)
+   Card buttons (.stream-card, .stat-card) are deliberately NOT part of this
+   system - they keep their own block layout and reset below.
+   ========================================================================= */
 
-button {
+button { font-family: var(--mono); cursor: pointer; }
+
+.ghost-btn, .solid-btn, .pill, .chip-btn, .danger-btn, .lib-tab,
+.activity-tabs .tab, .font-option, .icon-btn, #viewer-toggle, .unmute,
+button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;                 /* sm default */
+  padding: 0 12px;
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  line-height: 1;
   text-transform: lowercase;
-  cursor: pointer;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--accent);
-  padding: 9px 16px;
-}
-button:hover { color: var(--accent); }
-
-.ghost-btn, .pill, .chip-btn, .lib-tab, .tab, .navbtn, .font-option,
-.replay-head .pill, #viewer-toggle, .chat-head button, .chat-head a.icon-btn {
-  border: 1px solid var(--border);
-  color: var(--text);
-  background: transparent;
-}
-.ghost-btn:hover, .pill:hover, .chip-btn:hover, .font-option:hover,
-#viewer-toggle:hover, .chat-head button:hover, .chat-head a.icon-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.ghost-btn {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  text-transform: lowercase;
-  padding: 7px 14px;
   text-decoration: none;
-  display: inline-block;
-}
-
-/* Primary: accent-bordered, accent text, flat. */
-.solid-btn, .pill.primary, button[type="submit"] {
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  cursor: pointer;
+  border: 1px solid var(--border);
   background: transparent;
-  font-family: var(--mono);
-  text-transform: lowercase;
-}
-.solid-btn:hover, .pill.primary:hover, button[type="submit"]:hover {
-  background: rgba(106, 180, 138, 0.08);
-  color: var(--accent);
-}
-.solid-btn {
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  padding: 7px 14px;
+  color: var(--muted);
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 
-/* Destructive: red is reserved for this and for LIVE/errors. */
+/* ghost hover: text + border go to --text */
+.ghost-btn:hover, .pill:hover, .chip-btn:hover, .lib-tab:hover,
+.activity-tabs .tab:hover, .font-option:hover, .icon-btn:hover,
+#viewer-toggle:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+/* accent variant */
+button[type="submit"], .solid-btn, .pill.primary,
+.lib-tab.selected, .activity-tabs .tab.selected, .font-option.selected {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+button[type="submit"]:hover, .solid-btn:hover, .pill.primary:hover,
+.lib-tab.selected:hover, .activity-tabs .tab.selected:hover,
+.font-option.selected:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+/* danger variant */
 .danger-btn, .chip-btn.danger-chip {
-  border: 1px solid var(--live-red);
-  color: var(--live-red);
-  background: transparent;
+  color: var(--error);
+  border-color: var(--error);
 }
 .danger-btn:hover, .chip-btn.danger-chip:hover {
-  background: rgba(255, 77, 77, 0.08);
-  border-color: var(--live-red);
-  color: var(--live-red);
+  color: var(--error);
+  border-color: var(--error);
+  background: var(--error-tint);
 }
 
-/* ---- form inputs ---- */
+/* md size: form submits + modal primaries + paired form actions */
+button[type="submit"], .solid-btn, .pill.primary, .danger-btn,
+.edit-actions .ghost-btn, .crop-actions .pill {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+/* square icon buttons (28x28) */
+.icon-btn { width: 28px; padding: 0; }
+
+/* the watching count keeps its accent text and stretches to fill the row */
+#viewer-toggle { flex: 1; color: var(--accent); }
+#viewer-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ---- form inputs (exempt from the type scale: 16px avoids iOS zoom) ---- */
 
 input[type="text"], input[type="password"], input[type="email"],
 input[type="number"] {
-  padding: 9px 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font-family: var(--mono);
   font-size: 16px;         /* 16px stops iOS Safari from zooming in on focus */
   letter-spacing: 0.3px;
+  transition: border-color 0.15s ease;
 }
 input::placeholder { color: var(--muted); }
 input:focus, textarea:focus, select:focus {
@@ -187,45 +236,42 @@ textarea {
   border: 1px solid var(--border);
   font-family: var(--sans);
   font-size: 16px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   resize: vertical;
+  transition: border-color 0.15s ease;
 }
 
-form { display: flex; flex-direction: column; gap: 16px; }
+form { display: flex; flex-direction: column; gap: 12px; }
 
 .error { color: var(--error); margin: 0; font-size: 13px; }
 
 /* ---- tags: live / count / offline / role ---- */
 
-.tag-live, .stream-badge.is-live, .status-live #status-label {
-  /* handled per-context below */
-}
-
 /* Role tags replace the old crown/shield icons: square mono text chips. */
 .role-tag {
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  padding: 2px 4px;
+  padding: 1px 4px;
   color: #0b0c0b;
   flex: none;
   align-self: center;
 }
 .role-tag.op, .role-badge { background: var(--op); }
 .role-tag.mod, .role-badge.mod { background: var(--mod); }
-.role-tag-lg { font-size: 11px; padding: 3px 6px; }
+.role-tag-lg { font-size: 12px; padding: 2px 6px; }
 
 /* Admin/mod dashboard user cards reuse the same chip look. */
 .role-badge {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: #0b0c0b;
-  padding: 2px 5px;
+  padding: 1px 5px;
 }
 
 /* ---- square avatars (every size) ---- */
@@ -261,13 +307,13 @@ form { display: flex; flex-direction: column; gap: 16px; }
 }
 .card {
   width: 100%;
-  max-width: 360px;
+  max-width: 340px;
   background: var(--panel);
   border: 1px solid var(--border);
-  padding: 32px;
+  padding: 24px;
 }
-.card h1.brand { margin: 0 0 4px; font-size: 22px; }
-.card .muted { margin: 0 0 24px; font-family: var(--mono); font-size: 12px; }
+.card h1.brand { margin: 0 0 4px; font-size: 16px; }
+.card .muted { margin: 0 0 20px; font-family: var(--mono); font-size: 12px; }
 
 /* live status badge on the login card */
 .status {
@@ -279,7 +325,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
   border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   color: var(--muted);
 }
 .status .dot { width: 7px; height: 7px; background: var(--muted); flex: none; }
@@ -309,13 +355,14 @@ form { display: flex; flex-direction: column; gap: 16px; }
    on one line even at 390px. Primary actions (e.g. admin's "+ new user") keep
    their bordered accent button look and are exempt from this rule. */
 .home-bar .home-actions .ghost-btn {
+  height: auto;
   border: none;
   background: none;
   padding: 4px 0;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.4px;
+  font-size: 12px;
+  letter-spacing: 0.3px;
   text-transform: lowercase;
   white-space: nowrap;
 }
@@ -333,7 +380,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
 /* Prompt-style greeting: "> signed in as name" in dim mono, name in accent. */
 .home-greeting {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.3px;
   color: var(--muted);
   margin: 0 0 16px;
@@ -343,9 +390,9 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .stream-card {
   width: 100%;
   text-align: left;
-  /* The card is a <button>; the base button rule would border it with accent.
-     Reset it to a plain panel with an explicit text color so children (like the
-     title) are not invisibly colored on the light theme's pale card. */
+  /* The card is a <button>; reset it to a plain panel with an explicit text
+     color so children (like the title) are not invisibly colored on the light
+     theme's pale card. */
   color: var(--text);
   background: var(--panel);
   border: 1px solid var(--border);
@@ -354,8 +401,9 @@ form { display: flex; flex-direction: column; gap: 16px; }
   cursor: pointer;
   text-transform: none;
   font-family: var(--sans);
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
-.stream-card:hover { border-color: var(--accent); }
+.stream-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .stream-card.is-live { border-color: var(--live-red); }
 
 .thumb-wrap { position: relative; aspect-ratio: 16 / 9; background: #050605; overflow: hidden; }
@@ -382,8 +430,8 @@ form { display: flex; flex-direction: column; gap: 16px; }
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -396,7 +444,8 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .stream-card:hover .play-overlay { opacity: 1; }
 .stream-card.is-live .play-overlay { opacity: 0.9; }
 
-/* LIVE / offline tag over the thumbnail. Colors are fixed (always on black). */
+/* LIVE / offline tag over the thumbnail. Colors are fixed (always on black).
+   The swap between states fades via the color/background transition. */
 .stream-badge {
   position: absolute;
   top: 8px;
@@ -404,12 +453,13 @@ form { display: flex; flex-direction: column; gap: 16px; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   text-transform: uppercase;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 .stream-badge .badge-dot { width: 6px; height: 6px; flex: none; }
 .stream-badge.is-live { background: var(--live-red); color: #0b0c0b; }
@@ -426,10 +476,10 @@ form { display: flex; flex-direction: column; gap: 16px; }
   position: absolute;
   bottom: 8px;
   right: 8px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.4px;
+  font-size: 11px;
+  letter-spacing: 0.3px;
   color: var(--accent);
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid var(--border);
@@ -437,24 +487,15 @@ form { display: flex; flex-direction: column; gap: 16px; }
 
 .card-meta { display: flex; align-items: center; gap: 12px; padding: 12px; }
 .card-text { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
-.card-title { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--text); }
-.card-channel { font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+.card-title { font-family: var(--sans); font-weight: 600; font-size: 17px; color: var(--text); }
+.card-channel { font-family: var(--mono); font-size: 13px; color: var(--text); }
 .card-channel .channel-name { color: var(--text); }
 .card-channel .channel-handle { color: var(--muted); margin-left: 6px; }
-.card-desc { font-family: var(--sans); color: var(--muted); font-size: 12px; }
+.card-desc { font-family: var(--sans); color: var(--muted); font-size: 14px; }
 
 /* library (VODs + clips) */
 .library { margin-top: 24px; }
 .lib-tabs, .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-.lib-tab {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.6px;
-  text-transform: lowercase;
-  color: var(--muted);
-  padding: 6px 16px;
-}
-.lib-tab.selected { border-color: var(--accent); color: var(--accent); }
 .lib-filter {
   margin: 0 0 12px;
   font-family: var(--mono);
@@ -475,8 +516,9 @@ form { display: flex; flex-direction: column; gap: 16px; }
   overflow: hidden;
   text-decoration: none;
   color: var(--text);
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
-.media-card:hover { border-color: var(--accent); }
+.media-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 .media-thumb {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -491,19 +533,19 @@ form { display: flex; flex-direction: column; gap: 16px; }
   position: absolute;
   bottom: 5px;
   right: 5px;
-  padding: 2px 4px;
+  padding: 1px 4px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.3px;
   color: var(--text);
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid var(--border);
 }
-.media-meta { padding: 8px 8px 12px; }
+.media-meta { padding: 8px 10px 10px; }
 .media-title {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.25;
   margin-bottom: 4px;
   display: -webkit-box;
@@ -511,7 +553,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.media-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.3px; }
+.media-sub { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; }
 
 /* =========================================================================
    Watch (video stage + live chat)
@@ -525,6 +567,11 @@ form { display: flex; flex-direction: column; gap: 16px; }
   height: var(--vvh, 100vh);
   overflow: hidden;
 }
+/* Only while the keyboard is opening/closing do we animate the height change,
+   so the video resizes smoothly then; normal address-bar scrolling stays crisp
+   (watch.js adds/removes .kb-anim around input focus). */
+.watch.kb-anim { transition: height 0.18s ease; }
+
 .stage {
   position: relative;
   flex: 1;
@@ -548,11 +595,12 @@ form { display: flex; flex-direction: column; gap: 16px; }
   left: 50%;
   transform: translateX(-50%);
   width: auto;
-  padding: 9px 20px;
+  height: 36px;
+  padding: 0 16px;
   background: rgba(0, 0, 0, 0.7);
-  border: 1px solid var(--border);
   color: var(--text);
 }
+.unmute:hover { color: var(--text); border-color: var(--accent); }
 
 .chat {
   width: 320px;
@@ -568,26 +616,11 @@ form { display: flex; flex-direction: column; gap: 16px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   flex: none;
 }
-.chat-head button, .chat-head a.icon-btn {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.4px;
-  text-transform: lowercase;
-  padding: 8px;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.chat-head #viewer-toggle {
-  flex: 1;
-  color: var(--accent);   /* count tag: mono, accent */
-}
-.chat-head .icon-btn { padding: 8px 10px; }
+.chat-head .icon-btn { flex: none; }
 
 .viewer-list {
   list-style: none;
@@ -614,7 +647,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   /* Only message text is selectable, so a stray long-press cannot paint a tall
      highlight down the empty part of the chat column. */
   -webkit-user-select: none;
@@ -628,10 +661,10 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .msg .msg-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .msg .name { font-family: var(--mono); font-weight: 600; font-size: 12px; letter-spacing: 0.2px; color: var(--text); }
 .msg .name.admin { color: var(--op); }   /* admin chat name stays amber-ish */
-.msg .msg-time { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3px; color: var(--muted); }
-.msg .body { display: block; font-family: var(--sans); font-size: 13px; line-height: 1.35; margin-top: 3px; }
+.msg .msg-time { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); }
+.msg .body { display: block; font-family: var(--sans); font-size: 14px; line-height: 1.4; margin-top: 3px; }
 .msg .body.deleted { color: var(--muted); font-style: italic; }
-.msg.system { font-family: var(--mono); color: var(--muted); font-style: italic; font-size: 11px; white-space: pre-wrap; }
+.msg.system { font-family: var(--mono); color: var(--muted); font-style: italic; font-size: 12px; white-space: pre-wrap; }
 
 .chat-form {
   flex: none;                /* fixed at the bottom, never shrinks away */
@@ -646,21 +679,12 @@ form { display: flex; flex-direction: column; gap: 16px; }
   min-width: 0;        /* let the input shrink instead of pushing Send off the
                           right edge; a flex item defaults to min-width:auto,
                           which here is the input's intrinsic ~20ch width */
+  height: 36px;
   font-family: var(--mono);
   font-size: 16px;     /* 16px stops iOS Safari from zooming in on focus */
 }
-.chat-form button { flex: none; width: auto; white-space: nowrap; }
-.chat-form .icon-btn {
-  flex: none;
-  width: auto;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  color: var(--text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.chat-form .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.chat-form button[type="submit"] { flex: none; white-space: nowrap; }
+.chat-form .icon-btn { flex: none; }
 
 /* On narrow screens, stack the video on top and the chat below it. */
 @media (max-width: 720px) {
@@ -674,19 +698,21 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .settings-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding: 12px;
   border-bottom: 1px solid var(--border);
 }
+.settings-panel:not([hidden]) { animation: panel-slide 0.15s ease-out; }
 .settings-heading {
   margin: 0;
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
+  color: var(--muted);
 }
-.settings-note { margin: 4px 0 0; font-size: 12px; line-height: 1.4; }
+.settings-note { margin: 4px 0 0; font-family: var(--sans); font-size: 12px; line-height: 1.4; color: var(--muted); }
 
 .setting {
   display: flex;
@@ -698,22 +724,15 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .setting > span:first-child { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 /* vertical rhythm between stacked rows, so single-line rows like Theme and the
    go-live checkbox do not crowd each other */
-.setting + .setting { margin-top: 12px; }
+.setting + .setting { margin-top: 10px; }
 .setting-check .switch { color: var(--text); }
 
-.pill {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.4px;
-  text-transform: lowercase;
-  padding: 7px 12px;
-}
 .setting select {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   font-family: var(--mono);
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-size: 16px;         /* 16px avoids the iOS focus zoom */
 }
 .avatar-edit { display: inline-flex; align-items: center; gap: 8px; }
@@ -721,13 +740,8 @@ form { display: flex; flex-direction: column; gap: 16px; }
 /* Each font option renders in its own typeface so you can preview it. */
 .setting-font { flex-direction: column; align-items: stretch; gap: 8px; }
 .font-picker { display: flex; flex-wrap: wrap; gap: 8px; }
-.font-option {
-  color: var(--text);
-  padding: 6px 10px;
-  font-size: 15px;
-  text-transform: none;   /* previews show each font's name in its real casing */
-}
-.font-option.selected { border-color: var(--accent); color: var(--accent); }
+/* font chips size to their preview label rather than the fixed control height */
+.font-option { height: auto; padding: 6px 10px; font-size: 15px; text-transform: none; }
 
 .setting-bio { flex-direction: column; align-items: stretch; gap: 8px; }
 .bio-edit { display: flex; gap: 8px; align-items: flex-start; }
@@ -742,7 +756,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .pw-msg.bad { color: var(--error); }
 
 .setting-links { gap: 8px; }
-.setting-links .pill { text-decoration: none; display: inline-block; text-align: center; }
+.setting-links .pill { text-decoration: none; }
 
 /* stream info + display-name editors (settings) */
 .stream-info-settings {
@@ -765,7 +779,7 @@ form { display: flex; flex-direction: column; gap: 16px; }
 .media-main {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px 16px 48px;
+  padding: 20px 16px 40px;
   display: flex;
   gap: 20px;
   align-items: flex-start;
@@ -778,9 +792,9 @@ form { display: flex; flex-direction: column; gap: 16px; }
   border: 1px solid var(--border);
   display: block;
 }
-.media-info { padding: 16px 4px 0; }
-.media-page-title { font-family: var(--sans); font-size: 20px; margin: 0 0 4px; }
-.media-desc { font-family: var(--sans); color: var(--text); margin: 12px 0 0; line-height: 1.5; white-space: pre-wrap; }
+.media-info { padding: 14px 2px 0; }
+.media-page-title { font-family: var(--sans); font-weight: 600; font-size: 17px; margin: 0 0 4px; }
+.media-desc { font-family: var(--sans); font-size: 14px; color: var(--text); margin: 12px 0 0; line-height: 1.5; white-space: pre-wrap; }
 
 .media-replay {
   width: 340px;
@@ -797,16 +811,16 @@ form { display: flex; flex-direction: column; gap: 16px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.4px;
   text-transform: lowercase;
 }
 .media-replay .messages { flex: 1 1 auto; min-height: 240px; }
-.replay-empty { padding: 16px; margin: 0; }
+.replay-empty { padding: 14px; margin: 0; }
 
 @media (max-width: 860px) {
   .media-main { flex-direction: column; }
@@ -821,36 +835,45 @@ form { display: flex; flex-direction: column; gap: 16px; }
 
 body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; background: var(--bg); }
 
-.admin-main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+.admin-main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 40px; }
 
-.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
 .stat-card {
   color: var(--text);
   text-align: left;
   cursor: pointer;
   background: var(--panel);
   border: 1px solid var(--border);
-  padding: 12px 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   text-transform: none;
   font-family: var(--sans);
+  transition: border-color 0.15s ease;
 }
 .stat-card:hover { border-color: var(--accent); }
-.stat-value { font-family: var(--mono); font-size: 24px; font-weight: 600; }
+.stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; }
 .stat-label { font-family: var(--mono); color: var(--muted); font-size: 11px; letter-spacing: 0.3px; }
 
-.section-title { font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.4px; text-transform: lowercase; margin: 0 0 12px; }
+.section-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
 
 .user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .user-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   position: relative;
   overflow: hidden;
 }
@@ -859,8 +882,8 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 .user-head { display: flex; align-items: center; gap: 12px; }
 .user-ident { min-width: 0; }
-.user-name { font-family: var(--mono); font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.user-handle { font-family: var(--mono); font-size: 12px; }
+.user-name { font-family: var(--mono); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.user-handle { font-family: var(--mono); font-size: 13px; }
 
 .ban-row { justify-content: space-between; align-items: center; gap: 12px; }
 .ban-row .chip-btn { flex: none; }
@@ -872,32 +895,23 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
-  padding: 12px 0;
+  padding: 10px 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 .user-stats span { display: flex; flex-direction: column; gap: 2px; }
 .user-stats b { font-family: var(--mono); font-size: 13px; font-weight: 600; }
-.user-stats i { font-family: var(--mono); font-style: normal; color: var(--muted); font-size: 10px; }
+.user-stats i { font-family: var(--mono); font-style: normal; color: var(--muted); font-size: 11px; }
 
 .user-actions { display: flex; gap: 8px; }
-.chip-btn {
-  flex: 1;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.3px;
-  text-transform: lowercase;
-  padding: 7px 10px;
-  background: var(--bg);
-  color: var(--text);
-}
-.chip-btn.danger-chip { background: transparent; flex: none; }
+.chip-btn { flex: 1; color: var(--muted); }
+.chip-btn.danger-chip { flex: none; }
 
 /* ---- admin modals + forms ---- */
 
 .admin-modal { max-width: 420px; }
-.admin-modal h3 { margin: 0 0 16px; }
-.admin-form { display: flex; flex-direction: column; gap: 12px; }
+.admin-modal h3 { margin: 0 0 14px; }
+.admin-form { display: flex; flex-direction: column; gap: 10px; }
 .admin-form label {
   display: flex;
   flex-direction: column;
@@ -911,6 +925,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   align-items: center;
   gap: 8px;
   color: var(--text);
+  font-family: var(--sans);
   font-size: 13px;
 }
 .admin-form .checkrow input { width: auto; }
@@ -920,17 +935,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 .activity-modal { max-width: 460px; }
 .activity-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-.activity-tabs .tab {
-  flex: 1;
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.3px;
-  text-transform: lowercase;
-  color: var(--muted);
-  background: var(--bg);
-  padding: 7px;
-}
-.activity-tabs .tab.selected { color: var(--accent); border-color: var(--accent); }
+.activity-tabs .tab { flex: 1; }
 
 .activity-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .activity-row {
@@ -941,6 +946,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   padding: 8px 10px;
   background: var(--bg);
   border: 1px solid var(--border);
+  font-family: var(--sans);
   font-size: 13px;
 }
 .activity-row.chat-row { justify-content: flex-start; }
@@ -955,7 +961,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   flex-direction: column;
   gap: 12px;
   max-width: 640px;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--border);
   background: var(--panel);
 }
@@ -1007,34 +1013,38 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   padding: 24px;
   background: rgba(0, 0, 0, 0.6);
 }
+.modal:not([hidden]) { animation: modal-fade 0.15s ease-out; }
+.modal:not([hidden]) .modal-card { animation: card-rise 0.18s ease-out; }
 .modal-card {
   position: relative;
   width: 100%;
   max-width: 320px;
   background: var(--panel);
   border: 1px solid var(--border);
-  padding: 24px;
+  padding: 18px;
 }
 .modal-close {
   position: absolute;
   top: 4px;
   right: 4px;
   width: auto;
+  height: auto;
   padding: 2px 8px;
   background: transparent;
   border: none;
   color: var(--muted);
   font-size: 20px;
   line-height: 1;
+  transition: color 0.15s ease;
 }
 .modal-close:hover { color: var(--text); }
-.modal-card h3 { font-family: var(--mono); font-weight: 600; letter-spacing: 0.3px; }
+.modal-card h3 { font-family: var(--sans); font-size: 15px; font-weight: 600; letter-spacing: 0; margin: 0 0 14px; }
 
 .profile-card { text-align: center; }
 .profile-avatar { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .profile-avatar .avatar { width: 96px; height: 96px; font-size: 36px; }
-.profile-name { font-family: var(--mono); font-weight: 600; font-size: 16px; margin-bottom: 8px; }
-.profile-bio { font-family: var(--sans); font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+.profile-name { font-family: var(--sans); font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+.profile-bio { font-family: var(--sans); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
 
 /* Avatar crop: the visible square canvas IS the crop area (backend stores a
    square PNG), so the ring is just a 1px square outline - no circular mask,

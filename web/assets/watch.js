@@ -19,6 +19,9 @@ let socket = null;
 let streamOnline = false;          // tracks live state so the count can reword
 let lastViewerCount = 0;
 const MAX_VISIBLE_MESSAGES = 50;  // keep the last 50 lines on screen, no more
+// True once the initial history batch has rendered, so only genuinely live
+// lines animate in - the backlog on connect/reconnect appears instantly.
+let chatLive = false;
 
 // The header count is "watching" while live, "in chat" while offline (people
 // can still hang out in chat between streams).
@@ -180,6 +183,7 @@ function atBottom() {
 
 function addLine(node) {
   const stick = atBottom();
+  if (chatLive) node.classList.add("enter");   // fade+rise only for live lines
   messages.appendChild(node);
   // Keep only the most recent lines so chat stays static but bounded.
   while (messages.children.length > MAX_VISIBLE_MESSAGES) {
@@ -262,6 +266,7 @@ function renderPresence(msg) {
 }
 
 function connectChat() {
+  chatLive = false;   // the reconnect backlog should not animate either
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
@@ -275,6 +280,7 @@ function connectChat() {
     else if (msg.type === "hello") {
       me = me || msg.you;
       msg.history.forEach(renderChat);
+      chatLive = true;   // everything after the backlog is live
     }
   });
 
