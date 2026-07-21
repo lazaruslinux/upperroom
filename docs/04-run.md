@@ -64,6 +64,12 @@ file is archived to the media store and shown on the home page under **VODs**.
 Viewers can also clip the last 30 seconds while you are live, and those appear
 under **Clips**, each with synced chat replay.
 
+Recording recovers on its own. If the recorder ever dies or its file stops
+growing mid-broadcast (for example, a rough reconnect on a long session), the
+gate finalizes whatever it captured, starts a fresh recording while you stay
+live, and backs off if failures repeat. You may see more than one VOD for a
+single broadcast when this happens; nothing is lost.
+
 To stop recordings from filling the disk, only the most recent
 `SELFSTREAM_VOD_KEEP` are kept (20 by default); older ones are deleted. You can
 also delete any VOD or clip by hand from the admin dashboard's **Content**

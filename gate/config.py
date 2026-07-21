@@ -95,6 +95,16 @@ VOD_KEEP_DAYS = int(os.environ.get("SELFSTREAM_VOD_KEEP_DAYS", "0"))
 CLIP_SECONDS = 30                  # how much of the live edge a clip captures
 CLIP_LAG = 2                       # stay this far back from the very live edge
 
+# Recorder resilience. The stream watcher supervises the recording ffmpeg while
+# the stream is live: if the process dies or its scratch file stops growing, the
+# partial recording is finalized (when it holds usable content) or discarded, and
+# a fresh recording is started while the broadcast is still on. Repeated failures
+# back off so a persistently broken source cannot spin restarts in a tight loop.
+RECORD_STARTUP_GRACE = 3           # seconds to confirm the recorder stayed up
+RECORD_STALL_POLLS = 4             # no-growth polls (~5s each) before a stall call
+RECORD_SURVIVAL_SECONDS = 60       # a recording alive this long clears the backoff
+RECORD_BACKOFF = (0, 10, 30, 60)   # seconds between successive restart attempts
+
 # ---- Go-live notifications ------------------------------------------------
 # When a broadcast starts, announce it once over any channel the operator has
 # configured: a Discord webhook and/or email through an SMTP relay (e.g. Brevo).

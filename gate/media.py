@@ -21,7 +21,8 @@ import httpx
 
 import db
 from config import (
-    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, RECORD_TMP,
+    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, RECORD_BACKOFF,
+    RECORD_STALL_POLLS, RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP,
     RTMP_SOURCE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
     VOD_KEEP, VOD_KEEP_DAYS,
 )
@@ -58,10 +59,17 @@ async def stream_watcher():
             await hub.set_live(online)
             if online and not was_online:
                 logger.info("stream online")
+                # Fresh broadcast: clear any leftover failure-streak backoff.
+                _watch.update(last_size=-1, no_growth=0, attempts=0,
+                              next_retry_at=0.0)
                 await start_recording()
                 # Announce in the background so a slow webhook or mail relay never
                 # delays the status poll. notify_live enforces its own cooldown.
                 asyncio.create_task(notify_live())
+            elif online:
+                # Supervise the in-progress recording: restart it if the recorder
+                # died or its scratch file stalled while the stream is still live.
+                await _recorder_watchdog()
             if was_online and not online:
                 logger.info("stream offline")
                 await hub.wipe()
@@ -72,20 +80,22 @@ async def stream_watcher():
         await asyncio.sleep(5)
 
 
-async def capture_thumbnail():
-    """Save one frame from the live stream into THUMB_PATH. Best effort.
+# RTMP input tuning. A long-running, messy RTMP session can defeat ffmpeg's
+# default codec probing ("could not find codec parameters"); giving it a larger
+# analyze window and probe budget makes joining such a session far more reliable.
+# These go before -i on any path that reads the live RTMP source.
+_RTMP_PROBE_ARGS = ["-analyzeduration", "10000000", "-probesize", "10000000"]
 
-    While a broadcast is recording, the stream is already being written to local
-    disk, so we grab the freshest frame from that file instead of opening a
-    second full RTMP pull just for a thumbnail. When no recording is in progress
-    (a brief window right at go-live), fall back to a short RTMP read."""
-    rec_path = _rec["tmp_path"] if _rec["active"] else None
-    if rec_path and os.path.exists(rec_path):
-        # -sseof -1 seeks to one second before the end of the file, reading the
-        # most recent frame without decoding the whole recording.
-        source_args = ["-sseof", "-1", "-i", rec_path]
-    else:
-        source_args = ["-rw_timeout", "5000000", "-i", RTMP_SOURCE]
+# Thumbnail capture is best effort and runs every THUMB_INTERVAL seconds, so a
+# persistent failure (e.g. a dead scratch file) would otherwise spam the log. We
+# warn once, stay quiet (debug) while it keeps failing, and log a single INFO when
+# it recovers.
+_thumb_fail = {"failing": False}
+
+
+async def _grab_frame(source_args, timeout=12):
+    """Run one ffmpeg single-frame grab into THUMB_TMP. Returns (rc, stderr).
+    rc is None on timeout. Does not swap the file into place."""
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-y", "-loglevel", "error",
         *source_args,
@@ -102,22 +112,48 @@ async def capture_thumbnail():
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=12)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
-        logger.warning("thumbnail capture timed out")
-        return
-    # Swap in atomically so a half-written file is never served.
-    if proc.returncode == 0 and os.path.exists(THUMB_TMP):
-        os.replace(THUMB_TMP, THUMB_PATH)
+        return None, b"capture timed out"
+    return proc.returncode, stderr or b""
+
+
+async def capture_thumbnail():
+    """Save one frame from the live stream into THUMB_PATH. Best effort.
+
+    While a broadcast is recording, the stream is already being written to local
+    disk, so we grab the freshest frame from that file instead of opening a
+    second full RTMP pull just for a thumbnail. If that scratch file is dead or
+    stalled the grab fails, so we immediately retry once via a live RTMP read.
+    When no recording is in progress (a brief window right at go-live), we go
+    straight to the RTMP read."""
+    rtmp_args = [*_RTMP_PROBE_ARGS, "-rw_timeout", "5000000", "-i", RTMP_SOURCE]
+    rec_path = _rec["tmp_path"] if _rec["active"] else None
+    if rec_path and os.path.exists(rec_path):
+        # -sseof -1 seeks to one second before the end of the file, reading the
+        # most recent frame without decoding the whole recording.
+        rc, stderr = await _grab_frame(["-sseof", "-1", "-i", rec_path])
+        if rc != 0:
+            # The scratch file may be dead or stalled; fall back to a live read
+            # within the same call so one bad recording never stalls previews.
+            rc, stderr = await _grab_frame(rtmp_args)
     else:
-        last = ""
-        if stderr:
-            tail = stderr.decode("utf-8", "replace").strip().splitlines()
-            last = tail[-1] if tail else ""
-        logger.warning(
-            "thumbnail capture failed (rc=%s): %s", proc.returncode, last
-        )
+        rc, stderr = await _grab_frame(rtmp_args)
+
+    # Swap in atomically so a half-written file is never served.
+    if rc == 0 and os.path.exists(THUMB_TMP):
+        os.replace(THUMB_TMP, THUMB_PATH)
+        if _thumb_fail["failing"]:
+            _thumb_fail["failing"] = False
+            logger.info("thumbnail capture recovered")
+        return
+    last = _stderr_tail(stderr)
+    if not _thumb_fail["failing"]:
+        _thumb_fail["failing"] = True
+        logger.warning("thumbnail capture failed (rc=%s): %s", rc, last)
+    else:
+        logger.debug("thumbnail capture still failing (rc=%s): %s", rc, last)
 
 
 async def thumbnail_worker():
@@ -143,22 +179,88 @@ async def thumbnail_worker():
 _rec = {
     "active": False, "vod_id": None, "tmp_path": None,
     "started_at": None, "proc": None,
+    "stderr": None,        # bounded (~2KB) tail of the recorder's stderr
+    "drain": None,         # task that keeps that tail drained and current
 }
+
+# Recorder supervision state, tracked across stream_watcher polls. Kept separate
+# from _rec because it outlives a single recording: attempts/next_retry_at carry
+# a failure streak's backoff across restarts, reset only on a healthy survival.
+_watch = {
+    "last_size": -1,       # scratch size seen at the previous poll
+    "no_growth": 0,        # consecutive polls with no scratch growth
+    "attempts": 0,         # restarts in the current failure streak
+    "next_retry_at": 0.0,  # monotonic time before which a restart must wait
+}
+
+# A single restart runs at a time; the startup grace check and the watchdog can
+# both spot the same failure, and this lock keeps them from double-restarting.
+_restart_lock = asyncio.Lock()
+
+# Watchdog decision outcomes.
+WATCHDOG_NONE = "none"        # recording looks healthy; do nothing
+WATCHDOG_WAIT = "wait"        # failed, but still inside the backoff window
+WATCHDOG_RESTART = "restart"  # failed and clear to restart now
+
+
+def watchdog_action(proc_alive, no_growth_polls, stall_threshold,
+                    now, next_retry_at):
+    """Decide what the recorder watchdog should do this poll (pure).
+
+    Failure is either a dead process or a scratch file that has not grown for at
+    least stall_threshold consecutive polls. On failure we restart only once the
+    backoff window has passed (now >= next_retry_at), otherwise we wait."""
+    failed = (not proc_alive) or (no_growth_polls >= stall_threshold)
+    if not failed:
+        return WATCHDOG_NONE
+    if now < next_retry_at:
+        return WATCHDOG_WAIT
+    return WATCHDOG_RESTART
+
+
+def backoff_delay(attempts):
+    """Seconds to wait before the next restart, given how many restarts this
+    failure streak has already made (pure). Immediate first retry, then the
+    RECORD_BACKOFF schedule, capped at its last value."""
+    if attempts < 0:
+        attempts = 0
+    return RECORD_BACKOFF[min(attempts, len(RECORD_BACKOFF) - 1)]
+
+
+def survived_long_enough(uptime_seconds):
+    """Whether a recording has run long enough to be considered healthy, which
+    clears the restart backoff so a later, unrelated failure retries promptly."""
+    return uptime_seconds >= RECORD_SURVIVAL_SECONDS
+
+
+def _stderr_tail(buf, limit=500):
+    """The last line of an ffmpeg stderr capture, trimmed, for a diagnostic log.
+    Accepts bytes/bytearray (a bounded tail buffer) or None; returns ''."""
+    if not buf:
+        return ""
+    if isinstance(buf, (bytes, bytearray)):
+        text = bytes(buf).decode("utf-8", "replace")
+    else:
+        text = str(buf)
+    text = text.strip()
+    if not text:
+        return ""
+    return text.splitlines()[-1][-limit:]
 
 
 async def _run_ffmpeg(args, timeout):
-    """Run an ffmpeg/ffprobe command to completion, returning (returncode, stdout).
-    Best effort: a timeout or failure returns (None, b'')."""
+    """Run an ffmpeg/ffprobe command to completion, returning (rc, stdout, stderr).
+    Best effort: a timeout or failure returns (None, b'', b'')."""
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return proc.returncode, out
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return proc.returncode, out, err
     except Exception:
         logger.debug("ffmpeg/ffprobe command failed: %s", args[0], exc_info=True)
         if proc and proc.returncode is None:
@@ -166,7 +268,7 @@ async def _run_ffmpeg(args, timeout):
                 proc.kill()
             except Exception:
                 logger.debug("could not kill ffmpeg subprocess", exc_info=True)
-        return None, b""
+        return None, b"", b""
 
 
 async def _make_poster(src, dst, seek=2):
@@ -179,7 +281,7 @@ async def _make_poster(src, dst, seek=2):
 
 
 async def _probe_duration(path):
-    code, out = await _run_ffmpeg(
+    code, out, _ = await _run_ffmpeg(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", path],
         timeout=20,
@@ -245,6 +347,10 @@ async def start_recording():
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y", "-loglevel", "error",
+            # Give codec probing a wide window and budget so joining a messy,
+            # long-running RTMP session does not fail with "could not find codec
+            # parameters" and die instantly.
+            *_RTMP_PROBE_ARGS,
             "-i", RTMP_SOURCE,
             "-c", "copy",
             "-f", "mp4",
@@ -254,7 +360,9 @@ async def start_recording():
             tmp_path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            # Keep stderr so a recorder that dies can be diagnosed. A drain task
+            # (below) reads it into a bounded tail so a full pipe never stalls it.
+            stderr=asyncio.subprocess.PIPE,
         )
     except Exception:
         logger.warning("could not start recording ffmpeg", exc_info=True)
@@ -263,24 +371,49 @@ async def start_recording():
         except Exception:
             logger.debug("could not delete stub VOD row", exc_info=True)
         return
+    stderr_tail = bytearray()
+    drain = asyncio.create_task(_drain_stderr(proc, stderr_tail))
     _rec.update(
         active=True, vod_id=vod_id, tmp_path=tmp_path,
-        started_at=started_at, proc=proc,
+        started_at=started_at, proc=proc, stderr=stderr_tail, drain=drain,
     )
+    # Fresh growth tracking for this recording; the failure-streak backoff
+    # (attempts/next_retry_at) is left alone so a restart honours its schedule.
+    _watch["last_size"] = -1
+    _watch["no_growth"] = 0
     logger.info("recording started: %s", tmp_path)
+    # Catch a recorder that dies within the first few seconds (never wrote a
+    # usable file) fast, rather than waiting for the stall watchdog.
+    asyncio.create_task(_confirm_recorder_started(vod_id))
 
 
-async def stop_recording():
-    if not _rec["active"]:
+async def _drain_stderr(proc, buf, tail_max=2048):
+    """Continuously read the recorder's stderr into a bounded tail buffer, so a
+    full pipe can never stall ffmpeg and the last output survives for diagnosis
+    once the process exits. Best effort; ends at EOF."""
+    if proc.stderr is None:
         return
-    vod_id, tmp_path = _rec["vod_id"], _rec["tmp_path"]
-    started_at, proc = _rec["started_at"], _rec["proc"]
-    ended_at = int(time.time())
-    # Mark inactive at once so clips stop and a quick re-go-live starts clean.
-    _rec.update(active=False, vod_id=None, tmp_path=None, started_at=None, proc=None)
+    try:
+        while True:
+            chunk = await proc.stderr.read(4096)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > tail_max:
+                del buf[:-tail_max]
+    except Exception:
+        logger.debug("recorder stderr drain ended", exc_info=True)
+
+
+async def _stop_recorder_process(proc, drain, graceful):
+    """Stop the recorder ffmpeg and its stderr drain. graceful=True sends SIGINT
+    so ffmpeg writes the trailer (normal stream end); otherwise it is killed."""
     if proc and proc.returncode is None:
         try:
-            proc.send_signal(signal.SIGINT)   # let ffmpeg write the trailer
+            if graceful:
+                proc.send_signal(signal.SIGINT)   # let ffmpeg write the trailer
+            else:
+                proc.kill()
             await asyncio.wait_for(proc.wait(), timeout=15)
         except Exception:
             logger.warning(
@@ -290,6 +423,136 @@ async def stop_recording():
                 proc.kill()
             except Exception:
                 logger.debug("could not kill recording ffmpeg", exc_info=True)
+    if drain:
+        try:
+            await asyncio.wait_for(asyncio.shield(drain), timeout=2)
+        except Exception:
+            drain.cancel()
+
+
+async def _confirm_recorder_started(vod_id):
+    """A recorder that dies within the first few seconds never wrote a usable
+    file. Catch that fast, and hand the failure to the shared restart path (which
+    cleans up the stub VOD and schedules a backed-off retry)."""
+    await asyncio.sleep(RECORD_STARTUP_GRACE)
+    # If we have already moved on (stopped, or restarted to a new vod), do nothing.
+    if not _rec["active"] or _rec["vod_id"] != vod_id:
+        return
+    proc = _rec["proc"]
+    if proc is None or proc.returncode is None:
+        return                                    # still up: hand off to watchdog
+    logger.warning(
+        "recording failed at startup (rc=%s); stderr: %s",
+        proc.returncode, _stderr_tail(_rec["stderr"]),
+    )
+    await _restart_recording(vod_id)
+
+
+async def _restart_recording(expected_vod_id):
+    """Tear down a failed recording, finalize its partial file if it holds usable
+    content (else discard row and file), then start a fresh recording while the
+    stream is still live. Serialized and idempotent: a second caller racing on the
+    same failure sees the vod already replaced and returns."""
+    async with _restart_lock:
+        if not _rec["active"] or _rec["vod_id"] != expected_vod_id:
+            return                                # already handled by someone else
+        vod_id, tmp_path = _rec["vod_id"], _rec["tmp_path"]
+        started_at, proc, drain = _rec["started_at"], _rec["proc"], _rec["drain"]
+        ended_at = int(time.time())
+        _rec.update(active=False, vod_id=None, tmp_path=None, started_at=None,
+                    proc=None, stderr=None, drain=None)
+        await _stop_recorder_process(proc, drain, graceful=False)
+        try:
+            size = (os.path.getsize(tmp_path)
+                    if tmp_path and os.path.exists(tmp_path) else 0)
+        except OSError:
+            size = 0
+        if size > 100_000:
+            # Keep what we captured before the failure as its own VOD.
+            asyncio.create_task(
+                _finalize_recording(vod_id, tmp_path, started_at, ended_at))
+        else:
+            try:
+                db.delete_media("vod", vod_id)
+            except Exception:
+                logger.debug("could not delete failed VOD row", exc_info=True)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    logger.debug("could not remove failed scratch %s", tmp_path,
+                                 exc_info=True)
+        # Record the attempt and set the next backoff window before retrying.
+        _watch["attempts"] += 1
+        _watch["next_retry_at"] = time.monotonic() + backoff_delay(_watch["attempts"])
+        await start_recording()
+
+
+async def _recorder_watchdog():
+    """One supervision pass over the active recording, run each poll while the
+    stream is online. Detects a dead recorder or a stalled scratch file and, past
+    the backoff window, restarts the recording. Never raises."""
+    try:
+        if not _rec["active"]:
+            return
+        proc = _rec["proc"]
+        vod_id = _rec["vod_id"]
+        tmp_path = _rec["tmp_path"]
+        started_at = _rec["started_at"]
+        now = time.monotonic()
+        proc_alive = proc is not None and proc.returncode is None
+
+        # A recording that has run long enough is healthy: clear the failure
+        # streak so a later, unrelated failure retries promptly.
+        if started_at and survived_long_enough(int(time.time()) - started_at):
+            if _watch["attempts"]:
+                _watch["attempts"] = 0
+                _watch["next_retry_at"] = 0.0
+
+        try:
+            size = (os.path.getsize(tmp_path)
+                    if tmp_path and os.path.exists(tmp_path) else 0)
+        except OSError:
+            size = 0
+        if size > _watch["last_size"]:
+            _watch["no_growth"] = 0
+        else:
+            _watch["no_growth"] += 1
+        _watch["last_size"] = size
+
+        action = watchdog_action(
+            proc_alive, _watch["no_growth"], RECORD_STALL_POLLS,
+            now, _watch["next_retry_at"],
+        )
+        if action != WATCHDOG_RESTART:
+            return
+        if not proc_alive:
+            logger.warning(
+                "recording process died mid-stream (rc=%s); restarting. stderr: %s",
+                proc.returncode if proc else None, _stderr_tail(_rec["stderr"]),
+            )
+        else:
+            logger.warning(
+                "recording stalled (scratch stuck at %s bytes for %s polls); "
+                "restarting", size, _watch["no_growth"],
+            )
+        await _restart_recording(vod_id)
+    except Exception:
+        logger.warning("recorder watchdog pass failed", exc_info=True)
+
+
+async def stop_recording():
+    if not _rec["active"]:
+        return
+    vod_id, tmp_path = _rec["vod_id"], _rec["tmp_path"]
+    started_at, proc, drain = _rec["started_at"], _rec["proc"], _rec["drain"]
+    ended_at = int(time.time())
+    # Mark inactive at once so clips stop and a quick re-go-live starts clean.
+    _rec.update(active=False, vod_id=None, tmp_path=None, started_at=None,
+                proc=None, stderr=None, drain=None)
+    await _stop_recorder_process(proc, drain, graceful=True)
+    # Normal end of broadcast: an expected exit, so INFO rather than WARNING.
+    logger.info("recording stopped (rc=%s)", proc.returncode if proc else None)
     # Archive and finalize in the background so a slow transfer to the media
     # store (which may be a network mount) never blocks the stream watcher.
     asyncio.create_task(_finalize_recording(vod_id, tmp_path, started_at, ended_at))
@@ -314,7 +577,7 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         # moov-at-front file that seeks and plays everywhere; no re-encode, so it
         # stays quick. If the remux fails, fall back to moving the raw recording
         # so the VOD is never lost, even if playback is degraded.
-        code, _ = await _run_ffmpeg(
+        code, _, _ = await _run_ffmpeg(
             ["ffmpeg", "-y", "-loglevel", "error", "-i", tmp_path,
              "-c", "copy", "-movflags", "+faststart", dst],
             timeout=600,
@@ -391,6 +654,12 @@ async def make_clip(user, name):
     duration = end - start
     if duration < 3:
         return None, "The stream just started; nothing to clip yet."
+    # The clip is cut from the in-progress scratch file. If the recorder died or
+    # stalled that file may be gone; say so in the log, not just to the client.
+    if not (src and os.path.exists(src)):
+        logger.warning(
+            "clip failed for %s: scratch recording missing (%s)", username, src)
+        return None, "Could not make the clip. Try again in a moment."
     name = (name or "").strip()[:MAX_CLIP_NAME] or "Clip"
     # Create the row first so the file can be named by its id.
     clip_id = db.create_clip(
@@ -398,13 +667,20 @@ async def make_clip(user, name):
     )
     filename = f"{clip_id}.mp4"
     dst = os.path.join(CLIP_DIR, filename)
-    code, _ = await _run_ffmpeg(
+    code, _, err = await _run_ffmpeg(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-ss", str(start - started_at), "-i", src, "-t", str(duration),
          "-c", "copy", "-movflags", "+faststart", dst],
         timeout=40,
     )
     if code != 0 or not os.path.exists(dst) or os.path.getsize(dst) < 1000:
+        if not os.path.exists(dst):
+            why = "output file missing"
+        elif os.path.getsize(dst) < 1000:
+            why = f"output too small ({os.path.getsize(dst)} bytes)"
+        else:
+            why = f"ffmpeg rc={code}: {_stderr_tail(err)}"
+        logger.warning("clip creation failed for id=%s: %s", clip_id, why)
         db.delete_media("clip", clip_id)
         _remove_media_files(CLIP_DIR, filename, clip_id)
         return None, "Could not make the clip. Try again in a moment."
