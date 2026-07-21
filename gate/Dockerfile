@@ -12,6 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
+COPY routes ./routes
 
 # Bake the country database into the image (used for the US-only lock).
 RUN python fetch_geodb.py || true
