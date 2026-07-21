@@ -6,14 +6,16 @@ and go-live notification config. Every route here is admin only; the admin flag
 is read fresh from the database on each call.
 """
 
+import time
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import db
 from auth import _clean_username, admin_user
 from config import (
-    MAX_DISPLAY_NAME, MAX_EMAIL, MAX_STREAM_DESC, MAX_STREAM_TITLE, MIN_PASSWORD,
-    SITE_URL, SMTP_FROM, SMTP_HOST,
+    MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL, MAX_STREAM_DESC,
+    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from notify import notify_live
@@ -201,6 +203,37 @@ def admin_chat(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     return {"messages": db.recent_chat()}
+
+
+# ---- Invites --------------------------------------------------------------
+
+@router.get("/api/admin/invites")
+def admin_invites_list(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"invites": db.list_invites()}
+
+
+@router.post("/api/admin/invites")
+async def admin_invites_create(request: Request):
+    actor = admin_user(request)
+    if not actor:
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    label = (body.get("label") or "").strip()[:MAX_INVITE_LABEL]
+    code = db.create_invite(label, actor["username"], int(time.time()))
+    return {"ok": True, "code": code}
+
+
+@router.delete("/api/admin/invites/{code}")
+def admin_invites_revoke(code: str, request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not db.revoke_invite(code.strip().lower(), int(time.time())):
+        return JSONResponse(
+            {"error": "That invite is not active."}, status_code=400
+        )
+    return {"ok": True}
 
 
 @router.get("/api/admin/notify")

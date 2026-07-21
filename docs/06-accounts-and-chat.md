@@ -1,5 +1,31 @@
 # 6. Accounts, chat, and presence
 
+## First-run setup
+
+On a brand new install no account exists yet, so the login page sends you to a
+one-time setup wizard at `/setup`. Enter a username, a display name, a password,
+and a name for the channel, then create the account. This first account is the
+admin, you are signed in immediately, and the wizard disappears for good the
+instant the account exists (the server refuses it from then on, not just the
+page). There is nothing to run in a terminal.
+
+## Letting people in with invites
+
+After setup you add everyone else with single-use invite codes, from the admin
+dashboard's **Invites** section:
+
+- **Generate a code** with the **Generate code** button. You can add an optional
+  label ("who it's for") to help you keep track. Each code is a short, readable
+  string of three words like `ember-quiet-harbor`.
+- **Share the code** with one person, however you like. There is no email.
+- They **redeem it** from the login page: under the sign-in form is a "have an
+  invite?" link that reveals a short join form (code, username, display name,
+  password). Redeeming makes them a **viewer** account and signs them in. A code
+  can never create an admin or a moderator.
+- Each code works **once**. After it is redeemed the dashboard shows who used it
+  and when. You can **Revoke** a code that has not been redeemed yet, which keeps
+  the row for the record but stops it from ever being used.
+
 ## The admin dashboard
 
 If your account has the admin flag, sign in and open `/admin` (there is also an
@@ -57,13 +83,15 @@ Anyone signed in can change their own password from the **Settings** panel on
 the watch page (the gear icon). They enter their current password and a new one.
 This does not need an admin.
 
-## Accounts (command line)
+## Accounts (command line, recovery only)
 
-The dashboard is the easy path, but every account can still be managed with
-`manage.py`, run inside the gate container. This is handy for bootstrapping the
-very first admin before you can log in.
+The setup wizard and invite codes are the normal way to make accounts. Every
+account can still be managed with `manage.py`, run inside the gate container, but
+this is now the break-glass path: reach for it only if you are locked out, need
+to reset a forgotten admin password, or want to script something. Day to day you
+never need it.
 
-Create an admin (give yourself this):
+Create an admin (for example to recover if you lost admin on every account):
 
 ```
 docker compose exec gate python manage.py adduser yourname --admin

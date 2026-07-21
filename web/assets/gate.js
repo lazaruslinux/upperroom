@@ -43,6 +43,52 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+// ---- invite registration ---------------------------------------------------
+
+const registerForm = document.getElementById("register-form");
+const rError = document.getElementById("r-error");
+
+document.getElementById("show-register").addEventListener("click", () => {
+  form.hidden = true;
+  registerForm.hidden = false;
+  document.getElementById("r-code").focus();
+});
+
+document.getElementById("show-login").addEventListener("click", () => {
+  registerForm.hidden = true;
+  form.hidden = false;
+});
+
+registerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  rError.hidden = true;
+  const body = {
+    code: document.getElementById("r-code").value,
+    username: document.getElementById("r-username").value,
+    display_name: document.getElementById("r-name").value,
+    password: document.getElementById("r-password").value,
+  };
+  let reply;
+  try {
+    reply = await fetch("/api/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    rError.textContent = "Could not reach the server.";
+    rError.hidden = false;
+    return;
+  }
+  if (reply.ok) {
+    window.location.href = "/home";
+  } else {
+    const data = await reply.json().catch(() => ({}));
+    rError.textContent = data.error || "Could not create your account.";
+    rError.hidden = false;
+  }
+});
+
 // ---- live status badge ----------------------------------------------------
 // Polls the public status endpoint and shows whether the stream is live. When
 // it is, the badge counts up from the moment the stream started, ticking

@@ -61,6 +61,7 @@ MAX_STREAM_TITLE = 100
 MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
 MAX_EMAIL = 254
+MAX_INVITE_LABEL = 60
 
 # How long the admin-only chat log is kept before old lines are purged. Viewers
 # always see chat as ephemeral; this only affects the history the admin reviews.

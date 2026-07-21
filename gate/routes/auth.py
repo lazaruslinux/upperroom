@@ -200,6 +200,62 @@ async def setup(request: Request):
     return _signed_in_response(db.get_user(username))
 
 
+@router.post("/api/register")
+async def register(request: Request):
+    # Public sign up with a single-use invite code. Creates a viewer account only:
+    # an invite can never mint an admin or moderator. No email is involved.
+    ip = client_ip(request)
+    if too_many_attempts(ip):
+        return JSONResponse(
+            {"error": "Too many attempts. Wait a minute and try again."},
+            status_code=429,
+        )
+
+    body = await request.json()
+    code = (body.get("code") or "").strip().lower()
+    invite = db.get_invite(code) if code else None
+    if not invite:
+        return JSONResponse(
+            {"error": "That invite code is not valid."}, status_code=400
+        )
+    if invite["revoked_at"]:
+        return JSONResponse(
+            {"error": "That invite code is no longer valid."}, status_code=400
+        )
+    if invite["redeemed_at"]:
+        return JSONResponse(
+            {"error": "That invite code has already been used."}, status_code=400
+        )
+
+    username = _clean_username(body.get("username"))
+    if not username:
+        return JSONResponse(
+            {"error": "Username may use only a-z, 0-9, dot, dash, underscore."},
+            status_code=400,
+        )
+    password = body.get("password", "")
+    if len(password) < MIN_PASSWORD:
+        return JSONResponse(
+            {"error": f"Password needs at least {MIN_PASSWORD} characters."},
+            status_code=400,
+        )
+    display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
+
+    result = db.register_via_invite(
+        code, username, display_name, password, int(time.time())
+    )
+    if result == "user_exists":
+        return JSONResponse(
+            {"error": f"User {username} already exists."}, status_code=409
+        )
+    if result != "ok":
+        # Lost the race to another redeemer, or the code was just spent.
+        return JSONResponse(
+            {"error": "That invite code has already been used."}, status_code=409
+        )
+    return _signed_in_response(db.get_user(username))
+
+
 @router.post("/api/logout")
 def logout():
     response = JSONResponse({"ok": True})
@@ -380,4 +436,5 @@ def get_profile(username: str, request: Request):
         "mod": bool(user["is_moderator"]),
         "avatar": user["avatar_version"],
         "bio": user["bio"],
+        "joined": user["created_at"],
     }

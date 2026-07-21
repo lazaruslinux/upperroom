@@ -382,6 +382,15 @@ const profileModal = document.getElementById("profile-modal");
 const profileAvatar = document.getElementById("profile-avatar");
 const profileName = document.getElementById("profile-name");
 const profileBio = document.getElementById("profile-bio");
+const profileJoined = document.getElementById("profile-joined");
+
+function formatJoined(ts) {
+  // Date only, in the same compact M.D.YY style as chat timestamps.
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const yr = String(d.getFullYear()).slice(-2);
+  return `joined ${d.getMonth() + 1}.${d.getDate()}.${yr}`;
+}
 
 async function openProfile(username) {
   try {
@@ -392,6 +401,7 @@ async function openProfile(username) {
     if (badge) profileAvatar.appendChild(badge);
     profileName.textContent = data.name;
     profileBio.textContent = data.bio || "No bio yet.";
+    profileJoined.textContent = formatJoined(data.joined);
     openModal(profileModal);
   } catch {
     /* a failed lookup just does nothing */

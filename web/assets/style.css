@@ -1012,6 +1012,24 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
 .switch input { width: auto; flex: none; }
 
+/* ---- invites ---- */
+.invite-gen { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.invite-gen label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 180px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.invite-code { font-family: var(--mono); font-size: 13px; letter-spacing: 0.3px; color: var(--text); }
+.invite-status { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); }
+.invite-status.active { color: var(--accent); }
+.invite-status.revoked { color: var(--error); }
+.invite-actions { display: flex; gap: 8px; flex: none; }
+
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
   .user-grid { grid-template-columns: 1fr; }
@@ -1063,6 +1081,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .profile-avatar .avatar { width: 96px; height: 96px; font-size: 36px; }
 .profile-name { font-family: var(--sans); font-weight: 600; font-size: 15px; margin-bottom: 8px; }
 .profile-bio { font-family: var(--sans); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+.profile-joined { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); margin-top: 10px; }
 
 /* Avatar crop: the visible square canvas IS the crop area (backend stores a
    square PNG), so the ring is just a 1px square outline - no circular mask,

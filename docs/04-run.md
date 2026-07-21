@@ -30,22 +30,23 @@ so give it a minute. Watch the logs if you want:
 docker compose logs -f
 ```
 
-## 4.3 Create accounts
+## 4.3 First-run setup
 
-There are no public sign ups. You create every account. Make yourself an admin
-first:
+Open `https://watch.example.com` in a browser. On a brand new install the login
+page sends you straight to a one-time setup wizard at `/setup`. Fill in a
+username, a display name, a password, and a name for the channel, then create the
+account. That first account is the admin, you are signed in at once, and the
+wizard closes for good the moment it exists.
 
-```
-docker compose exec gate python manage.py adduser yourname --admin
-```
+From then on you let other people in with invite codes: open the admin dashboard
+at `/admin`, generate a single-use code under **Invites**, and share it. They
+redeem it from the login page ("have an invite?") to make their own viewer
+account. No terminal, and no email is involved. See
+`docs/06-accounts-and-chat.md` for the details.
 
-It asks for a password. Then make accounts for the people you want to let in:
-
-```
-docker compose exec gate python manage.py adduser alice --name "Alice"
-```
-
-See `docs/06-accounts-and-chat.md` for the full set of account commands.
+If you ever need to bootstrap or recover an account from the command line (for
+example if you are locked out), `manage.py` still works; it is described in
+`docs/06-accounts-and-chat.md` as the break-glass path.
 
 ## 4.4 Test it
 

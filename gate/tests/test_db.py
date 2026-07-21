@@ -96,6 +96,68 @@ def test_setup_gate_creates_first_admin_only(fresh_db):
     assert db.count_users() == 1
 
 
+# ---- invites --------------------------------------------------------------
+
+def test_invite_code_format_and_lookup(fresh_db):
+    now = int(time.time())
+    code = db.create_invite("for grandma", "owner", now)
+    assert code.count("-") == 2            # three words joined by dashes
+    assert code == code.lower()
+    inv = db.get_invite(code)
+    assert inv["label"] == "for grandma"
+    assert inv["created_by"] == "owner"
+    assert inv["revoked_at"] is None and inv["redeemed_at"] is None
+    assert any(i["code"] == code for i in db.list_invites())
+
+
+def test_invite_redeem_creates_viewer(fresh_db):
+    now = int(time.time())
+    code = db.create_invite("", "owner", now)
+    assert db.register_via_invite(code, "alice", "Alice", "password1", now) == "ok"
+    row = db.get_user("alice")
+    assert row is not None
+    assert row["is_admin"] == 0 and row["is_moderator"] == 0   # viewer only
+    assert row["invite_code"] == code                          # provenance stamped
+    inv = db.get_invite(code)
+    assert inv["redeemed_by"] == "alice"
+    assert inv["redeemed_at"] == now
+
+
+def test_invite_is_single_use(fresh_db):
+    now = int(time.time())
+    code = db.create_invite("", "owner", now)
+    assert db.register_via_invite(code, "alice", "Alice", "password1", now) == "ok"
+    # A second redeemer of the same code is rejected and no account is made.
+    assert db.register_via_invite(code, "bob", "Bob", "password1", now) == "used"
+    assert db.get_user("bob") is None
+    assert db.get_invite(code)["redeemed_by"] == "alice"       # first claim stands
+
+
+def test_invite_taken_username_does_not_burn_code(fresh_db):
+    now = int(time.time())
+    db.add_user("alice", "Alice", "password1")
+    code = db.create_invite("", "owner", now)
+    assert db.register_via_invite(code, "alice", "Alice", "password1", now) == "user_exists"
+    # The claim is rolled back, so the code stays usable by someone else.
+    inv = db.get_invite(code)
+    assert inv["redeemed_at"] is None and inv["revoked_at"] is None
+    assert db.register_via_invite(code, "carol", "Carol", "password1", now) == "ok"
+
+
+def test_invite_revoke_blocks_redeem(fresh_db):
+    now = int(time.time())
+    code = db.create_invite("", "owner", now)
+    assert db.revoke_invite(code, now) is True
+    assert db.get_invite(code)["revoked_at"] == now
+    assert db.register_via_invite(code, "alice", "Alice", "password1", now) == "used"
+    # Revoking is only for active codes: a second revoke, and revoking a redeemed
+    # code, both report no change.
+    assert db.revoke_invite(code, now) is False
+    used = db.create_invite("", "owner", now)
+    db.register_via_invite(used, "dave", "Dave", "password1", now)
+    assert db.revoke_invite(used, now) is False
+
+
 # ---- go-live notification recipients --------------------------------------
 
 def test_live_recipients_respects_email_and_optout(fresh_db):

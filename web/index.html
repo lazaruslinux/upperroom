@@ -25,7 +25,24 @@
       <button type="submit">Sign in</button>
       <p id="error" class="error" hidden></p>
     </form>
+
+    <p class="alt-toggle">
+      <button type="button" id="show-register">have an invite?</button>
+    </p>
+
+    <form id="register-form" autocomplete="off" hidden>
+      <p class="muted">&gt; redeem an invite</p>
+      <input type="text" id="r-code" placeholder="Invite code" autocomplete="off" required>
+      <input type="text" id="r-username" placeholder="Username" autocomplete="off" required>
+      <input type="text" id="r-name" placeholder="Display name" autocomplete="off" required>
+      <input type="password" id="r-password" placeholder="Password (at least 8 characters)" autocomplete="new-password" required>
+      <button type="submit">Join</button>
+      <p id="r-error" class="error" hidden></p>
+      <p class="alt-toggle">
+        <button type="button" id="show-login">back to sign in</button>
+      </p>
+    </form>
   </main>
-  <script src="/assets/gate.js?v=12"></script>
+  <script src="/assets/gate.js?v=13"></script>
 </body>
 </html>

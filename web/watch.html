@@ -8,7 +8,7 @@
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=17">
+  <link rel="stylesheet" href="/assets/style.css?v=18">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -84,9 +84,10 @@
       <span id="profile-avatar" class="profile-avatar"></span>
       <div id="profile-name" class="profile-name"></div>
       <div id="profile-bio" class="profile-bio muted"></div>
+      <div id="profile-joined" class="profile-joined"></div>
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=14"></script>
+  <script src="/assets/watch.js?v=15"></script>
 </body>
 </html>

@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS bans (
     reason TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL
 );
+
+-- Single-use invite codes. An admin generates a code; someone redeems it once to
+-- create a viewer account. A revoked or redeemed code keeps its row so the
+-- history stays visible on the dashboard: revoked_at and redeemed_at record when
+-- each thing happened, redeemed_by records which account the code created.
+CREATE TABLE IF NOT EXISTS invites (
+    code TEXT PRIMARY KEY,
+    label TEXT DEFAULT '',
+    created_by TEXT,
+    created_at INTEGER,
+    revoked_at INTEGER,
+    redeemed_by TEXT,
+    redeemed_at INTEGER
+);
 """
 
 
@@ -175,6 +189,8 @@ def init_db():
         _ensure_column(conn, "users", "is_moderator", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "notify_live", "INTEGER NOT NULL DEFAULT 1")
+        # Provenance: which invite code (if any) this account was created from.
+        _ensure_column(conn, "users", "invite_code", "TEXT")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
         _ensure_column(
             conn, "channel_settings", "clip_cooldown_user", "INTEGER NOT NULL DEFAULT 15"
@@ -546,6 +562,117 @@ def list_bans():
             """
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ---- Invites --------------------------------------------------------------
+# Readable, single-use codes: three short words joined by dashes, e.g.
+# "ember-quiet-harbor". The words are picked with the secrets module so a code is
+# not guessable, and the small wordlist stays easy to read out or type in.
+
+_INVITE_WORDS = (
+    "amber", "anchor", "aspen", "basil", "beacon", "birch", "cedar", "cinder",
+    "cobalt", "comet", "coral", "cove", "delta", "dune", "ember", "fable",
+    "fern", "flint", "garnet", "grove", "harbor", "hazel", "indigo", "ivory",
+    "jade", "juniper", "kelp", "lark", "lotus", "maple", "meadow", "onyx",
+    "opal", "pebble", "pine", "quartz", "quiet", "raven", "reed", "river",
+    "sage", "slate", "spruce", "thistle", "tide", "umber", "violet", "willow",
+)
+
+
+def _new_invite_code():
+    return "-".join(secrets.choice(_INVITE_WORDS) for _ in range(3))
+
+
+def create_invite(label, created_by, created_at):
+    """Generate a fresh single-use invite code and store it. Retries on the rare
+    chance the random words collide with an existing code. Returns the code."""
+    with connect() as conn:
+        for _ in range(20):
+            code = _new_invite_code()
+            try:
+                conn.execute(
+                    "INSERT INTO invites (code, label, created_by, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (code, label or "", created_by, created_at),
+                )
+                return code
+            except sqlite3.IntegrityError:
+                continue
+        raise RuntimeError("could not generate a unique invite code")
+
+
+def get_invite(code):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM invites WHERE code = ?", (code,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_invites():
+    """Every invite with its redeemer's display name (if redeemed), newest first.
+    The route/UI derives active/revoked/redeemed status from the timestamps."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT i.code, i.label, i.created_by, i.created_at, i.revoked_at, "
+            "i.redeemed_by, i.redeemed_at, u.display_name AS redeemed_by_name "
+            "FROM invites i LEFT JOIN users u ON u.username = i.redeemed_by "
+            "ORDER BY i.created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def revoke_invite(code, when):
+    """Revoke an invite so it can no longer be redeemed, keeping the row. Only an
+    active code (not already redeemed, not already revoked) changes; returns True
+    if one did."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE invites SET revoked_at = ? "
+            "WHERE code = ? AND revoked_at IS NULL AND redeemed_at IS NULL",
+            (when, code),
+        )
+        return cur.rowcount > 0
+
+
+def register_via_invite(code, username, display_name, password, when):
+    """Atomically claim a single-use invite and create a viewer account from it.
+    The claim and the insert share one transaction, so a code can never mint two
+    accounts, even under a race. Returns one of:
+
+      'ok'          - account created and the invite marked redeemed
+      'used'        - the code was missing, revoked, or already redeemed
+      'user_exists' - that username is taken (the claim is rolled back)
+    """
+    with connect() as conn:
+        # Claim the code first. This guarded UPDATE is the single point where
+        # single-use is enforced: only one caller's statement can match a code
+        # that is still active, so a second redeemer matches zero rows.
+        cur = conn.execute(
+            "UPDATE invites SET redeemed_by = ?, redeemed_at = ? "
+            "WHERE code = ? AND redeemed_at IS NULL AND revoked_at IS NULL",
+            (username, when, code),
+        )
+        if cur.rowcount == 0:
+            return "used"
+        taken = conn.execute(
+            "SELECT 1 FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if taken:
+            # Undo the claim so a taken username does not burn the code.
+            conn.execute(
+                "UPDATE invites SET redeemed_by = NULL, redeemed_at = NULL "
+                "WHERE code = ?",
+                (code,),
+            )
+            return "user_exists"
+        conn.execute(
+            "INSERT INTO users "
+            "(username, display_name, password_hash, is_admin, created_at, invite_code) "
+            "VALUES (?, ?, ?, 0, ?, ?)",
+            (username, display_name, hash_password(password), when, code),
+        )
+        return "ok"
 
 
 # ---- Watch activity -------------------------------------------------------

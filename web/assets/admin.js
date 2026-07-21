@@ -189,6 +189,110 @@ async function unban(username, btn) {
   btn.disabled = false;
 }
 
+// ---- invites (generate, copy, revoke) ----
+
+let invites = [];
+
+async function loadInvites() {
+  try { invites = (await (await fetch("/api/admin/invites")).json()).invites || []; }
+  catch { invites = []; }
+  renderInvites();
+}
+
+function inviteStatus(inv) {
+  if (inv.redeemed_at) {
+    const who = inv.redeemed_by_name || inv.redeemed_by || "someone";
+    const when = new Date(inv.redeemed_at * 1000).toLocaleDateString();
+    return { text: `redeemed by ${who} · ${when}`, cls: "redeemed" };
+  }
+  if (inv.revoked_at) return { text: "revoked", cls: "revoked" };
+  return { text: "active", cls: "active" };
+}
+
+function renderInvites() {
+  const list = document.getElementById("invite-list");
+  document.getElementById("invite-empty").hidden = invites.length > 0;
+  list.innerHTML = "";
+  invites.forEach((inv) => {
+    const status = inviteStatus(inv);
+    const row = document.createElement("div");
+    row.className = "activity-row ban-row";
+
+    const left = document.createElement("span");
+    const code = document.createElement("span");
+    code.className = "invite-code";
+    code.textContent = inv.code;
+    const meta = document.createElement("span");
+    meta.className = "invite-status " + status.cls;
+    meta.textContent = (inv.label ? `${inv.label} · ` : "") + status.text;
+    left.append(code, document.createElement("br"), meta);
+
+    const actions = document.createElement("span");
+    actions.className = "invite-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "chip-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => copyInvite(inv.code, copyBtn));
+    actions.appendChild(copyBtn);
+    if (status.cls === "active") {
+      const revokeBtn = document.createElement("button");
+      revokeBtn.type = "button";
+      revokeBtn.className = "chip-btn danger-chip";
+      revokeBtn.textContent = "Revoke";
+      revokeBtn.addEventListener("click", () => revokeInvite(inv.code, revokeBtn));
+      actions.appendChild(revokeBtn);
+    }
+
+    row.append(left, actions);
+    list.appendChild(row);
+  });
+}
+
+async function copyInvite(code, btn) {
+  try {
+    await navigator.clipboard.writeText(code);
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    alert(code);
+  }
+}
+
+async function revokeInvite(code, btn) {
+  if (!confirm(`Revoke ${code}? It can no longer be redeemed.`)) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
+    if (reply.ok) { loadInvites(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not revoke the code.");
+  } catch { alert("Could not revoke the code."); }
+  btn.disabled = false;
+}
+
+document.getElementById("invite-new").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const label = document.getElementById("invite-label").value;
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/admin/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    });
+    if (reply.ok) {
+      document.getElementById("invite-label").value = "";
+      loadInvites();
+    } else {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not generate a code.");
+    }
+  } catch { alert("Could not reach the server."); }
+  btn.disabled = false;
+});
+
 function renderStats() {
   const admins = users.filter((u) => u.is_admin).length;
   const watch = users.reduce((sum, u) => sum + (u.watch_seconds || 0), 0);
@@ -614,6 +718,7 @@ document.addEventListener("keydown", (e) => {
 async function boot() {
   if (!(await requireAdmin())) return;
   loadUsers();
+  loadInvites();
   loadChannel();
   loadNotify();
 }
