@@ -30,7 +30,7 @@ import auth
 import config
 import db
 from hub import chat_purge_worker, hub
-from media import stream_watcher, thumbnail_worker
+from media import cleanup_record_scratch, stream_watcher, thumbnail_worker
 from routes import admin as admin_routes
 from routes import auth as auth_routes
 from routes import media as media_routes
@@ -72,6 +72,9 @@ async def lifespan(_app):
         db.clear_unfinished_vods()
     except Exception:
         logger.warning("clear_unfinished_vods failed at startup", exc_info=True)
+    # Their scratch files can outlive the rows (a restart mid-recording), so sweep
+    # the recording scratch dir of anything not tied to an active recording.
+    cleanup_record_scratch()
     tasks = [
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),

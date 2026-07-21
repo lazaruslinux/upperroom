@@ -203,6 +203,32 @@ def _remove_media_files(folder, filename, item_id):
             logger.debug("could not remove media file %s", path, exc_info=True)
 
 
+def cleanup_record_scratch():
+    """Remove leftover files in the recording scratch dir that do not belong to
+    an in-progress recording. Called at startup, when nothing is recording, so it
+    clears the litter a gate restart during a mid-recording leaves behind (e.g.
+    /rec/1.mp4 whose VOD row was already dropped by clear_unfinished_vods).
+    Best effort and logged; never raises."""
+    active = _rec["tmp_path"] if _rec["active"] else None
+    try:
+        entries = os.listdir(RECORD_TMP)
+    except OSError:
+        logger.debug("recording scratch dir %s not listable", RECORD_TMP,
+                     exc_info=True)
+        return
+    for name in entries:
+        path = os.path.join(RECORD_TMP, name)
+        if active and os.path.abspath(path) == os.path.abspath(active):
+            continue
+        if not os.path.isfile(path):
+            continue
+        try:
+            os.remove(path)
+            logger.info("removed orphaned recording scratch file: %s", path)
+        except OSError:
+            logger.warning("could not remove scratch file %s", path, exc_info=True)
+
+
 async def start_recording():
     if _rec["active"]:
         return
