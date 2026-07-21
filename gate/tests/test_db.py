@@ -79,6 +79,23 @@ def test_delete_user_cascades(fresh_db):
     assert db.user_activity("gone") == {"watch_sessions": [], "chat": []}
 
 
+# ---- first-run setup gate -------------------------------------------------
+
+def test_setup_gate_creates_first_admin_only(fresh_db):
+    now = int(time.time())
+    assert db.count_users() == 0
+    # The first call makes the account, as admin.
+    assert db.create_first_user("owner", "Owner", "password1", now) is True
+    row = db.get_user("owner")
+    assert row["is_admin"] == 1
+    assert db.count_users() == 1
+    # Once anyone exists the wizard is spent: no second bootstrap account, and
+    # the existing table is left untouched.
+    assert db.create_first_user("intruder", "Intruder", "password1", now) is False
+    assert db.get_user("intruder") is None
+    assert db.count_users() == 1
+
+
 # ---- go-live notification recipients --------------------------------------
 
 def test_live_recipients_respects_email_and_optout(fresh_db):

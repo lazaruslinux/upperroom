@@ -304,6 +304,29 @@ def count_admins():
         return row["n"]
 
 
+def count_users():
+    """Total accounts. The first-run setup wizard is offered only while this is
+    zero, and closes permanently once anyone exists."""
+    with connect() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()
+        return row["n"]
+
+
+def create_first_user(username, display_name, password, when):
+    """Create the very first account, as admin, but only if no account exists yet.
+    The emptiness check and the insert are one atomic statement, so two racing
+    setup requests can never both create an owner. Returns True if it made the
+    account, False if the table was not empty (the wizard is already spent)."""
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO users "
+            "(username, display_name, password_hash, is_admin, created_at) "
+            "SELECT ?, ?, ?, 1, ? WHERE NOT EXISTS (SELECT 1 FROM users)",
+            (username, display_name, hash_password(password), when),
+        )
+        return cur.rowcount > 0
+
+
 def channel_owner():
     """The streamer shown on the home card: the longest-standing admin."""
     with connect() as conn:

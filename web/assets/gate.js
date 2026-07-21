@@ -1,8 +1,19 @@
-// Login page. A plain username and password sign in. On success the gate sets
-// a session cookie and we send the viewer to the watch page.
+// Login page. A plain username and password sign in, plus an invite-code sign up
+// revealed by the "have an invite?" toggle. On success the gate sets a session
+// cookie and we send the viewer to the home page.
+
+// On a brand new install no account exists yet; send the visitor to the one-time
+// setup wizard instead of showing a login they cannot pass.
+(async () => {
+  try {
+    const data = await (await fetch("/api/setup")).json();
+    if (data.needs_setup) { window.location.href = "/setup"; }
+  } catch {
+    /* if the check fails, leave the login page up */
+  }
+})();
 
 const form = document.getElementById("login-form");
-const submitButton = form.querySelector("button[type=submit]");
 const errorBox = document.getElementById("error");
 
 function showError(message) {

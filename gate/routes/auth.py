@@ -8,6 +8,7 @@ own account.
 
 import io
 import os
+import time
 
 from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -15,16 +16,34 @@ from PIL import Image, ImageOps
 
 import db
 from auth import (
-    client_ip, country_allowed, issue_token, read_session, too_many_attempts,
+    _clean_username, client_ip, country_allowed, issue_token, read_session,
+    too_many_attempts,
 )
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
-    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MIN_PASSWORD, SAFE_USERNAME,
-    SESSION_HOURS,
+    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_STREAM_TITLE, MIN_PASSWORD,
+    SAFE_USERNAME, SESSION_HOURS,
 )
 from hub import hub
 
 router = APIRouter()
+
+
+def _signed_in_response(user, payload=None):
+    """A JSON response that also sets the session cookie for `user`, exactly like
+    a successful sign in. Used by the login, setup, and register endpoints so all
+    three log the account in the moment it is created or authenticated."""
+    response = JSONResponse(payload or {"ok": True})
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=issue_token(user),
+        max_age=SESSION_HOURS * 3600,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
 
 
 @router.get("/api/me")
@@ -125,6 +144,60 @@ async def auth(request: Request):
         path="/",
     )
     return response
+
+
+@router.get("/api/setup")
+def setup_status():
+    # Public. The login page and the wizard both ask this: the wizard is offered
+    # only on a brand new install, before any account exists.
+    return {"needs_setup": db.count_users() == 0}
+
+
+@router.post("/api/setup")
+async def setup(request: Request):
+    # First-run wizard: create the very first account, as admin, and name the
+    # channel. This closes forever the instant any account exists. That server
+    # side check is the security boundary, re-run on every call, not merely a hint
+    # the page uses to hide itself.
+    ip = client_ip(request)
+    if too_many_attempts(ip):
+        return JSONResponse(
+            {"error": "Too many attempts. Wait a minute and try again."},
+            status_code=429,
+        )
+    if db.count_users() > 0:
+        return JSONResponse(
+            {"error": "Setup is already complete."}, status_code=403
+        )
+
+    body = await request.json()
+    username = _clean_username(body.get("username"))
+    if not username:
+        return JSONResponse(
+            {"error": "Username may use only a-z, 0-9, dot, dash, underscore."},
+            status_code=400,
+        )
+    password = body.get("password", "")
+    if len(password) < MIN_PASSWORD:
+        return JSONResponse(
+            {"error": f"Password needs at least {MIN_PASSWORD} characters."},
+            status_code=400,
+        )
+    display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
+    channel_name = (body.get("channel_name") or "").strip()[:MAX_STREAM_TITLE]
+    if not channel_name:
+        return JSONResponse(
+            {"error": "Channel name cannot be empty."}, status_code=400
+        )
+
+    # The insert is guarded to fire only on an empty users table, so even a race
+    # between two setup requests can create at most one owner.
+    if not db.create_first_user(username, display_name, password, int(time.time())):
+        return JSONResponse(
+            {"error": "Setup is already complete."}, status_code=403
+        )
+    db.set_stream_info(title=channel_name)
+    return _signed_in_response(db.get_user(username))
 
 
 @router.post("/api/logout")

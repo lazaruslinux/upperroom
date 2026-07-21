@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom</title>
+  <title>upperroom - setup</title>
   <script>
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
@@ -12,20 +12,18 @@
 </head>
 <body class="center">
   <main class="card">
-    <div id="status" class="status status-loading">
-      <span class="dot"></span>
-      <span id="status-label">Checking status…</span>
-      <span id="status-time" class="status-time"></span>
-    </div>
     <h1 class="brand">upperroom<span class="cursor">▮</span></h1>
-    <p class="muted">&gt; sign in</p>
-    <form id="login-form" autocomplete="off">
+    <p class="muted">&gt; first-run setup</p>
+    <p class="setup-intro muted">This creates the first account as the admin and names the channel. It runs only once.</p>
+    <form id="setup-form" autocomplete="off">
       <input type="text" id="username" placeholder="Username" autocomplete="off" required>
-      <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
-      <button type="submit">Sign in</button>
+      <input type="text" id="display-name" placeholder="Display name" autocomplete="off" required>
+      <input type="password" id="password" placeholder="Password (at least 8 characters)" autocomplete="new-password" required>
+      <input type="text" id="channel-name" placeholder="Channel name" autocomplete="off" required>
+      <button type="submit">Create admin</button>
       <p id="error" class="error" hidden></p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=12"></script>
+  <script src="/assets/setup.js?v=1"></script>
 </body>
 </html>

@@ -335,6 +335,24 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .status-live .dot { background: var(--accent); animation: blink 0.9s steps(1) infinite; }
 .status-offline #status-label { color: var(--muted); }
 
+/* setup wizard intro line + the "have an invite?" / "back to sign in" toggles */
+.setup-intro { margin: 0 0 16px; font-family: var(--sans); font-size: 13px; line-height: 1.45; }
+.alt-toggle { margin: 16px 0 0; text-align: center; }
+.alt-toggle button {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  text-transform: lowercase;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.alt-toggle button:hover { color: var(--accent); }
+
 /* =========================================================================
    Shared top bar (home / media / mod / admin)
    ========================================================================= */
