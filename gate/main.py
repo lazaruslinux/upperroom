@@ -20,11 +20,13 @@ thumbnails, stream watcher), notify (go-live announcements), and routes/*
 """
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+import auth
 import config
 import db
 from hub import chat_purge_worker, hub
@@ -35,16 +37,41 @@ from routes import media as media_routes
 from routes import mod as mod_routes
 from routes import ws as ws_routes
 
+logger = logging.getLogger("upperroom.gate")
+
+
+def _log_startup_summary():
+    """A one-line-ish summary of how the gate is configured, at startup. Never
+    logs secrets (no JWT secret, no SMTP password)."""
+    logger.info("upperroom gate starting; log level %s", config.LOG_LEVEL)
+    logger.info(
+        "stream path=%s, allowed countries=%s, geo gate=%s",
+        config.STREAM_PATH,
+        ",".join(sorted(config.ALLOWED_COUNTRIES)) or "(none)",
+        "on" if auth._geo_reader else "off",
+    )
+    logger.info(
+        "media dir=%s, record scratch=%s, VOD keep=%s/keep-days=%s",
+        config.MEDIA_DIR, config.RECORD_TMP, config.VOD_KEEP, config.VOD_KEEP_DAYS,
+    )
+    logger.info(
+        "notifications: smtp=%s, site url=%s, cooldown=%ss",
+        "configured" if (config.SMTP_HOST and config.SMTP_FROM) else "off",
+        config.SITE_URL or "(unset)",
+        config.NOTIFY_COOLDOWN,
+    )
+
 
 @asynccontextmanager
 async def lifespan(_app):
+    _log_startup_summary()
     hub.load_bans()
     # Any VOD still marked unfinished is from a recording the previous run never
     # got to close out; drop those rows so they do not linger.
     try:
         db.clear_unfinished_vods()
     except Exception:
-        pass
+        logger.warning("clear_unfinished_vods failed at startup", exc_info=True)
     tasks = [
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),

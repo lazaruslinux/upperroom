@@ -10,6 +10,7 @@ announce go-live).
 """
 
 import asyncio
+import logging
 import os
 import shutil
 import signal
@@ -27,6 +28,8 @@ from config import (
 from hub import hub
 from notify import notify_live
 
+logger = logging.getLogger("upperroom.media")
+
 
 async def fetch_path():
     """Return the MediaMTX path JSON for our stream, or None on any error."""
@@ -36,8 +39,10 @@ async def fetch_path():
             reply = await http.get(url)
         if reply.status_code == 200:
             return reply.json()
-    except httpx.HTTPError:
-        pass
+    except httpx.HTTPError as exc:
+        # Expected whenever MediaMTX is briefly unreachable or the stream is
+        # offline; the caller treats None as "not live". Chatty, so debug.
+        logger.debug("MediaMTX path poll failed: %r", exc)
     return None
 
 
@@ -52,16 +57,18 @@ async def stream_watcher():
             # watch time only counts while the stream is live.
             await hub.set_live(online)
             if online and not was_online:
+                logger.info("stream online")
                 await start_recording()
                 # Announce in the background so a slow webhook or mail relay never
                 # delays the status poll. notify_live enforces its own cooldown.
                 asyncio.create_task(notify_live())
             if was_online and not online:
+                logger.info("stream offline")
                 await hub.wipe()
                 await stop_recording()
             was_online = online
         except Exception:
-            pass
+            logger.warning("stream watcher poll failed", exc_info=True)
         await asyncio.sleep(5)
 
 
@@ -90,16 +97,27 @@ async def capture_thumbnail():
         "-f", "image2",
         THUMB_TMP,
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        # Keep ffmpeg's stderr so a failed capture can be diagnosed. communicate()
+        # below drains it so the small "-loglevel error" output cannot block.
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
-        await asyncio.wait_for(proc.wait(), timeout=12)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=12)
     except asyncio.TimeoutError:
         proc.kill()
+        logger.warning("thumbnail capture timed out")
         return
     # Swap in atomically so a half-written file is never served.
     if proc.returncode == 0 and os.path.exists(THUMB_TMP):
         os.replace(THUMB_TMP, THUMB_PATH)
+    else:
+        last = ""
+        if stderr:
+            tail = stderr.decode("utf-8", "replace").strip().splitlines()
+            last = tail[-1] if tail else ""
+        logger.warning(
+            "thumbnail capture failed (rc=%s): %s", proc.returncode, last
+        )
 
 
 async def thumbnail_worker():
@@ -113,7 +131,7 @@ async def thumbnail_worker():
             elif os.path.exists(THUMB_PATH):
                 os.remove(THUMB_PATH)
         except Exception:
-            pass
+            logger.debug("thumbnail worker iteration failed", exc_info=True)
         await asyncio.sleep(THUMB_INTERVAL)
 
 
@@ -142,11 +160,12 @@ async def _run_ffmpeg(args, timeout):
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, out
     except Exception:
+        logger.debug("ffmpeg/ffprobe command failed: %s", args[0], exc_info=True)
         if proc and proc.returncode is None:
             try:
                 proc.kill()
             except Exception:
-                pass
+                logger.debug("could not kill ffmpeg subprocess", exc_info=True)
         return None, b""
 
 
@@ -168,6 +187,7 @@ async def _probe_duration(path):
     try:
         return int(float(out.decode().strip()))
     except Exception:
+        logger.debug("could not probe duration of %s", path, exc_info=True)
         return 0
 
 
@@ -180,7 +200,7 @@ def _remove_media_files(folder, filename, item_id):
             if os.path.exists(path):
                 os.remove(path)
         except Exception:
-            pass
+            logger.debug("could not remove media file %s", path, exc_info=True)
 
 
 async def start_recording():
@@ -193,6 +213,7 @@ async def start_recording():
             info["stream_title"], info["stream_description"], started_at
         )
     except Exception:
+        logger.warning("could not create VOD row; recording skipped", exc_info=True)
         return
     tmp_path = os.path.join(RECORD_TMP, f"{vod_id}.mp4")
     try:
@@ -210,15 +231,17 @@ async def start_recording():
             stderr=asyncio.subprocess.DEVNULL,
         )
     except Exception:
+        logger.warning("could not start recording ffmpeg", exc_info=True)
         try:
             db.delete_media("vod", vod_id)
         except Exception:
-            pass
+            logger.debug("could not delete stub VOD row", exc_info=True)
         return
     _rec.update(
         active=True, vod_id=vod_id, tmp_path=tmp_path,
         started_at=started_at, proc=proc,
     )
+    logger.info("recording started: %s", tmp_path)
 
 
 async def stop_recording():
@@ -234,10 +257,13 @@ async def stop_recording():
             proc.send_signal(signal.SIGINT)   # let ffmpeg write the trailer
             await asyncio.wait_for(proc.wait(), timeout=15)
         except Exception:
+            logger.warning(
+                "recording ffmpeg did not stop cleanly; killing it", exc_info=True
+            )
             try:
                 proc.kill()
             except Exception:
-                pass
+                logger.debug("could not kill recording ffmpeg", exc_info=True)
     # Archive and finalize in the background so a slow transfer to the media
     # store (which may be a network mount) never blocks the stream watcher.
     asyncio.create_task(_finalize_recording(vod_id, tmp_path, started_at, ended_at))
@@ -271,20 +297,28 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
             try:
                 os.remove(tmp_path)
             except OSError:
-                pass
+                logger.debug("could not remove scratch recording %s", tmp_path,
+                             exc_info=True)
         else:
+            logger.warning(
+                "recording remux failed (rc=%s); keeping raw file for %s",
+                code, dst,
+            )
             await asyncio.to_thread(shutil.move, tmp_path, dst)
         duration = await _probe_duration(dst) or max(0, ended_at - started_at)
         db.finalize_vod(vod_id, ended_at, duration, filename)
         db.snapshot_chat("vod", vod_id, started_at, ended_at)
+        logger.info("recording finalized: %s (%ss)", dst, duration)
         # Enforce retention, removing the oldest VODs (rows and files) over the cap.
         try:
             for doomed in db.prune_vods(VOD_KEEP, VOD_KEEP_DAYS, int(time.time())):
                 _remove_media_files(VOD_DIR, doomed.get("filename"), doomed["id"])
+                logger.info("VOD pruned by retention: id=%s", doomed["id"])
         except Exception:
-            pass
+            logger.warning("VOD retention pruning failed", exc_info=True)
     except Exception:
-        pass
+        logger.warning("recording finalize failed for vod_id=%s", vod_id,
+                       exc_info=True)
 
 
 def cooldown_for(user):
@@ -351,6 +385,9 @@ async def make_clip(user, name):
     db.set_clip_filename(clip_id, filename)
     await _make_poster(dst, os.path.join(CLIP_DIR, f"{clip_id}.jpg"), seek=1)
     db.snapshot_chat("clip", clip_id, start, end)
+    logger.info(
+        "clip created: id=%s name=%r by=%s (%ss)", clip_id, name, username, duration
+    )
     return clip_id, None
 
 

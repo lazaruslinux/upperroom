@@ -7,8 +7,33 @@ os.environ. No secrets are written in this file; sensitive values are read from
 the environment and the account database.
 """
 
+import logging
 import os
 import re
+
+# Logging. A single "upperroom.*" logger hierarchy, configured once here so the
+# rest of the package can just call logging.getLogger("upperroom.<area>"). The
+# level comes from the environment (default INFO); nothing secret is ever logged.
+LOG_LEVEL = os.environ.get("SELFSTREAM_LOG_LEVEL", "INFO").upper()
+
+
+def _setup_logging():
+    logger = logging.getLogger("upperroom")
+    if logger.handlers:                       # idempotent, in case of re-import
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    logger.addHandler(handler)
+    logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    # Keep our lines off the root logger so they are not doubled by any handler
+    # a host process (e.g. uvicorn) installs on the root.
+    logger.propagate = False
+
+
+_setup_logging()
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))

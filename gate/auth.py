@@ -8,6 +8,7 @@ coded here; identities come from the account database, keyed by the signed
 session cookie.
 """
 
+import logging
 import time
 from collections import defaultdict, deque
 
@@ -19,6 +20,8 @@ from config import (
     ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, JWT_SECRET, SAFE_USERNAME,
     SESSION_HOURS,
 )
+
+logger = logging.getLogger("upperroom.auth")
 
 
 # ---- Login rate limiting --------------------------------------------------
@@ -112,8 +115,14 @@ def _clean_username(raw):
 # problem can never lock everyone out of the stream.
 try:
     _geo_reader = geoip2.database.Reader(GEO_DB_PATH)
-except Exception:
+except Exception as exc:
+    # Logged once, here at startup, rather than on every request the geo gate
+    # then waves through.
     _geo_reader = None
+    logger.warning(
+        "geo database unavailable at %s (%r); the country gate is open",
+        GEO_DB_PATH, exc,
+    )
 
 
 def country_allowed(ip):
@@ -122,5 +131,8 @@ def country_allowed(ip):
     try:
         code = _geo_reader.country(ip).country.iso_code
     except Exception:
+        # An address not in the database (or an odd lookup) is allowed through,
+        # same as before; this is a chatty per-request path, so debug only.
+        logger.debug("geo lookup miss for %s", ip)
         return True
     return code in ALLOWED_COUNTRIES

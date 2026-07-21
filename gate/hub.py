@@ -7,11 +7,14 @@ the database. A single module-level `hub` instance is shared across the service.
 """
 
 import asyncio
+import logging
 import time
 from collections import deque
 
 import db
 from config import CHAT_HISTORY, CHAT_RETENTION_SECONDS
+
+logger = logging.getLogger("upperroom.hub")
 
 
 # ---- Chat and presence ----------------------------------------------------
@@ -53,7 +56,9 @@ class Hub:
             try:
                 await socket.send_json(message)
             except Exception:
+                # Normal when a viewer's tab closed mid-broadcast; just reap it.
                 dead.append(socket)
+                logger.debug("dropping a dead chat socket", exc_info=True)
         for socket in dead:
             self._sockets.pop(socket, None)
 
@@ -73,6 +78,7 @@ class Hub:
                     )
                 except Exception:
                     who["watch_id"] = None
+                    logger.debug("start_watch_session failed on join", exc_info=True)
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
         await self.broadcast(
@@ -85,7 +91,7 @@ class Hub:
             try:
                 db.end_watch_session(who["watch_id"], int(time.time()))
             except Exception:
-                pass
+                logger.debug("end_watch_session failed on leave", exc_info=True)
         await self.broadcast(self.presence_message())
         if who:
             await self.broadcast(
@@ -100,7 +106,7 @@ class Hub:
         try:
             msg_id = db.log_chat(who["username"], who["name"], text, ts)
         except Exception:
-            pass
+            logger.debug("log_chat failed", exc_info=True)
         message = {
             "type": "chat",
             "id": msg_id,
@@ -139,6 +145,7 @@ class Hub:
             self._banned = set(db.banned_usernames())
         except Exception:
             self._banned = set()
+            logger.warning("could not load chat bans", exc_info=True)
 
     def is_banned(self, username):
         return username in self._banned
@@ -164,7 +171,7 @@ class Hub:
             try:
                 db.mark_chat_deleted(target["id"], by)
             except Exception:
-                pass
+                logger.debug("mark_chat_deleted failed", exc_info=True)
         await self.broadcast({"type": "delete", "id": target.get("id")})
         return target
 
@@ -185,7 +192,7 @@ class Hub:
                 try:
                     await socket.send_json(note)
                 except Exception:
-                    pass
+                    logger.debug("notify_user send failed", exc_info=True)
 
     async def set_live(self, online):
         # Called by the stream watcher. Watch time only counts while live, so on
@@ -202,11 +209,16 @@ class Hub:
                         who["watch_id"] = db.start_watch_session(who["username"], now)
                     except Exception:
                         who["watch_id"] = None
+                        logger.debug(
+                            "start_watch_session failed on go-live", exc_info=True
+                        )
                 elif not online and who.get("watch_id"):
                     try:
                         db.end_watch_session(who["watch_id"], now)
                     except Exception:
-                        pass
+                        logger.debug(
+                            "end_watch_session failed on go-offline", exc_info=True
+                        )
                     who["watch_id"] = None
 
     async def wipe(self):
@@ -214,6 +226,7 @@ class Hub:
         # page to empty its chat, so the next stream starts fresh.
         async with self._lock:
             self._history.clear()
+        logger.info("chat wiped")
         await self.broadcast({"type": "wipe"})
 
     async def update_member(self, username, avatar=None, font=None, name=None):
@@ -240,5 +253,5 @@ async def chat_purge_worker():
         try:
             db.purge_old_chat(int(time.time()) - CHAT_RETENTION_SECONDS)
         except Exception:
-            pass
+            logger.warning("chat purge failed", exc_info=True)
         await asyncio.sleep(86400)

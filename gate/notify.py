@@ -8,6 +8,7 @@ notifications are simply skipped.
 """
 
 import asyncio
+import logging
 import smtplib
 import time
 from email.message import EmailMessage
@@ -20,6 +21,8 @@ from config import (
     SMTP_USER,
 )
 
+logger = logging.getLogger("upperroom.notify")
+
 
 async def send_discord(webhook, content):
     """Post a message to a Discord incoming webhook. Best effort."""
@@ -28,8 +31,8 @@ async def send_discord(webhook, content):
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             await http.post(webhook, json={"content": content})
-    except httpx.HTTPError:
-        pass
+    except httpx.HTTPError as exc:
+        logger.warning("discord go-live notification failed: %r", exc)
 
 
 def _send_emails_blocking(recipients, subject, body):
@@ -48,10 +51,13 @@ def _send_emails_blocking(recipients, subject, body):
                 message.set_content(body)
                 try:
                     server.send_message(message)
-                except smtplib.SMTPException:
+                except smtplib.SMTPException as exc:
+                    logger.warning(
+                        "go-live email to %s failed: %r", address, exc
+                    )
                     continue
-    except (smtplib.SMTPException, OSError):
-        pass
+    except (smtplib.SMTPException, OSError) as exc:
+        logger.warning("go-live email relay failed: %r", exc)
 
 
 async def send_live_emails(title):
@@ -89,5 +95,6 @@ async def notify_live(force=False):
     discord_text = f"**{title}** is live now."
     if SITE_URL:
         discord_text += f"\n{SITE_URL}/home"
+    logger.info("announcing go-live%s", " (test)" if force else "")
     await send_discord(settings["discord_webhook"], discord_text)
     await send_live_emails(title)

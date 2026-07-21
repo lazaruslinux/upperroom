@@ -6,6 +6,7 @@ socket intercepts any message starting with "/", authorizes it against a fresh
 database read of the sender's role, and never echoes it to other people.
 """
 
+import logging
 import time
 from collections import deque
 
@@ -15,6 +16,8 @@ import db
 from auth import country_allowed, read_session
 from config import COOKIE_NAME, MAX_MESSAGE_LENGTH
 from hub import hub
+
+logger = logging.getLogger("upperroom.ws")
 
 router = APIRouter()
 
@@ -32,7 +35,7 @@ async def system_reply(websocket, text):
             {"type": "system", "text": text, "ts": int(time.time())}
         )
     except Exception:
-        pass
+        logger.debug("system_reply send failed", exc_info=True)
 
 
 def _target_name(arg):
@@ -238,6 +241,7 @@ async def chat_socket(websocket: WebSocket):
             except WebSocketDisconnect:
                 break
             except Exception:
+                logger.debug("ignoring unparseable chat frame", exc_info=True)
                 continue
             if data.get("type") != "chat":
                 continue
