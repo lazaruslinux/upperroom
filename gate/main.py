@@ -482,7 +482,7 @@ async def send_live_emails(title):
         lines += ["", f"Watch: {SITE_URL}/home"]
     body = "\n".join(lines)
     await asyncio.to_thread(
-        _send_emails_blocking, recipients, "Lazarus Labs is live", body
+        _send_emails_blocking, recipients, "upperroom is live", body
     )
 
 
@@ -1085,7 +1085,7 @@ def channel(request: Request):
         "clip_cooldown_admin": info["clip_cooldown_admin"],
     }
     if not owner:
-        return {**base, "username": None, "name": "Lazarus Labs", "avatar": 0}
+        return {**base, "username": None, "name": "upperroom", "avatar": 0}
     return {
         **base,
         "username": owner["username"],

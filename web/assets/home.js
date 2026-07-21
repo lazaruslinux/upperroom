@@ -59,7 +59,11 @@ async function requireAuth() {
 
 function renderGreeting() {
   const name = (me.name || me.username || "there").split(" ")[0];
-  greeting.textContent = `Welcome back, ${name}.`;
+  // Prompt-style line: "> signed in as name", with the name in accent green.
+  greeting.textContent = "> signed in as ";
+  const who = document.createElement("b");
+  who.textContent = name;
+  greeting.appendChild(who);
 }
 
 function setupIdentity() {
@@ -95,7 +99,7 @@ async function loadChannel() {
   try {
     channel = await (await fetch("/api/channel")).json();
   } catch {
-    channel = { username: null, name: "Lazarus Labs", avatar: 0 };
+    channel = { username: null, name: "upperroom", avatar: 0 };
   }
   renderChannel();
 }
@@ -508,7 +512,7 @@ function mediaCard(item, kind) {
     thumb.classList.add("media-thumb-fallback");
     const mark = document.createElement("span");
     mark.className = "thumb-mark";
-    mark.innerHTML = 'Lazarus<span>Labs</span>';
+    mark.textContent = "no signal";
     thumb.appendChild(mark);
   }
   if (item.duration) {

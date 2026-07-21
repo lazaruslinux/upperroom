@@ -29,16 +29,6 @@ const FONTS = {
   caveat: "'Caveat', cursive",
 };
 
-const CROWN_SVG =
-  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
-  '<path d="M3 8l4.5 3.5L12 5l4.5 6.5L21 8l-1.8 10H4.8z"/>' +
-  '<rect x="4.8" y="18.2" width="14.4" height="2.2" rx="0.6"/></svg>';
-const SHIELD_SVG =
-  '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-  '<path fill="currentColor" d="M12 2l8 3v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V5z"/>' +
-  '<path d="M8.5 12l2.3 2.3L15.5 9.5" fill="none" stroke="#fff" stroke-width="2" ' +
-  'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
 function avatarColor(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
@@ -60,11 +50,12 @@ function avatarNode(username, name, version) {
   return span;
 }
 
+// Square mono text tag: amber "op" for admin, blue "mod" for moderator.
 function roleBadgeNode(admin, mod) {
   if (!admin && !mod) return null;
   const span = document.createElement("span");
-  span.className = "role-badge-icon " + (admin ? "is-admin" : "is-mod");
-  span.innerHTML = admin ? CROWN_SVG : SHIELD_SVG;
+  span.className = "role-tag " + (admin ? "op" : "mod");
+  span.textContent = admin ? "op" : "mod";
   return span;
 }
 
