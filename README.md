@@ -66,6 +66,21 @@ free Cloudflare account. The tutorials in `docs/` walk through each part.
 More detail on running and updating is in `docs/04-run.md`. Accounts and chat
 are explained in `docs/06-accounts-and-chat.md`.
 
+## Try it (demo mode)
+
+To see the whole thing working without OBS or making accounts, bring it up in
+demo mode:
+
+```
+docker compose --profile demo up -d
+```
+
+That seeds demo accounts and starts a synthetic broadcast, so within a minute you
+have a live stream with chat and a populated admin dashboard. Sign in as `demo` /
+`demodemo123`. The plain `docker compose up -d` never starts the demo containers,
+so a real install is unaffected. Full details, credentials, and teardown are in
+`docs/07-demo.md`.
+
 ## Configuration
 
 Every setting lives in `.env`, which is never committed. See `.env.example` for

@@ -86,6 +86,65 @@ services:
       - gate
       - mediamtx
 
+  # ---- Demo mode (profile "demo") -------------------------------------------
+  # These two services only run with `docker compose --profile demo up -d`. The
+  # default `docker compose up -d` never starts them, so a real install is
+  # unaffected. Together they bring the site up already alive: demo accounts
+  # exist and a synthetic broadcast is already streaming. See docs/07-demo.md.
+
+  # One-shot seeder. Reuses the gate image, shares the gate's data volume, and
+  # idempotently creates the demo accounts, stream title, and invite code, then
+  # exits. Safe to re-run; it refuses to touch a database that already has real
+  # (non-demo) accounts.
+  demo-seed:
+    profiles: ["demo"]
+    build: ./gate
+    command: ["python", "demo_seed.py"]
+    environment:
+      - SELFSTREAM_DB=/data/selfstream.db
+      - DEMO_ADMIN_USER=${DEMO_ADMIN_USER:-demo}
+      - DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD:-demodemo123}
+    volumes:
+      - gate_data:/data
+    depends_on:
+      - gate
+
+  # Synthetic broadcaster. Loops an ffmpeg publish of an animated 720p30 source
+  # with audio into MediaMTX using the same PUBLISH_PASS as OBS would, so the
+  # watch page shows live video. The shell loop retries with a short backoff so
+  # it survives MediaMTX starting slowly.
+  demo-stream:
+    profiles: ["demo"]
+    image: linuxserver/ffmpeg:latest
+    restart: unless-stopped
+    environment:
+      - PUBLISH_PASS=${PUBLISH_PASS}
+    entrypoint: ["/bin/sh", "-c"]
+    # $$PUBLISH_PASS is escaped so Compose leaves it for the container shell to
+    # expand at runtime from the environment above, keeping the password out of
+    # the rendered config. Modest 1500k bitrate, keyframe every 2s (-g 60 at
+    # 30fps), no B-frames (this app's HLS muxer breaks on B-frame reordering).
+    command:
+      - |
+        while true; do
+          echo "demo-stream: starting ffmpeg publish to mediamtx"
+          ffmpeg -hide_banner -loglevel warning \
+            -re -f lavfi -i "mandelbrot=size=1280x720:rate=30" \
+            -f lavfi -i "sine=frequency=220:sample_rate=48000" \
+            -filter:a "volume=0.08" \
+            -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+            -b:v 1500k -maxrate 1500k -bufsize 3000k \
+            -g 60 -keyint_min 60 -sc_threshold 0 -bf 0 \
+            -c:a aac -b:a 128k -ar 48000 \
+            -f flv "rtmp://mediamtx:1935/live?user=publisher&pass=$$PUBLISH_PASS"
+          echo "demo-stream: ffmpeg exited, retrying in 3s"
+          sleep 3
+        done
+    networks:
+      - selfstream
+    depends_on:
+      - mediamtx
+
 networks:
   selfstream:
 

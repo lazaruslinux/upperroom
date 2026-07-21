@@ -1,0 +1,107 @@
+# 7. Demo mode
+
+Demo mode brings the whole site up already alive, in one command, so you (or
+someone you are showing it to) can see a working stream without OBS, without
+making accounts, and without waiting for anything. It runs two extra containers,
+both behind a Compose profile named `demo`, so a normal install never touches
+them.
+
+When it is running you get, straight away:
+
+- demo accounts that already exist (no setup wizard to fill in),
+- a synthetic broadcast already streaming, so the watch page shows live video,
+- live chat and presence, and a populated admin dashboard,
+- one unredeemed invite code, so the invite flow works from the login page.
+
+## 7.1 One command up
+
+From the project folder, after copying `.env.example` to `.env` and filling it
+in the usual way (see `docs/04-run.md`):
+
+```
+docker compose --profile demo up -d
+```
+
+This starts the normal three services (`mediamtx`, `gate`, `caddy`) plus:
+
+- `demo-seed`, a one-shot container that creates the demo accounts, the stream
+  title and description, and the invite code, then exits. It is idempotent, so
+  re-running the command is harmless.
+- `demo-stream`, a small `ffmpeg` container that loops forever, publishing an
+  animated 720p30 test source with audio into MediaMTX with the same
+  `PUBLISH_PASS` your OBS would use. This is what makes the watch page show live
+  video.
+
+Give it under a minute for the certificate and the first video segments, then
+open your site. Sign in with a demo account below and you are looking at a live
+stream with chat.
+
+## 7.2 Demo credentials
+
+The accounts and their password come from the environment, with these defaults
+(override them in `.env` if you like, see `.env.example`):
+
+| Account       | Username     | Password       | Role   |
+|---------------|--------------|----------------|--------|
+| Demo admin    | `demo`       | `demodemo123`  | admin  |
+| Viewer one    | `viewer_one` | `demodemo123`  | viewer |
+| Viewer two    | `viewer_two` | `demodemo123`  | viewer |
+
+The admin username and password are set with `DEMO_ADMIN_USER` and
+`DEMO_ADMIN_PASSWORD`. The two viewer accounts use the same password.
+
+Because the seeder creates the first account, the first-run setup wizard at
+`/setup` seals itself exactly as it does on a normal install: once any account
+exists, the wizard is spent and the server refuses it. There is nothing to fill
+in.
+
+## 7.3 The invite code
+
+The seeder also creates one single-use invite code with the label **try me**, so
+the invite flow is demonstrable end to end. The code is a short three-word string
+like `ember-quiet-harbor`. Find it two ways:
+
+- in the `demo-seed` container's log:
+  ```
+  docker compose --profile demo logs demo-seed
+  ```
+- or signed in as the demo admin, under **Invites** on the `/admin` dashboard.
+
+Redeem it from the login page: click **have an invite?**, then enter the code
+with a new username, display name, and password to make a fresh viewer account.
+
+## 7.4 Tearing it down
+
+Stop the demo containers but keep the data (accounts, the recording made from the
+demo broadcast, chat history):
+
+```
+docker compose --profile demo down
+```
+
+To remove everything including the volumes, so the next start is completely
+fresh:
+
+```
+docker compose --profile demo down -v
+```
+
+Warning: `-v` erases the data volumes. That deletes every account, recording,
+clip, and chat log in this instance, not just the demo ones. Only use it when you
+want a clean slate.
+
+## 7.5 Do not run demo mode against a real instance
+
+The demo profile is for a throwaway or evaluation instance. Do not start it
+against a production `.env` or a database that has your real accounts in it.
+
+Two safeguards make an accidental run harmless, but do not rely on them:
+
+- `demo-seed` refuses to act if accounts already exist and none of them is the
+  demo admin. It logs why and changes nothing, so it will not add demo accounts
+  or overwrite your stream title on a real database.
+- `demo-stream` publishes with your `PUBLISH_PASS`. If you start it while you are
+  genuinely live from OBS, two publishers would contend for the same channel.
+
+If you want to try demo mode, do it on a separate instance with its own `.env`
+and its own volumes.
