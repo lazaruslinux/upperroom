@@ -146,7 +146,7 @@ function refreshThumb() {
     thumbFallback.hidden = true;
   };
   next.onerror = () => {
-    // No frame yet (stream just came up) — keep showing the branded fallback.
+    // No frame yet (stream just came up); keep showing the branded fallback.
     thumb.hidden = true;
     thumbFallback.hidden = false;
   };

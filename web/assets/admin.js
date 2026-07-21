@@ -567,7 +567,7 @@ async function loadNotify() {
   notifyWebhook.value = data.discord_webhook || "";
   const bits = [];
   bits.push(data.smtp_configured
-    ? `Email is set up — ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`
+    ? `Email is set up. ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`
     : "Email is not configured on the server (set the SMTP variables to enable it).");
   if (!data.site_url) bits.push("Set SELFSTREAM_SITE_URL so messages include a watch link.");
   if (data.last_notified_at) bits.push(`Last announced ${relativeTime(data.last_notified_at)}.`);

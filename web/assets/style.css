@@ -303,7 +303,23 @@ form { display: flex; flex-direction: column; gap: 16px; }
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.home-actions { display: flex; align-items: center; gap: 10px; }
+.home-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; }
+
+/* Header nav items are plain dim mono text - no border, no box - so they stay
+   on one line even at 390px. Primary actions (e.g. admin's "+ new user") keep
+   their bordered accent button look and are exempt from this rule. */
+.home-bar .home-actions .ghost-btn {
+  border: none;
+  background: none;
+  padding: 4px 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.home-bar .home-actions .ghost-btn:hover { border: none; color: var(--accent); }
 
 /* =========================================================================
    Home (card landing) + library

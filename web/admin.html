@@ -7,7 +7,7 @@
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=15">
+  <link rel="stylesheet" href="/assets/style.css?v=16">
 </head>
 <body class="admin">
   <header class="home-bar">
@@ -37,7 +37,7 @@
       <label>Description
         <textarea id="ch-desc" maxlength="500" rows="2" placeholder="Shown on the home card"></textarea>
       </label>
-      <span class="muted">Clip cooldown — minutes between clips per role (0 = off)</span>
+      <span class="muted">Clip cooldown: minutes between clips per role (0 = off)</span>
       <div class="clip-limit-edit">
         <label>Viewers <input id="ch-cd-user" type="number" min="0" max="1440" inputmode="numeric"></label>
         <label>Mods <input id="ch-cd-mod" type="number" min="0" max="1440" inputmode="numeric"></label>
@@ -160,6 +160,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=5"></script>
+  <script src="/assets/admin.js?v=6"></script>
 </body>
 </html>
