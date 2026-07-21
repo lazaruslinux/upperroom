@@ -723,6 +723,61 @@ async function saveNotify(test) {
 document.getElementById("notify-save").addEventListener("click", () => saveNotify(false));
 document.getElementById("notify-test").addEventListener("click", () => saveNotify(true));
 
+// ---- overlay (OBS chat browser source) ----
+
+const overlayUrlInput = document.getElementById("overlay-url");
+const overlayMsg = document.getElementById("overlay-msg");
+
+function showOverlayMsg(text, ok) {
+  overlayMsg.textContent = text;
+  overlayMsg.classList.toggle("good", !!ok);
+  overlayMsg.classList.toggle("bad", !ok);
+  overlayMsg.hidden = false;
+}
+
+function setOverlayUrl(key) {
+  // Origin so the URL is copy-paste ready into OBS on the same network as here.
+  overlayUrlInput.value = `${window.location.origin}/overlay?key=${key}`;
+}
+
+async function loadOverlay() {
+  try {
+    const data = await (await fetch("/api/admin/overlay")).json();
+    if (data.key) setOverlayUrl(data.key);
+  } catch { /* leave the field blank */ }
+}
+
+document.getElementById("overlay-copy").addEventListener("click", async (e) => {
+  try {
+    await navigator.clipboard.writeText(overlayUrlInput.value);
+    const btn = e.currentTarget;
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    overlayUrlInput.select();
+    showOverlayMsg("Copy failed; the URL is selected so you can copy it.", false);
+  }
+});
+
+document.getElementById("overlay-regen").addEventListener("click", async (e) => {
+  if (!confirm("Regenerate the overlay URL? The current one will stop working.")) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  overlayMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/admin/overlay/regenerate", { method: "POST" });
+    if (reply.ok) {
+      const data = await reply.json();
+      setOverlayUrl(data.key);
+      showOverlayMsg("New URL generated. Update your OBS browser source.", true);
+    } else {
+      showOverlayMsg("Could not regenerate the URL.", false);
+    }
+  } catch { showOverlayMsg("Could not reach the server.", false); }
+  btn.disabled = false;
+});
+
 // ---- modal helpers ----
 
 function openModal(m) { m.hidden = false; }
@@ -741,6 +796,7 @@ async function boot() {
   loadUsers();
   loadInvites();
   loadChannel();
+  loadOverlay();
   loadNotify();
 }
 

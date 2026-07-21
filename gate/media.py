@@ -414,6 +414,14 @@ async def make_clip(user, name):
     logger.info(
         "clip created: id=%s name=%r by=%s (%ss)", clip_id, name, username, duration
     )
+    # Announce the clip so the overlay (and any future feature) can react. Best
+    # effort: a broadcast failure must never fail the clip itself.
+    try:
+        await hub.broadcast(
+            {"type": "clip", "name": name, "by": user["display_name"]}
+        )
+    except Exception:
+        logger.debug("clip broadcast failed", exc_info=True)
     return clip_id, None
 
 

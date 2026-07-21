@@ -258,6 +258,8 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("POST", "/api/stream-info", {"title": "x"}),
         ("GET", "/api/admin/chat", None),
         ("GET", "/api/admin/notify", None),
+        ("GET", "/api/admin/overlay", None),
+        ("POST", "/api/admin/overlay/regenerate", None),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -394,6 +396,62 @@ def test_ws_ban_command_blocks_the_targets_messages(client):
         frame = ws.receive_json()
     assert frame["type"] == "system"
     assert "banned" in frame["text"].lower()
+
+
+# ---- 6b. OBS chat overlay -------------------------------------------------
+
+def test_ws_overlay_receives_chat_but_is_not_a_viewer(client):
+    setup_admin(client, username="owner")
+    key = db.regenerate_overlay_key()
+    with client.websocket_connect(f"/ws?overlay={key}") as overlay:
+        with ws_connect(client) as ws:
+            drain_join(ws)
+            # The overlay is a watcher, not a viewer: it never shows up in the
+            # presence list or the watching count.
+            assert [v["username"] for v in hub.viewers()] == ["owner"]
+            assert len(hub._watchers) == 1
+            ws.send_json({"type": "chat", "text": "hi overlay"})
+        # It still receives the chat broadcast (presence/system frames arrive
+        # first from the viewer joining and chatting).
+        chat = None
+        for _ in range(12):
+            frame = overlay.receive_json()
+            if frame.get("type") == "chat":
+                chat = frame
+                break
+        assert chat is not None
+        assert chat["text"] == "hi overlay"
+        assert chat["user"] == "owner"
+
+
+def test_ws_overlay_bad_key_is_refused(client):
+    setup_admin(client, username="owner")
+    db.regenerate_overlay_key()
+    with pytest.raises(WebSocketDisconnect) as excinfo:
+        with client.websocket_connect("/ws?overlay=not-the-real-key"):
+            pass
+    assert excinfo.value.code == 4401
+
+
+def test_clip_event_broadcast_reaches_a_watcher(client):
+    # The clip announcement is a plain hub broadcast, so it can be exercised at
+    # the hub layer without ffmpeg. A watcher (the overlay) must receive it.
+    import asyncio
+
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, message):
+            self.sent.append(message)
+
+    sock = FakeSocket()
+    hub.add_watcher(sock)
+    try:
+        asyncio.run(hub.broadcast({"type": "clip", "name": "Big play", "by": "Owner"}))
+    finally:
+        hub.remove_watcher(sock)
+    assert sock.sent == [{"type": "clip", "name": "Big play", "by": "Owner"}]
 
 
 # ---- 7b. Channel accent flavor --------------------------------------------

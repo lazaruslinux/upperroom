@@ -264,6 +264,19 @@ def test_accent_defaults_green_and_persists(fresh_db):
     assert db.get_stream_info()["accent"] == "amber"
 
 
+def test_overlay_key_generate_persist_and_regenerate(fresh_db):
+    # A fresh channel has no overlay key until one is generated.
+    assert db.get_overlay_key() is None
+    key = db.regenerate_overlay_key()
+    assert key
+    # It persists and reads back as the same value.
+    assert db.get_overlay_key() == key
+    # Regenerating replaces it with a different value, revoking the old URL.
+    key2 = db.regenerate_overlay_key()
+    assert key2 != key
+    assert db.get_overlay_key() == key2
+
+
 def test_clip_count_since(fresh_db):
     now = int(time.time())
     db.create_clip("c1", "", "alice", None, now, now + 30, 30, now)

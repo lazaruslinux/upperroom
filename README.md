@@ -17,6 +17,8 @@ whole thing.
   both with synced chat replay and per-item view counts.
 - Has an admin role and a separate moderator role, with chat commands
   (`/mod`, `/timeout`, `/ban`, `/del`) and dashboards for each.
+- Provides a transparent chat overlay you add to OBS as a browser source, so the
+  broadcast itself shows chat, joins, and clip alerts. See `docs/08-overlay.md`.
 
 It does not transcode. Your computer does the encoding inside OBS, so the
 server only repackages the video and stays light.

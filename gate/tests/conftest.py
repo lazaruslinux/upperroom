@@ -59,6 +59,7 @@ def client(tmp_path, monkeypatch):
     # them so one test's state cannot leak into the next.
     auth._ATTEMPTS.clear()
     hub._sockets.clear()
+    hub._watchers.clear()
     hub._history.clear()
     hub._timeouts.clear()
     hub._banned.clear()

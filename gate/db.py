@@ -80,7 +80,11 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     last_notified_at INTEGER NOT NULL DEFAULT 0,
     -- The channel-wide accent flavor every visitor sees (the brand color). One
     -- of the presets in ACCENTS; the per-user dark/light toggle is separate.
-    accent TEXT NOT NULL DEFAULT 'green'
+    accent TEXT NOT NULL DEFAULT 'green',
+    -- A long random bearer key for the OBS chat overlay. Anyone who has it can
+    -- open the read-only overlay socket, since OBS cannot sign in. Nullable
+    -- until first generated; regenerating it revokes the old URL.
+    overlay_key TEXT
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -218,6 +222,7 @@ def init_db():
         _ensure_column(
             conn, "channel_settings", "accent", "TEXT NOT NULL DEFAULT 'green'"
         )
+        _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         # Ensure the single channel_settings row exists so getters always find it.
         conn.execute(
             "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
@@ -447,6 +452,32 @@ def mark_notified(when):
         conn.execute(
             "UPDATE channel_settings SET last_notified_at = ? WHERE id = 1", (when,)
         )
+
+
+# ---- Overlay key ----------------------------------------------------------
+# The OBS chat overlay authenticates with a long random key in its URL, since a
+# browser source cannot sign in. The key is a bearer secret: whoever holds it
+# can read chat over the overlay socket, so it is shown only on the admin
+# dashboard and can be regenerated to revoke an old URL.
+
+def get_overlay_key():
+    """The current overlay key, or None if one has never been generated."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT overlay_key FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return row["overlay_key"] if row else None
+
+
+def regenerate_overlay_key():
+    """Mint a fresh overlay key, replacing any previous one, and return it. This
+    revokes the old URL: an overlay connected with the old key stops matching."""
+    key = secrets.token_urlsafe(32)
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET overlay_key = ? WHERE id = 1", (key,)
+        )
+    return key
 
 
 def count_user_clips_since(username, since):

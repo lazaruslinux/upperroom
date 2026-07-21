@@ -79,6 +79,19 @@
       <p id="ch-msg" class="notify-msg" hidden></p>
     </div>
 
+    <h2 class="section-title" style="margin-top:1.75rem;">Overlay</h2>
+    <div class="notify-panel">
+      <span class="muted">Add this URL as an OBS browser source to show chat on the broadcast. Anyone with the URL can read chat, so keep it private; regenerate to revoke it.</span>
+      <label>Overlay URL
+        <input id="overlay-url" type="text" readonly autocomplete="off">
+      </label>
+      <div class="edit-actions">
+        <button type="button" id="overlay-copy" class="solid-btn">Copy URL</button>
+        <button type="button" id="overlay-regen" class="danger-btn">Regenerate</button>
+      </div>
+      <p id="overlay-msg" class="notify-msg" hidden></p>
+    </div>
+
     <h2 class="section-title" style="margin-top:1.75rem;">Go-live notifications</h2>
     <div class="notify-panel">
       <p id="notify-status" class="muted">Loading…</p>
@@ -190,6 +203,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=8"></script>
+  <script src="/assets/admin.js?v=9"></script>
 </body>
 </html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>upperroom - overlay</title>
+  <!-- Reuse the site's tokens, role colors, and self-hosted fonts. The overlay
+       runs on top of the broadcast video, so its own background is transparent;
+       that override lives in the scoped block below and never touches style.css,
+       so no other page can inherit a see-through background. -->
+  <link rel="stylesheet" href="/assets/style.css?v=20">
+  <style>
+    /* The whole page is transparent so OBS composites it over the video. Scoped
+       to this document only (inline, after the stylesheet link), so the shared
+       stylesheet is untouched and no other page goes transparent. */
+    html, body {
+      background: transparent;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    /* Bottom-left column: a safe, unobtrusive default for a 1080p canvas. */
+    #overlay {
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      width: 34rem;
+      max-width: calc(100vw - 48px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* A dark translucent chip so text reads over any video. Square corners and a
+       1px border keep the terminal look. */
+    .ov-item {
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      color: var(--text);
+      /* Larger than the site: readable at 1080p from a couch. */
+      font-size: 22px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .ov-chat .ov-name {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 20px;
+      color: var(--text);
+      margin-right: 8px;
+    }
+    .ov-chat .ov-name.op { color: var(--op); }
+    .ov-chat .ov-name.mod { color: var(--mod); }
+    .ov-chat .ov-body { font-family: var(--sans); }
+
+    /* Role tag chip, same square mono look as the site, sized up for the canvas. */
+    .ov-tag {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      margin-right: 8px;
+      color: #0b0c0b;
+      vertical-align: 2px;
+    }
+    .ov-tag.op { background: var(--op); }
+    .ov-tag.mod { background: var(--mod); }
+
+    /* Joins: smaller and muted. Clips: accent border to stand out. */
+    .ov-join {
+      font-family: var(--mono);
+      font-size: 17px;
+      color: var(--muted);
+    }
+    .ov-clip { border-color: var(--accent); }
+    .ov-clip .ov-clip-who {
+      font-family: var(--mono);
+      font-weight: 700;
+      color: var(--accent);
+      margin-right: 8px;
+    }
+    .ov-clip .ov-clip-name { font-family: var(--sans); }
+
+    /* Restrained slide-in, in the site's 120-200ms band. */
+    @keyframes ov-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    .ov-item { animation: ov-in 0.16s ease-out; }
+    @media (prefers-reduced-motion: reduce) {
+      .ov-item { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay"></div>
+  <script src="/assets/overlay.js?v=1"></script>
+</body>
+</html>

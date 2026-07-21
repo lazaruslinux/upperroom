@@ -244,6 +244,27 @@ def admin_invites_revoke(code: str, request: Request):
     return {"ok": True}
 
 
+# ---- Overlay key ----------------------------------------------------------
+
+@router.get("/api/admin/overlay")
+def admin_overlay_get(request: Request):
+    # The bearer key for the OBS chat overlay. Generated on first read so the
+    # panel always has a URL to show; regenerate to revoke the old one.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    key = db.get_overlay_key()
+    if not key:
+        key = db.regenerate_overlay_key()
+    return {"key": key}
+
+
+@router.post("/api/admin/overlay/regenerate")
+def admin_overlay_regenerate(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"key": db.regenerate_overlay_key()}
+
+
 @router.get("/api/admin/notify")
 def admin_notify_get(request: Request):
     # Current go-live notification config, plus what is wired up, so the dashboard

@@ -7,6 +7,7 @@ database read of the sender's role, and never echoes it to other people.
 """
 
 import logging
+import secrets
 import time
 from collections import deque
 
@@ -201,8 +202,41 @@ async def handle_command(websocket, who, text):
     await system_reply(websocket, f"Unknown command /{cmd}. Try /help.")
 
 
+async def overlay_socket(websocket: WebSocket, key):
+    """A read-only connection for the OBS chat overlay. It authenticates with a
+    bearer key in the URL (OBS cannot sign in), receives every broadcast, and is
+    kept out of presence and the watching count. Any frame it sends is ignored."""
+    stored = db.get_overlay_key()
+    # Constant-time compare, and refuse if no key has ever been generated so an
+    # empty/absent key can never authenticate.
+    if not stored or not secrets.compare_digest(str(key), stored):
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    hub.add_watcher(websocket)
+    try:
+        while True:
+            # Drain and discard anything the source sends; the overlay is
+            # display-only. Stop on the disconnect frame (or any receive error).
+            try:
+                message = await websocket.receive()
+            except Exception:
+                break
+            if message.get("type") == "websocket.disconnect":
+                break
+    finally:
+        hub.remove_watcher(websocket)
+
+
 @router.websocket("/ws")
 async def chat_socket(websocket: WebSocket):
+    # The OBS overlay authenticates with a key in the query string instead of a
+    # session cookie, and connects read-only. Handle it before the cookie gate.
+    overlay_key = websocket.query_params.get("overlay")
+    if overlay_key is not None:
+        await overlay_socket(websocket, overlay_key)
+        return
+
     session = read_session(websocket.cookies.get(COOKIE_NAME, ""))
     if not session:
         await websocket.close(code=4401)

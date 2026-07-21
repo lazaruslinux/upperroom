@@ -24,6 +24,11 @@ class Hub:
 
     def __init__(self):
         self._sockets = {}            # websocket -> {"username", "name", "admin", "mod"}
+        # Read-only overlay sockets (the OBS browser source). They receive every
+        # broadcast but are kept out of presence, the watching list and count,
+        # and watch sessions: they are observers, not viewers. Held apart from
+        # _sockets so no viewer-facing count or list can ever pick them up.
+        self._watchers = set()
         self._history = deque(maxlen=CHAT_HISTORY)
         self._lock = asyncio.Lock()
         self._live = False            # whether the stream is currently live
@@ -61,6 +66,24 @@ class Hub:
                 logger.debug("dropping a dead chat socket", exc_info=True)
         for socket in dead:
             self._sockets.pop(socket, None)
+        # Overlay sockets get the same feed but are never counted as viewers.
+        dead_watchers = []
+        for socket in list(self._watchers):
+            try:
+                await socket.send_json(message)
+            except Exception:
+                dead_watchers.append(socket)
+                logger.debug("dropping a dead overlay socket", exc_info=True)
+        for socket in dead_watchers:
+            self._watchers.discard(socket)
+
+    def add_watcher(self, socket):
+        """Seat a read-only overlay socket. It receives future broadcasts but is
+        absent from presence, the watching count, and every viewer list."""
+        self._watchers.add(socket)
+
+    def remove_watcher(self, socket):
+        self._watchers.discard(socket)
 
     async def join(self, socket, who):
         # Replay the recent backlog so someone joining mid stream sees the last
