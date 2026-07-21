@@ -5,14 +5,16 @@
 
    Type scale (px), enforced globally - no ad-hoc sizes:
      11 mono   micro       timestamps, tags, stat/section labels, meta
-     12 mono   ui          buttons, tabs, nav links, settings labels, chat head
-     13 mono   identifier  @handles, greeting, usernames
+     12 mono   ui          buttons, tabs, nav links, settings labels, chat head,
+                           @handles, greeting, usernames (mono chrome sits here)
      14 sans   body        chat messages, bios, descriptions, modal copy
      15 sans   title-sm    VOD card titles, modal headings
      17 sans   title       stream title, media page title
      20 mono   stat        stat numbers
-     16 mono   brand       brand mark (bold)
+     15 mono   brand       brand mark (bold)
    Text inputs stay 16px (iOS zoom rule) and are exempt from the scale.
+   Mono is the self-hosted DejaVu Sans Mono so every device renders identically;
+   no letter-spacing on mono chrome (it renders evenly), only on uppercase tags.
 
    Buttons: three variants (ghost / accent / danger), two sizes (sm 28px /
    md 36px). Same lowercase mono everywhere. See the button system below.
@@ -37,7 +39,7 @@
   --mod: #3f7cff;            /* moderator - blue */
   /* Fixed dark fills for chips that always sit over the black video/thumb. */
   --avatar-default: #1c3a29;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --mono: "DejaVu Sans Mono", ui-monospace, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --accent-tint: rgba(106, 180, 138, 0.08);
   --error-tint: rgba(255, 107, 107, 0.08);
@@ -109,9 +111,8 @@ body {
 
 .brand {
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.4px;
   color: var(--text);
 }
 /* The cursor is the only glow in the whole app. */
@@ -127,7 +128,6 @@ body {
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.4px;
   text-transform: lowercase;
   border: 1px solid var(--border);
   padding: 1px 5px;
@@ -153,7 +153,6 @@ button[type="submit"] {
   padding: 0 12px;
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: 0.3px;
   line-height: 1;
   text-transform: lowercase;
   text-decoration: none;
@@ -202,7 +201,7 @@ button[type="submit"], .solid-btn, .pill.primary, .danger-btn,
 .edit-actions .ghost-btn, .crop-actions .pill {
   height: 36px;
   padding: 0 16px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* square icon buttons (28x28) */
@@ -222,7 +221,6 @@ input[type="number"] {
   color: var(--text);
   font-family: var(--mono);
   font-size: 16px;         /* 16px stops iOS Safari from zooming in on focus */
-  letter-spacing: 0.3px;
   transition: border-color 0.15s ease;
 }
 input::placeholder { color: var(--muted); }
@@ -312,7 +310,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   border: 1px solid var(--border);
   padding: 24px;
 }
-.card h1.brand { margin: 0 0 4px; font-size: 16px; }
+.card h1.brand { margin: 0 0 4px; font-size: 15px; }
 .card .muted { margin: 0 0 20px; font-family: var(--mono); font-size: 12px; }
 
 /* live status badge on the login card */
@@ -325,7 +323,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.4px;
   color: var(--muted);
 }
 .status .dot { width: 7px; height: 7px; background: var(--muted); flex: none; }
@@ -346,7 +343,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: 0.3px;
   text-transform: lowercase;
   text-decoration: underline;
   cursor: pointer;
@@ -380,7 +376,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: 0.3px;
   text-transform: lowercase;
   white-space: nowrap;
 }
@@ -398,8 +393,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 /* Prompt-style greeting: "> signed in as name" in dim mono, name in accent. */
 .home-greeting {
   font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0.3px;
+  font-size: 12px;
   color: var(--muted);
   margin: 0 0 16px;
 }
@@ -497,7 +491,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   padding: 2px 6px;
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.3px;
   color: var(--accent);
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid var(--border);
@@ -506,7 +499,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .card-meta { display: flex; align-items: center; gap: 12px; padding: 12px; }
 .card-text { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
 .card-title { font-family: var(--sans); font-weight: 600; font-size: 17px; color: var(--text); }
-.card-channel { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.card-channel { font-family: var(--mono); font-size: 12px; color: var(--text); }
 .card-channel .channel-name { color: var(--text); }
 .card-channel .channel-handle { color: var(--muted); margin-left: 6px; }
 .card-desc { font-family: var(--sans); color: var(--muted); font-size: 14px; }
@@ -554,7 +547,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   padding: 1px 4px;
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.3px;
   color: var(--text);
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid var(--border);
@@ -571,7 +563,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.media-sub { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; }
+.media-sub { font-family: var(--mono); font-size: 11px; }
 
 /* =========================================================================
    Watch (video stage + live chat)
@@ -677,9 +669,9 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .msg { display: flex; gap: 8px; align-items: flex-start; line-height: 1.35; word-wrap: break-word; }
 .msg .msg-body { flex: 1; min-width: 0; }
 .msg .msg-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-.msg .name { font-family: var(--mono); font-weight: 600; font-size: 12px; letter-spacing: 0.2px; color: var(--text); }
+.msg .name { font-family: var(--mono); font-weight: 600; font-size: 12px; color: var(--text); }
 .msg .name.admin { color: var(--op); }   /* admin chat name stays amber-ish */
-.msg .msg-time { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); }
+.msg .msg-time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .msg .body { display: block; font-family: var(--sans); font-size: 14px; line-height: 1.4; margin-top: 3px; }
 .msg .body.deleted { color: var(--muted); font-style: italic; }
 .msg.system { font-family: var(--mono); color: var(--muted); font-style: italic; font-size: 12px; white-space: pre-wrap; }
@@ -698,7 +690,8 @@ form { display: flex; flex-direction: column; gap: 12px; }
                           right edge; a flex item defaults to min-width:auto,
                           which here is the input's intrinsic ~20ch width */
   height: 36px;
-  font-family: var(--mono);
+  /* Free-text chat reads better in sans; code/credential inputs keep mono. */
+  font-family: var(--sans);
   font-size: 16px;     /* 16px stops iOS Safari from zooming in on focus */
 }
 .chat-form button[type="submit"] { flex: none; white-space: nowrap; }
@@ -834,7 +827,6 @@ form { display: flex; flex-direction: column; gap: 12px; }
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.4px;
   text-transform: lowercase;
 }
 .media-replay .messages { flex: 1 1 auto; min-height: 240px; }
@@ -872,7 +864,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 }
 .stat-card:hover { border-color: var(--accent); }
 .stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; }
-.stat-label { font-family: var(--mono); color: var(--muted); font-size: 11px; letter-spacing: 0.3px; }
+.stat-label { font-family: var(--mono); color: var(--muted); font-size: 11px; }
 
 .section-title {
   font-family: var(--mono);
@@ -900,8 +892,8 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 .user-head { display: flex; align-items: center; gap: 12px; }
 .user-ident { min-width: 0; }
-.user-name { font-family: var(--mono); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.user-handle { font-family: var(--mono); font-size: 13px; }
+.user-name { font-family: var(--mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.user-handle { font-family: var(--mono); font-size: 12px; }
 
 .ban-row { justify-content: space-between; align-items: center; gap: 12px; }
 .ban-row .chip-btn { flex: none; }
@@ -918,7 +910,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   border-bottom: 1px solid var(--border);
 }
 .user-stats span { display: flex; flex-direction: column; gap: 2px; }
-.user-stats b { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.user-stats b { font-family: var(--mono); font-size: 12px; font-weight: 600; }
 .user-stats i { font-family: var(--mono); font-style: normal; color: var(--muted); font-size: 11px; }
 
 .user-actions { display: flex; gap: 8px; }
@@ -1024,8 +1016,8 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   font-size: 12px;
   color: var(--muted);
 }
-.invite-code { font-family: var(--mono); font-size: 13px; letter-spacing: 0.3px; color: var(--text); }
-.invite-status { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); }
+.invite-code { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.invite-status { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .invite-status.active { color: var(--accent); }
 .invite-status.revoked { color: var(--error); }
 .invite-actions { display: flex; gap: 8px; flex: none; }
@@ -1081,7 +1073,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .profile-avatar .avatar { width: 96px; height: 96px; font-size: 36px; }
 .profile-name { font-family: var(--sans); font-weight: 600; font-size: 15px; margin-bottom: 8px; }
 .profile-bio { font-family: var(--sans); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
-.profile-joined { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; color: var(--muted); margin-top: 10px; }
+.profile-joined { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 10px; }
 
 /* Avatar crop: the visible square canvas IS the crop area (backend stores a
    square PNG), so the ring is just a 1px square outline - no circular mask,
@@ -1108,6 +1100,10 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 /* =========================================================================
    Self-hosted chat fonts (per-author). Feature untouched; declarations kept.
    ========================================================================= */
+
+/* App mono: self-hosted so every device renders the chrome identically. */
+@font-face { font-family: "DejaVu Sans Mono"; src: url("/assets/fonts/dejavu-sans-mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DejaVu Sans Mono"; src: url("/assets/fonts/dejavu-sans-mono-bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
 
 @font-face { font-family: "Roboto Mono"; src: url("/assets/fonts/roboto-mono.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "Comic Neue"; src: url("/assets/fonts/comic-neue.woff2") format("woff2"); font-display: swap; }

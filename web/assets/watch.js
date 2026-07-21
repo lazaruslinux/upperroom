@@ -543,7 +543,7 @@ async function boot() {
   // Let moderators and admins know the commands exist, without cluttering chat
   // for everyone else.
   if (me && (me.admin || me.mod)) {
-    chatInput.placeholder = "say something, or /help for commands";
+    chatInput.placeholder = "say something, or /help";
   }
   loadMyProfile();
   connectChat();
