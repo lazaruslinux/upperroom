@@ -50,12 +50,14 @@ const rError = document.getElementById("r-error");
 
 document.getElementById("show-register").addEventListener("click", () => {
   form.hidden = true;
+  document.getElementById("invite-alt").hidden = true;
   registerForm.hidden = false;
   document.getElementById("r-code").focus();
 });
 
 document.getElementById("show-login").addEventListener("click", () => {
   registerForm.hidden = true;
+  document.getElementById("invite-alt").hidden = false;
   form.hidden = false;
 });
 
