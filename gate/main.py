@@ -170,6 +170,9 @@ async def capture_thumbnail():
         "-frames:v", "1",
         "-vf", "scale=640:-2",             # 640px wide, height kept even
         "-q:v", "5",
+        # The output has a ".tmp" extension ffmpeg cannot map to a muxer, so
+        # force the image2 (JPEG) format explicitly or every capture fails.
+        "-f", "image2",
         THUMB_TMP,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
