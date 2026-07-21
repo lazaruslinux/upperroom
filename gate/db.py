@@ -16,6 +16,11 @@ from contextlib import contextmanager
 
 DB_PATH = os.environ.get("SELFSTREAM_DB", "/data/selfstream.db")
 
+# The accent flavors the admin can pick for the whole channel. green is the
+# default and the historical color; the others are alternate brand tints. Every
+# visitor sees the chosen one; validated server side so only these four persist.
+ACCENTS = ("green", "amber", "blue", "ghost")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -72,7 +77,10 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- webhook URL; last_notified_at guards against re-announcing on a brief
     -- stream blip or a gate restart mid-broadcast.
     discord_webhook TEXT NOT NULL DEFAULT '',
-    last_notified_at INTEGER NOT NULL DEFAULT 0
+    last_notified_at INTEGER NOT NULL DEFAULT 0,
+    -- The channel-wide accent flavor every visitor sees (the brand color). One
+    -- of the presets in ACCENTS; the per-user dark/light toggle is separate.
+    accent TEXT NOT NULL DEFAULT 'green'
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -206,6 +214,9 @@ def init_db():
         )
         _ensure_column(
             conn, "channel_settings", "last_notified_at", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "accent", "TEXT NOT NULL DEFAULT 'green'"
         )
         # Ensure the single channel_settings row exists so getters always find it.
         conn.execute(
@@ -360,7 +371,7 @@ def get_stream_info():
     with connect() as conn:
         row = conn.execute(
             "SELECT stream_title, stream_description, clip_cooldown_user, "
-            "clip_cooldown_mod, clip_cooldown_admin "
+            "clip_cooldown_mod, clip_cooldown_admin, accent "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
@@ -370,12 +381,14 @@ def get_stream_info():
                 "clip_cooldown_user": 15,
                 "clip_cooldown_mod": 5,
                 "clip_cooldown_admin": 1,
+                "accent": "green",
             }
         return dict(row)
 
 
 def set_stream_info(title=None, description=None, clip_cooldown_user=None,
-                    clip_cooldown_mod=None, clip_cooldown_admin=None):
+                    clip_cooldown_mod=None, clip_cooldown_admin=None,
+                    accent=None):
     sets = []
     values = []
     if title is not None:
@@ -393,6 +406,13 @@ def set_stream_info(title=None, description=None, clip_cooldown_user=None,
     if clip_cooldown_admin is not None:
         sets.append("clip_cooldown_admin = ?")
         values.append(int(clip_cooldown_admin))
+    if accent is not None:
+        # Guard here too, so a bad value can never reach the column even if a
+        # caller skips the route-level check.
+        if accent not in ACCENTS:
+            raise ValueError(f"unknown accent: {accent!r}")
+        sets.append("accent = ?")
+        values.append(accent)
     if not sets:
         return
     with connect() as conn:

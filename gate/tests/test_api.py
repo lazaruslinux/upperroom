@@ -396,6 +396,28 @@ def test_ws_ban_command_blocks_the_targets_messages(client):
     assert "banned" in frame["text"].lower()
 
 
+# ---- 7b. Channel accent flavor --------------------------------------------
+
+def test_stream_info_accepts_and_validates_accent(client):
+    setup_admin(client)
+    ok = client.post("/api/stream-info", json={"title": "x", "accent": "blue"})
+    assert ok.status_code == 200
+    assert db.get_stream_info()["accent"] == "blue"
+    # An unknown flavor is refused and the stored value is left as it was.
+    bad = client.post("/api/stream-info", json={"title": "x", "accent": "rainbow"})
+    assert bad.status_code == 400
+    assert db.get_stream_info()["accent"] == "blue"
+
+
+def test_status_exposes_accent(client):
+    # /api/status is public and carries the accent so pre-login pages can paint
+    # the brand color. MediaMTX is unreachable in tests, so this reads offline.
+    setup_admin(client)
+    client.post("/api/stream-info", json={"title": "x", "accent": "ghost"})
+    body = client.get("/api/status").json()
+    assert body["accent"] == "ghost"
+
+
 # ---- 8. Session-gated media endpoints -------------------------------------
 
 @pytest.mark.parametrize(

@@ -187,8 +187,20 @@ async function loadMedia() {
   }
 }
 
+// The channel accent (the brand color) is server-driven. The head bootstrap
+// paints the last-seen value from localStorage; this syncs it with the server on
+// load and remembers it for the next no-flash paint.
+function applyAccent(value) {
+  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
+  if (document.documentElement.dataset.accent !== value) {
+    document.documentElement.dataset.accent = value;
+    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+  }
+}
+
 async function boot() {
   if (!(await requireAuth())) return;
+  try { applyAccent((await (await fetch("/api/status")).json()).accent); } catch (e) {}
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
 }

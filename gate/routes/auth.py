@@ -80,6 +80,7 @@ def channel(request: Request):
         "clip_cooldown_user": info["clip_cooldown_user"],
         "clip_cooldown_mod": info["clip_cooldown_mod"],
         "clip_cooldown_admin": info["clip_cooldown_admin"],
+        "accent": info["accent"],
     }
     if not owner:
         return {**base, "username": None, "name": "upperroom", "avatar": 0}

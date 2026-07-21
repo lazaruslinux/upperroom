@@ -31,7 +31,8 @@
   --text: #e6e8e2;
   --muted: #7c8278;
   --border: #232622;
-  --accent: #6ab48a;          /* smoky phosphor green */
+  --accent: #6ab48a;          /* smoky phosphor green (green flavor default) */
+  --accent-glow: rgba(106, 180, 138, 0.4);   /* the one cursor glow */
   --live-red: #ff4d4d;        /* reserved for LIVE only */
   --error: #ff6b6b;           /* error + destructive red */
   /* Role colors are constant across themes so op/mod always read the same. */
@@ -56,7 +57,43 @@
   --error: #d9363e;
   --accent-tint: rgba(74, 138, 103, 0.1);
   --error-tint: rgba(217, 54, 62, 0.1);
-  /* --op / --mod / --avatar-default deliberately not overridden: constant. */
+  /* --op / --mod / --avatar-default deliberately not overridden: constant.
+     --accent-glow is not overridden either: the glow is always the dark accent
+     at 0.4 in both themes. */
+}
+
+/* ---- accent flavors (channel-wide brand color) ----
+   The admin picks one flavor for the whole site; every visitor sees it. Each
+   block sets the dark-theme accent; the paired [data-theme="light"] block sets
+   the lighter accent for paper. The glow is the dark accent at 0.4 in both
+   themes, so only the dark block sets it. green is the :root default and needs
+   no block. Role tags (op/mod) and the LIVE red stay constant, never tinted. */
+html[data-accent="amber"] {
+  --accent: #c2a05c;
+  --accent-glow: rgba(194, 160, 92, 0.4);
+  --accent-tint: rgba(194, 160, 92, 0.08);
+}
+html[data-theme="light"][data-accent="amber"] {
+  --accent: #8a6f34;
+  --accent-tint: rgba(138, 111, 52, 0.1);
+}
+html[data-accent="blue"] {
+  --accent: #7aa3c0;
+  --accent-glow: rgba(122, 163, 192, 0.4);
+  --accent-tint: rgba(122, 163, 192, 0.08);
+}
+html[data-theme="light"][data-accent="blue"] {
+  --accent: #46718f;
+  --accent-tint: rgba(70, 113, 143, 0.1);
+}
+html[data-accent="ghost"] {
+  --accent: #9aa39a;
+  --accent-glow: rgba(154, 163, 154, 0.4);
+  --accent-tint: rgba(154, 163, 154, 0.08);
+}
+html[data-theme="light"][data-accent="ghost"] {
+  --accent: #6b736b;
+  --accent-tint: rgba(107, 115, 107, 0.1);
 }
 
 /* ---- base ---- */
@@ -121,7 +158,7 @@ body {
   margin-left: 2px;
   font-weight: 400;
   animation: blink 1.1s steps(1) infinite;
-  text-shadow: 0 0 6px rgba(106, 180, 138, 0.4);
+  text-shadow: 0 0 6px var(--accent-glow);
 }
 .admin-tag {
   font-family: var(--mono);
@@ -999,6 +1036,30 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   color: var(--muted);
 }
 .clip-limit-edit input { width: 72px; }
+
+/* ---- accent flavor swatches (channel panel) ----
+   Four square buttons, each filled with that flavor's dark accent, a mono
+   label beneath. The chosen one carries a 1px accent border. */
+.accent-swatches { display: flex; gap: 12px; flex-wrap: wrap; }
+.accent-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.accent-swatch .swatch-chip {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+}
+.accent-swatch.selected { border-color: var(--accent); color: var(--text); }
 
 /* checkbox + inline hint, e.g. "email me when live" */
 .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }

@@ -609,6 +609,25 @@ const chCdMod = document.getElementById("ch-cd-mod");
 const chCdAdmin = document.getElementById("ch-cd-admin");
 const chMsg = document.getElementById("ch-msg");
 
+// ---- accent flavor (channel-wide brand color) ----
+// The chosen flavor is applied to the whole document (data-accent) so every
+// visitor sees it. It is remembered in localStorage for the next no-flash paint.
+const ACCENTS = ["green", "amber", "blue", "ghost"];
+const swatches = document.querySelectorAll("#accent-swatches .accent-swatch");
+let accent = "green";
+
+function applyAccent(value) {
+  if (!ACCENTS.includes(value)) return;
+  accent = value;
+  document.documentElement.dataset.accent = value;
+  try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+  swatches.forEach((s) => s.classList.toggle("selected", s.dataset.accent === value));
+}
+
+swatches.forEach((s) => {
+  s.addEventListener("click", () => applyAccent(s.dataset.accent));
+});
+
 function showChMsg(text, ok) {
   chMsg.textContent = text;
   chMsg.classList.toggle("good", !!ok);
@@ -624,6 +643,7 @@ async function loadChannel() {
   chCdUser.value = data.clip_cooldown_user != null ? data.clip_cooldown_user : 15;
   chCdMod.value = data.clip_cooldown_mod != null ? data.clip_cooldown_mod : 5;
   chCdAdmin.value = data.clip_cooldown_admin != null ? data.clip_cooldown_admin : 1;
+  applyAccent(data.accent || "green");
 }
 
 document.getElementById("ch-save").addEventListener("click", async () => {
@@ -641,6 +661,7 @@ document.getElementById("ch-save").addEventListener("click", async () => {
       body: JSON.stringify({
         title, description: chDesc.value.trim(),
         clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a,
+        accent,
       }),
     });
     if (!reply.ok) {

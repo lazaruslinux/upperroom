@@ -6,8 +6,10 @@
   <title>upperroom - mod</title>
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+    // Apply the saved accent flavor too, so the brand color never flashes.
+    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=19">
+  <link rel="stylesheet" href="/assets/style.css?v=20">
 </head>
 <body class="admin">
   <header class="home-bar">
@@ -52,6 +54,6 @@
     </div>
   </div>
 
-  <script src="/assets/mod.js?v=1"></script>
+  <script src="/assets/mod.js?v=2"></script>
 </body>
 </html>

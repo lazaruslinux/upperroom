@@ -160,6 +160,7 @@ async function refreshStatus() {
   } catch {
     /* treat a failed poll as offline */
   }
+  applyAccent(data.accent);
   const wasOnline = online;
   showLive(!!data.online, data.watching);
   if (data.online && !wasOnline) refreshThumb();
@@ -260,6 +261,18 @@ applyTheme(localStorage.getItem(THEME_KEY) || "dark");
 themeToggle.addEventListener("click", () => {
   applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
 });
+
+// ---- accent flavor (channel-wide brand color) ----
+// Unlike the theme, the accent is the channel's brand and is server-driven. The
+// head bootstrap paints the last-seen value from localStorage; the status poll
+// syncs it with the server and remembers it for the next no-flash paint.
+function applyAccent(value) {
+  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
+  if (document.documentElement.dataset.accent !== value) {
+    document.documentElement.dataset.accent = value;
+    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+  }
+}
 
 async function saveProfile(patch) {
   try {

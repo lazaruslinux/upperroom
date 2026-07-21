@@ -250,6 +250,20 @@ def test_clip_cooldown_settings(fresh_db):
     assert info["clip_cooldown_mod"] == 5         # untouched by a partial update
 
 
+def test_accent_defaults_green_and_persists(fresh_db):
+    # A fresh channel is the green flavor by default.
+    assert db.get_stream_info()["accent"] == "green"
+    db.set_stream_info(accent="amber")
+    assert db.get_stream_info()["accent"] == "amber"
+    # A partial update that omits accent leaves the stored flavor untouched.
+    db.set_stream_info(title="Something")
+    assert db.get_stream_info()["accent"] == "amber"
+    # An unknown flavor never reaches the column.
+    with pytest.raises(ValueError):
+        db.set_stream_info(accent="rainbow")
+    assert db.get_stream_info()["accent"] == "amber"
+
+
 def test_clip_count_since(fresh_db):
     now = int(time.time())
     db.create_clip("c1", "", "alice", None, now, now + 30, 30, now)

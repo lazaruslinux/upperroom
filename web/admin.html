@@ -6,8 +6,10 @@
   <title>upperroom - admin</title>
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+    // Apply the saved accent flavor too, so the brand color never flashes.
+    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=19">
+  <link rel="stylesheet" href="/assets/style.css?v=20">
 </head>
 <body class="admin">
   <header class="home-bar">
@@ -55,6 +57,21 @@
         <label>Viewers <input id="ch-cd-user" type="number" min="0" max="1440" inputmode="numeric"></label>
         <label>Mods <input id="ch-cd-mod" type="number" min="0" max="1440" inputmode="numeric"></label>
         <label>Admin <input id="ch-cd-admin" type="number" min="0" max="1440" inputmode="numeric"></label>
+      </div>
+      <span class="muted">Accent: the brand color every visitor sees</span>
+      <div class="accent-swatches" id="accent-swatches">
+        <button type="button" class="accent-swatch" data-accent="green">
+          <span class="swatch-chip" style="background:#6ab48a"></span>green
+        </button>
+        <button type="button" class="accent-swatch" data-accent="amber">
+          <span class="swatch-chip" style="background:#c2a05c"></span>amber
+        </button>
+        <button type="button" class="accent-swatch" data-accent="blue">
+          <span class="swatch-chip" style="background:#7aa3c0"></span>blue
+        </button>
+        <button type="button" class="accent-swatch" data-accent="ghost">
+          <span class="swatch-chip" style="background:#9aa39a"></span>ghost
+        </button>
       </div>
       <div class="edit-actions">
         <button type="button" id="ch-save" class="solid-btn">Save channel settings</button>
@@ -173,6 +190,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=7"></script>
+  <script src="/assets/admin.js?v=8"></script>
 </body>
 </html>

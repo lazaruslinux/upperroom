@@ -52,10 +52,18 @@ async def set_stream_info(request: Request):
     cd_mod = clamp_minutes(body["clip_cooldown_mod"]) if "clip_cooldown_mod" in body else None
     cd_admin = clamp_minutes(body["clip_cooldown_admin"]) if "clip_cooldown_admin" in body else None
 
+    accent = None
+    if "accent" in body:
+        accent = str(body.get("accent") or "")
+        if accent not in db.ACCENTS:
+            return JSONResponse(
+                {"error": "Unknown accent flavor."}, status_code=400
+            )
+
     db.set_stream_info(
         title=title, description=description,
         clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
-        clip_cooldown_admin=cd_admin,
+        clip_cooldown_admin=cd_admin, accent=accent,
     )
     return {"ok": True}
 

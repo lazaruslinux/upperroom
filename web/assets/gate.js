@@ -96,6 +96,18 @@ registerForm.addEventListener("submit", async (event) => {
 // it is, the badge counts up from the moment the stream started, ticking
 // locally so we do not have to poll just to keep the duration fresh.
 
+// The channel-wide accent flavor rides along on the public status poll, so the
+// login page paints the brand color even before anyone signs in. The head
+// bootstrap already applied the last-seen value from localStorage; this keeps it
+// in sync with the server and remembers it for the next no-flash paint.
+function applyAccent(value) {
+  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
+  if (document.documentElement.dataset.accent !== value) {
+    document.documentElement.dataset.accent = value;
+    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+  }
+}
+
 const statusBox = document.getElementById("status");
 const statusLabel = document.getElementById("status-label");
 const statusTime = document.getElementById("status-time");
@@ -123,6 +135,7 @@ async function refreshStatus() {
     const data = await (await fetch("/api/status")).json();
     online = !!data.online;
     since = data.since;
+    applyAccent(data.accent);
   } catch {
     online = false;
   }

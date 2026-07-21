@@ -100,9 +100,21 @@ function startVideo() {
   }
 }
 
+// The channel accent rides along on the status poll (the head bootstrap already
+// painted the last-seen value from localStorage); keep it in sync with the
+// server and remember it for the next no-flash paint.
+function applyAccent(value) {
+  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
+  if (document.documentElement.dataset.accent !== value) {
+    document.documentElement.dataset.accent = value;
+    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+  }
+}
+
 async function checkStream() {
   const reply = await fetch("/api/status");
   const data = await reply.json();
+  applyAccent(data.accent);
   if (data.online && !hls) {
     startVideo();
   } else if (!data.online) {

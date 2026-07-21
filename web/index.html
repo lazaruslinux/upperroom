@@ -7,8 +7,10 @@
   <script>
     // Apply the saved theme before first paint so the page never flashes.
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+    // Apply the saved accent flavor too, so the brand color never flashes.
+    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=19">
+  <link rel="stylesheet" href="/assets/style.css?v=20">
 </head>
 <body class="center">
   <main class="card">
@@ -43,6 +45,6 @@
       </p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=14"></script>
+  <script src="/assets/gate.js?v=15"></script>
 </body>
 </html>
