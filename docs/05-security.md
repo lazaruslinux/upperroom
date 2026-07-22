@@ -42,8 +42,8 @@ yourself rather than take it on faith.
    someone else's browser.
 
 9. **Only you can publish.** The ingest port accepts your home IP only, and even
-   from there it requires the publish password. Nobody else can push video into
-   your channel.
+   from there it requires the stream key managed on the admin dashboard. Nobody
+   else can push video into your channel, and you can rotate the key at any time.
 
 10. **Video never touches Cloudflare.** With the DNS record set to grey cloud,
     the stream goes straight from your server to the viewer. Fewer parties see

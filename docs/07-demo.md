@@ -28,9 +28,10 @@ This starts the normal three services (`mediamtx`, `gate`, `caddy`) plus:
   title and description, and the invite code, then exits. It is idempotent, so
   re-running the command is harmless.
 - `demo-stream`, a small `ffmpeg` container that loops forever, publishing an
-  animated 720p30 test source with audio into MediaMTX with the same
-  `PUBLISH_PASS` your OBS would use. This is what makes the watch page show live
-  video.
+  animated 720p30 test source with audio into MediaMTX. It publishes with
+  `PUBLISH_PASS`, which the gate seeds into the stream key on first start, so the
+  demo authenticates with no dashboard step. This is what makes the watch page
+  show live video.
 
 Give it under a minute for the certificate and the first video segments, then
 open your site. Sign in with a demo account below and you are looking at a live
@@ -100,8 +101,11 @@ Two safeguards make an accidental run harmless, but do not rely on them:
 - `demo-seed` refuses to act if accounts already exist and none of them is the
   demo admin. It logs why and changes nothing, so it will not add demo accounts
   or overwrite your stream title on a real database.
-- `demo-stream` publishes with your `PUBLISH_PASS`. If you start it while you are
-  genuinely live from OBS, two publishers would contend for the same channel.
+- `demo-stream` publishes with your `PUBLISH_PASS`, which is seeded into the
+  stream key only on the first start (once the database has a key, changing
+  `PUBLISH_PASS` does nothing; wipe the volumes to reset). If you start it while
+  you are genuinely live from OBS, two publishers would contend for the same
+  channel.
 
 If you want to try demo mode, do it on a separate instance with its own `.env`
 and its own volumes.

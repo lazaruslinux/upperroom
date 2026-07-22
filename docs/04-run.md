@@ -13,7 +13,10 @@ Set every value. A couple of tips:
 
 - Generate the cookie secret with `openssl rand -hex 32` and paste the result
   into `SELFSTREAM_JWT_SECRET`.
-- Use a long, random `PUBLISH_PASS`. You only type it into OBS once.
+- `PUBLISH_PASS` is optional now: the stream key lives on the admin dashboard and
+  is generated for you the first time you open the Stream key panel. Set
+  `PUBLISH_PASS` only if you want to seed a specific key on first start (an
+  existing install carries its old value over), or if you run the demo profile.
 - `SELFSTREAM_DOMAIN` is just the hostname, like `watch.example.com`, with no
   `https://` in front.
 
@@ -115,6 +118,7 @@ container.
   logs caddy` for certificate errors.
 - The video never starts. Confirm OBS says it is streaming. Check
   `docker compose logs mediamtx` for a connection from your address. Make sure
-  the OBS stream key is exactly `live?user=publisher&pass=YOUR_PUBLISH_PASS`.
+  the OBS stream key matches the one shown in the dashboard Stream key panel
+  (it looks like `live?pass=...`).
 - OBS cannot connect. The firewall rule for port 1935 may not match your current
   home IP. See `docs/01-vps-setup.md`, section 1.4.

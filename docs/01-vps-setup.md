@@ -76,7 +76,8 @@ ufw status verbose
 ```
 
 If your home IP changes often, you can instead allow `1935` from anywhere and
-rely on the publish password alone, but pinning it to your IP is stronger. If
+rely on the stream key alone (managed on the admin dashboard), but pinning it to
+your IP is stronger. If
 your IP changes and you can no longer publish, update the rule:
 
 ```

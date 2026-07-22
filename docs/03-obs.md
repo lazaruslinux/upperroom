@@ -9,11 +9,15 @@ In OBS, open Settings, then Stream.
 
 - Service: `Custom...`
 - Server: `rtmp://watch.example.com:1935`
-- Stream Key: `live?user=publisher&pass=YOUR_PUBLISH_PASS`
+- Stream Key: copy it from the admin dashboard
 
-Replace `YOUR_PUBLISH_PASS` with the `PUBLISH_PASS` value from your `.env`. The
-stream key carries the publish credentials, which is how MediaMTX knows the
-stream is allowed. The word `live` is the channel name and must stay as is,
+Sign in as an admin, open the dashboard, and find the Stream key panel. It shows
+the exact server and stream key to paste here; the key looks like
+`live?pass=...`. Use the Copy key button to grab it, and Show to reveal it. The
+stream key carries the publish credentials, which is how the server knows the
+stream is allowed. Treat it like a password, and regenerate it on the dashboard
+if it ever leaks (a live broadcast keeps running; the next connection needs the
+new key). The word `live` at the start is the channel name and must stay as is,
 because the rest of the app expects a channel called `live`.
 
 ## 3.2 Video and output settings
