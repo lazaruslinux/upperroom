@@ -37,17 +37,9 @@ CREATE TABLE IF NOT EXISTS users (
     -- for known people, and an email is sent only when both are set.
     email TEXT NOT NULL DEFAULT '',
     notify_live INTEGER NOT NULL DEFAULT 1,
-    -- Channel points, earned by watching the stream live and spent on rewards.
+    -- Channel points, earned by watching the stream live and spent to highlight
+    -- a short message on stream.
     points INTEGER NOT NULL DEFAULT 0
-);
-
--- Rewards the admin defines for viewers to spend their channel points on. A
--- redemption is announced in chat and on the overlay but not stored: there is no
--- ledger or history in this version, only the current balance on each account.
-CREATE TABLE IF NOT EXISTS rewards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    label TEXT NOT NULL,
-    cost INTEGER NOT NULL CHECK (cost > 0)
 );
 
 -- One row per time someone opened the watch page. left_at is filled in when
@@ -241,6 +233,10 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        # The admin-defined rewards catalog was replaced by a single built-in
+        # redemption (highlight a message), so its table is dropped in place, the
+        # same lightweight in-init migration as the column adds above.
+        conn.execute("DROP TABLE IF EXISTS rewards")
         # Ensure the single channel_settings row exists so getters always find it.
         conn.execute(
             "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
@@ -785,10 +781,10 @@ def register_via_invite(code, username, display_name, password, when):
         return "ok"
 
 
-# ---- Channel points and rewards -------------------------------------------
-# Viewers earn points by watching the stream live and spend them on rewards the
-# admin lists. Balances live on the users row; there is no ledger or redemption
-# history in this version, only the current balance and the reward catalog.
+# ---- Channel points -------------------------------------------------------
+# Viewers earn points by watching the stream live and spend them to highlight a
+# short message on stream. Balances live on the users row; there is no ledger or
+# redemption history in this version, only the current balance.
 
 def get_points(username):
     """A user's current points balance, or 0 if the account does not exist."""
@@ -833,43 +829,6 @@ def spend_points(username, cost):
             "SELECT points FROM users WHERE username = ?", (username,)
         ).fetchone()
         return row["points"] if row else None
-
-
-def list_rewards():
-    """Every reward, cheapest first, for the viewer catalog and the admin panel."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT id, label, cost FROM rewards ORDER BY cost, id"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-def get_reward(reward_id):
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT id, label, cost FROM rewards WHERE id = ?", (reward_id,)
-        ).fetchone()
-        return dict(row) if row else None
-
-
-def add_reward(label, cost):
-    with connect() as conn:
-        cur = conn.execute(
-            "INSERT INTO rewards (label, cost) VALUES (?, ?)", (label, cost)
-        )
-        return cur.lastrowid
-
-
-def delete_reward(reward_id):
-    with connect() as conn:
-        cur = conn.execute("DELETE FROM rewards WHERE id = ?", (reward_id,))
-        return cur.rowcount > 0
-
-
-def count_rewards():
-    with connect() as conn:
-        row = conn.execute("SELECT COUNT(*) AS n FROM rewards").fetchone()
-        return row["n"]
 
 
 # ---- Watch activity -------------------------------------------------------

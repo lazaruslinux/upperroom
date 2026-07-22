@@ -35,7 +35,7 @@ from routes import admin as admin_routes
 from routes import auth as auth_routes
 from routes import media as media_routes
 from routes import mod as mod_routes
-from routes import rewards as rewards_routes
+from routes import points as points_routes
 from routes import ws as ws_routes
 
 logger = logging.getLogger("upperroom.gate")
@@ -97,5 +97,5 @@ app.include_router(auth_routes.router)
 app.include_router(media_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(mod_routes.router)
-app.include_router(rewards_routes.router)
+app.include_router(points_routes.router)
 app.include_router(ws_routes.router)

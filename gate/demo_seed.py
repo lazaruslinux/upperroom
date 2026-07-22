@@ -49,12 +49,6 @@ VIEWERS = (
     ("viewer_two", "Viewer Two"),
 )
 
-# A couple of starter rewards so the channel-points panel is populated.
-REWARDS = (
-    ("hydrate", 50),
-    ("streamer does ten pushups", 500),
-)
-
 STREAM_TITLE = "Demo Stream"
 STREAM_DESCRIPTION = (
     "A synthetic broadcast so you can explore the site with live video, chat, "
@@ -138,14 +132,14 @@ def seed():
             "created invite %r: %s (redeem it from the login page)", INVITE_LABEL, code
         )
 
-    # A couple of starter rewards so the channel-points panel is not empty. Only
-    # seed when none exist, so a re-run never piles up duplicates.
-    if db.count_rewards() == 0:
-        for label, cost in REWARDS:
-            db.add_reward(label, cost)
-        logger.info("seeded %d starter rewards", len(REWARDS))
+    # Give one viewer a starting balance so the highlight redemption can be tried
+    # right away. Only when it is still zero, so a re-run never piles points onto
+    # an account that has been spending them down.
+    if db.get_user("viewer_one") and db.get_points("viewer_one") == 0:
+        db.credit_points(["viewer_one"], 120)
+        logger.info("gave viewer_one a starting balance of 120 points")
     else:
-        logger.info("rewards already present; leaving them as is")
+        logger.info("viewer_one balance left as is")
 
     logger.info("demo seed complete")
 
