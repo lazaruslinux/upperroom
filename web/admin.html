@@ -79,6 +79,23 @@
       <p id="ch-msg" class="notify-msg" hidden></p>
     </div>
 
+    <h2 class="section-title" style="margin-top:1.75rem;">Stream key</h2>
+    <div class="notify-panel">
+      <span class="muted">Point OBS at this server and stream key to go live. Treat the key like a password; regenerate to revoke it. A broadcast already running is not cut off, but the next connection needs the new key.</span>
+      <label>Server
+        <input id="stream-server" type="text" readonly autocomplete="off">
+      </label>
+      <label>Stream key
+        <input id="stream-key" type="password" readonly autocomplete="off">
+      </label>
+      <div class="edit-actions">
+        <button type="button" id="stream-key-show" class="ghost-btn">Show</button>
+        <button type="button" id="stream-key-copy" class="solid-btn">Copy key</button>
+        <button type="button" id="stream-key-regen" class="danger-btn">Regenerate</button>
+      </div>
+      <p id="stream-key-msg" class="notify-msg" hidden></p>
+    </div>
+
     <h2 class="section-title" style="margin-top:1.75rem;">Overlay</h2>
     <div class="notify-panel">
       <span class="muted">Add this URL as an OBS browser source to show chat on the broadcast. Anyone with the URL can read chat, so keep it private; regenerate to revoke it.</span>
@@ -203,6 +220,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=9"></script>
+  <script src="/assets/admin.js?v=10"></script>
 </body>
 </html>

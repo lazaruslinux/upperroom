@@ -778,6 +778,76 @@ document.getElementById("overlay-regen").addEventListener("click", async (e) => 
   btn.disabled = false;
 });
 
+// ---- stream key (OBS publish) ----
+
+const streamServerInput = document.getElementById("stream-server");
+const streamKeyInput = document.getElementById("stream-key");
+const streamKeyMsg = document.getElementById("stream-key-msg");
+
+function showStreamKeyMsg(text, ok) {
+  streamKeyMsg.textContent = text;
+  streamKeyMsg.classList.toggle("good", !!ok);
+  streamKeyMsg.classList.toggle("bad", !ok);
+  streamKeyMsg.hidden = false;
+}
+
+function setStreamKey(key) {
+  // The RTMP endpoint OBS publishes to. hostname (not origin) since RTMP is its
+  // own scheme and port, served on the same host as this dashboard.
+  streamServerInput.value = `rtmp://${window.location.hostname}:1935`;
+  // The exact string to paste into the OBS "Stream Key" box. user is omitted;
+  // the gate ignores it and checks only the key.
+  streamKeyInput.value = `live?pass=${key}`;
+}
+
+async function loadStreamKey() {
+  try {
+    const data = await (await fetch("/api/admin/stream-key")).json();
+    if (data.key) setStreamKey(data.key);
+  } catch { /* leave the fields blank */ }
+}
+
+document.getElementById("stream-key-show").addEventListener("click", (e) => {
+  const btn = e.currentTarget;
+  const hidden = streamKeyInput.type === "password";
+  streamKeyInput.type = hidden ? "text" : "password";
+  btn.textContent = hidden ? "Hide" : "Show";
+});
+
+document.getElementById("stream-key-copy").addEventListener("click", async (e) => {
+  try {
+    await navigator.clipboard.writeText(streamKeyInput.value);
+    const btn = e.currentTarget;
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    streamKeyInput.select();
+    showStreamKeyMsg("Copy failed; the key is selected so you can copy it.", false);
+  }
+});
+
+document.getElementById("stream-key-regen").addEventListener("click", async (e) => {
+  if (!confirm(
+    "Regenerate the stream key? A broadcast already live keeps running, but the " +
+    "next connection needs the new key. Update OBS before you next go live."
+  )) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  streamKeyMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/admin/stream-key/regenerate", { method: "POST" });
+    if (reply.ok) {
+      const data = await reply.json();
+      setStreamKey(data.key);
+      showStreamKeyMsg("New key generated. Update your OBS stream key.", true);
+    } else {
+      showStreamKeyMsg("Could not regenerate the key.", false);
+    }
+  } catch { showStreamKeyMsg("Could not reach the server.", false); }
+  btn.disabled = false;
+});
+
 // ---- modal helpers ----
 
 function openModal(m) { m.hidden = false; }
@@ -796,6 +866,7 @@ async function boot() {
   loadUsers();
   loadInvites();
   loadChannel();
+  loadStreamKey();
   loadOverlay();
   loadNotify();
 }
