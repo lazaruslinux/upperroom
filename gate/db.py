@@ -36,7 +36,18 @@ CREATE TABLE IF NOT EXISTS users (
     -- viewer's own opt-out; it defaults on since the admin only makes accounts
     -- for known people, and an email is sent only when both are set.
     email TEXT NOT NULL DEFAULT '',
-    notify_live INTEGER NOT NULL DEFAULT 1
+    notify_live INTEGER NOT NULL DEFAULT 1,
+    -- Channel points, earned by watching the stream live and spent on rewards.
+    points INTEGER NOT NULL DEFAULT 0
+);
+
+-- Rewards the admin defines for viewers to spend their channel points on. A
+-- redemption is announced in chat and on the overlay but not stored: there is no
+-- ledger or history in this version, only the current balance on each account.
+CREATE TABLE IF NOT EXISTS rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    cost INTEGER NOT NULL CHECK (cost > 0)
 );
 
 -- One row per time someone opened the watch page. left_at is filled in when
@@ -206,6 +217,7 @@ def init_db():
         _ensure_column(conn, "users", "is_moderator", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "notify_live", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(conn, "users", "points", "INTEGER NOT NULL DEFAULT 0")
         # Provenance: which invite code (if any) this account was created from.
         _ensure_column(conn, "users", "invite_code", "TEXT")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
@@ -771,6 +783,93 @@ def register_via_invite(code, username, display_name, password, when):
             (username, display_name, hash_password(password), when, code),
         )
         return "ok"
+
+
+# ---- Channel points and rewards -------------------------------------------
+# Viewers earn points by watching the stream live and spend them on rewards the
+# admin lists. Balances live on the users row; there is no ledger or redemption
+# history in this version, only the current balance and the reward catalog.
+
+def get_points(username):
+    """A user's current points balance, or 0 if the account does not exist."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT points FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        return row["points"] if row else 0
+
+
+def credit_points(usernames, amount):
+    """Add `amount` points to each of the given usernames in one statement. The
+    list is de-duplicated first, so a viewer with several tabs open is credited
+    only once per round. Usernames without an account are silently ignored.
+    Returns the number of accounts updated."""
+    names = list(set(usernames))
+    if not names or amount == 0:
+        return 0
+    placeholders = ",".join("?" for _ in names)
+    with connect() as conn:
+        cur = conn.execute(
+            f"UPDATE users SET points = points + ? WHERE username IN ({placeholders})",
+            (amount, *names),
+        )
+        return cur.rowcount
+
+
+def spend_points(username, cost):
+    """Atomically deduct `cost` points from a user, but only if they can afford
+    it. Returns the new balance on success, or None if the balance was too low
+    (no row changed). This one guarded UPDATE is the sole point that enforces the
+    balance, so two redemptions racing on a balance that covers only one can
+    never both succeed."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE users SET points = points - ? WHERE username = ? AND points >= ?",
+            (cost, username, cost),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(
+            "SELECT points FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        return row["points"] if row else None
+
+
+def list_rewards():
+    """Every reward, cheapest first, for the viewer catalog and the admin panel."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, label, cost FROM rewards ORDER BY cost, id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_reward(reward_id):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, label, cost FROM rewards WHERE id = ?", (reward_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def add_reward(label, cost):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO rewards (label, cost) VALUES (?, ?)", (label, cost)
+        )
+        return cur.lastrowid
+
+
+def delete_reward(reward_id):
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM rewards WHERE id = ?", (reward_id,))
+        return cur.rowcount > 0
+
+
+def count_rewards():
+    with connect() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM rewards").fetchone()
+        return row["n"]
 
 
 # ---- Watch activity -------------------------------------------------------

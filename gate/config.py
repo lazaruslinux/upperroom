@@ -62,6 +62,14 @@ MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
+MAX_REWARD_LABEL = 60
+MAX_REWARD_COST = 1000000
+
+# Channel points. Viewers earn this many points per minute while the stream is
+# live and they are connected to the watch page. Deliberately a fixed constant,
+# not an env var: the earn rate is part of the feature's shape, not a per-install
+# knob.
+POINTS_PER_MINUTE = 1
 
 # How long the admin-only chat log is kept before old lines are purged. Viewers
 # always see chat as ephemeral; this only affects the history the admin reviews.
