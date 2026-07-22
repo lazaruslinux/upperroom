@@ -734,6 +734,31 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .chat-form button[type="submit"] { flex: none; white-space: nowrap; }
 .chat-form .icon-btn { flex: none; }
 
+/* points balance chip in the chat form; taps open the rewards popup. Sized to
+   the 36px form row so it lines up with the input and Send. */
+.points-chip {
+  flex: none;
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.points-chip:hover { color: var(--text); border-color: var(--text); }
+
+/* rewards popup: current balance, then a list of what points can buy */
+.rewards-balance { font-family: var(--mono); font-size: 12px; color: var(--accent); margin: 0 0 12px; }
+.rewards-list { display: flex; flex-direction: column; gap: 8px; }
+.reward-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.reward-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reward-label { font-family: var(--sans); font-size: 14px; color: var(--text); word-break: break-word; }
+.reward-cost { font-family: var(--mono); font-size: 11px; }
+.reward-row .chip-btn { flex: none; }
+
 /* On narrow screens, stack the video on top and the chat below it. */
 @media (max-width: 720px) {
   .watch { flex-direction: column; }
@@ -1111,6 +1136,19 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .invite-status.active { color: var(--accent); }
 .invite-status.revoked { color: var(--error); }
 .invite-actions { display: flex; gap: 8px; flex: none; }
+
+/* ---- rewards (admin) ---- */
+.reward-gen { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.reward-gen label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.reward-gen .reward-label-field { flex: 1; min-width: 180px; }
+.reward-gen .reward-cost-field input { width: 110px; }
 
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
