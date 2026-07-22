@@ -260,12 +260,19 @@ function renderSystem(msg) {
   addLine(line);
 }
 
-// A redemption reads as a system-style notice line, e.g. "Sam redeemed hydrate
-// (50)". textContent only, so a crafted reward label can never inject markup.
-function renderRedeem(msg) {
+// A highlight reads as a spotlighted chat line: the viewer's display name and the
+// message they spent points on, inside an accent border. textContent only, so a
+// crafted message can never inject markup.
+function renderHighlight(msg) {
   const line = document.createElement("div");
-  line.className = "msg system";
-  line.textContent = `${msg.user} redeemed ${msg.label} (${msg.cost})`;
+  line.className = "msg highlight";
+  const name = document.createElement("span");
+  name.className = "highlight-name";
+  name.textContent = msg.user;
+  const body = document.createElement("span");
+  body.className = "highlight-body";
+  body.textContent = msg.message;
+  line.append(name, body);
   addLine(line);
 }
 
@@ -295,7 +302,7 @@ function connectChat() {
     const msg = JSON.parse(event.data);
     if (msg.type === "chat") renderChat(msg);
     else if (msg.type === "system") renderSystem(msg);
-    else if (msg.type === "redeem") renderRedeem(msg);
+    else if (msg.type === "highlight") renderHighlight(msg);
     else if (msg.type === "presence") renderPresence(msg);
     else if (msg.type === "delete") applyDelete(msg.id);
     else if (msg.type === "wipe") messages.innerHTML = "";
@@ -562,96 +569,86 @@ clipSave.addEventListener("click", async () => {
   }
 });
 
-// ---- channel points and rewards ----
+// ---- channel points and the highlight redemption ----
 
 const pointsChip = document.getElementById("points-chip");
-const rewardsModal = document.getElementById("rewards-modal");
-const rewardsList = document.getElementById("rewards-list");
-const rewardsBalance = document.getElementById("rewards-balance");
-const rewardsEmpty = document.getElementById("rewards-empty");
-const rewardsMsg = document.getElementById("rewards-msg");
+const highlightModal = document.getElementById("highlight-modal");
+const highlightBalance = document.getElementById("highlight-balance");
+const highlightCostEl = document.getElementById("highlight-cost");
+const highlightInput = document.getElementById("highlight-input");
+const highlightSend = document.getElementById("highlight-send");
+const highlightMsg = document.getElementById("highlight-msg");
 
 let myPoints = 0;
-let rewards = [];
+let highlightCost = 50;
 
 function setPoints(n) {
   myPoints = n;
   pointsChip.textContent = `pts ${n}`;
   pointsChip.hidden = false;
-  rewardsBalance.textContent = `pts ${n}`;
-  renderRewards();
+  highlightBalance.textContent = `pts ${n}`;
+  updateHighlightSend();
 }
 
-// Redeem buttons dim (and disable) when the balance will not cover the cost.
-function renderRewards() {
-  rewardsList.innerHTML = "";
-  rewardsEmpty.hidden = rewards.length > 0;
-  rewards.forEach((r) => {
-    const row = document.createElement("div");
-    row.className = "reward-row";
-    const info = document.createElement("span");
-    info.className = "reward-info";
-    const label = document.createElement("span");
-    label.className = "reward-label";
-    label.textContent = r.label;
-    const cost = document.createElement("span");
-    cost.className = "reward-cost muted";
-    cost.textContent = `pts ${r.cost}`;
-    info.append(label, cost);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "chip-btn";
-    btn.textContent = "Redeem";
-    btn.disabled = myPoints < r.cost;
-    btn.addEventListener("click", () => redeem(r, btn));
-    row.append(info, btn);
-    rewardsList.appendChild(row);
-  });
+// Send stays disabled until the balance covers the cost and there is something
+// to say.
+function updateHighlightSend() {
+  highlightSend.disabled = myPoints < highlightCost || !highlightInput.value.trim();
 }
 
-async function loadRewards() {
+async function loadPoints() {
   try {
-    const data = await (await fetch("/api/rewards")).json();
-    rewards = data.rewards || [];
+    const data = await (await fetch("/api/points")).json();
+    if (typeof data.cost === "number") highlightCost = data.cost;
+    highlightCostEl.textContent = `pts ${highlightCost}`;
     setPoints(data.points || 0);
   } catch {
     /* leave the chip as it is */
   }
 }
 
-async function redeem(reward, btn) {
-  rewardsMsg.hidden = true;
-  btn.disabled = true;
+async function sendHighlight() {
+  const message = highlightInput.value.trim();
+  if (!message) return;
+  highlightMsg.hidden = true;
+  highlightSend.disabled = true;
   try {
     const reply = await fetch("/api/redeem", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reward_id: reward.id }),
+      body: JSON.stringify({ message }),
     });
     const data = await reply.json().catch(() => ({}));
     if (reply.ok) {
-      setPoints(data.points);   // renderRewards re-runs, re-enabling what fits
-      showRewardsMsg(`Redeemed ${reward.label}.`, true);
+      highlightInput.value = "";
+      setPoints(data.points);   // updates the chip and the balance line
+      closeModal(highlightModal);
     } else {
-      showRewardsMsg(data.detail || "Could not redeem that.", false);
-      renderRewards();
+      showHighlightMsg(data.detail || data.error || "Could not highlight that.", false);
+      updateHighlightSend();
     }
   } catch {
-    showRewardsMsg("Could not reach the server.", false);
-    renderRewards();
+    showHighlightMsg("Could not reach the server.", false);
+    updateHighlightSend();
   }
 }
 
-function showRewardsMsg(text, ok) {
-  rewardsMsg.className = "pw-msg " + (ok ? "ok" : "bad");
-  rewardsMsg.textContent = text;
-  rewardsMsg.hidden = false;
+function showHighlightMsg(text, ok) {
+  highlightMsg.className = "pw-msg " + (ok ? "ok" : "bad");
+  highlightMsg.textContent = text;
+  highlightMsg.hidden = false;
 }
 
+highlightInput.addEventListener("input", updateHighlightSend);
+highlightInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !highlightSend.disabled) sendHighlight();
+});
+highlightSend.addEventListener("click", sendHighlight);
+
 pointsChip.addEventListener("click", () => {
-  rewardsMsg.hidden = true;
-  openModal(rewardsModal);
-  loadRewards();   // fetch fresh balance and rewards each time it opens
+  highlightMsg.hidden = true;
+  openModal(highlightModal);
+  loadPoints();   // fetch a fresh balance and cost each time it opens
 });
 
 async function boot() {
@@ -662,7 +659,7 @@ async function boot() {
     chatInput.placeholder = "say something, or /help";
   }
   loadMyProfile();
-  loadRewards();
+  loadPoints();
   connectChat();
   checkStream();
 }

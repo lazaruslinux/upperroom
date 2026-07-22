@@ -8,7 +8,7 @@
        runs on top of the broadcast video, so its own background is transparent;
        that override lives in the scoped block below and never touches style.css,
        so no other page can inherit a see-through background. -->
-  <link rel="stylesheet" href="/assets/style.css?v=22">
+  <link rel="stylesheet" href="/assets/style.css?v=23">
   <style>
     /* The whole page is transparent so OBS composites it over the video. Scoped
        to this document only (inline, after the stylesheet link), so the shared
@@ -87,15 +87,16 @@
     }
     .ov-clip .ov-clip-name { font-family: var(--sans); }
 
-    /* Redemptions: an accent-bordered chip like clips. */
-    .ov-redeem { border-color: var(--accent); }
-    .ov-redeem .ov-redeem-who {
+    /* Highlights: a prominent accent-bordered chip like clips, carrying the
+       message the viewer paid to spotlight. */
+    .ov-highlight { border-color: var(--accent); }
+    .ov-highlight .ov-highlight-who {
       font-family: var(--mono);
       font-weight: 700;
       color: var(--accent);
       margin-right: 8px;
     }
-    .ov-redeem .ov-redeem-name { font-family: var(--sans); }
+    .ov-highlight .ov-highlight-body { font-family: var(--sans); }
 
     /* Restrained slide-in, in the site's 120-200ms band. */
     @keyframes ov-in {
@@ -110,6 +111,6 @@
 </head>
 <body>
   <div id="overlay"></div>
-  <script src="/assets/overlay.js?v=2"></script>
+  <script src="/assets/overlay.js?v=3"></script>
 </body>
 </html>

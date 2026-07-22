@@ -9,7 +9,7 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=22">
+  <link rel="stylesheet" href="/assets/style.css?v=23">
 </head>
 <body class="admin">
   <header class="home-bar">
@@ -42,22 +42,6 @@
       </div>
       <div id="invite-list" class="activity-list"></div>
       <p id="invite-empty" class="muted" hidden>No invite codes yet.</p>
-    </div>
-
-    <h2 class="section-title" style="margin-top:1.75rem;">Rewards</h2>
-    <div class="notify-panel">
-      <span class="muted">Viewers earn 1 point per minute of live watching and spend points on the rewards you list here.</span>
-      <div class="reward-gen">
-        <label class="reward-label-field">Label
-          <input id="reward-label" type="text" maxlength="60" placeholder="what they get" autocomplete="off">
-        </label>
-        <label class="reward-cost-field">Cost
-          <input id="reward-cost" type="number" min="1" max="1000000" inputmode="numeric" placeholder="points">
-        </label>
-        <button type="button" id="reward-new" class="solid-btn">Add reward</button>
-      </div>
-      <div id="reward-list" class="activity-list"></div>
-      <p id="reward-empty" class="muted" hidden>No rewards yet.</p>
     </div>
 
     <h2 class="section-title" style="margin-top:1.75rem;">Channel</h2>
@@ -236,6 +220,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=11"></script>
+  <script src="/assets/admin.js?v=12"></script>
 </body>
 </html>

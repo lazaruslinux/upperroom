@@ -15,7 +15,7 @@ const KEY = new URLSearchParams(location.search).get("key") || "";
 const CHAT_TTL = 45000;
 const JOIN_TTL = 10000;
 const CLIP_TTL = 12000;
-const REDEEM_TTL = 12000;
+const HIGHLIGHT_TTL = 15000;
 const MAX_CHAT = 8;
 
 // ---- accent flavor ----
@@ -97,21 +97,53 @@ function renderClip(msg) {
   append(item, CLIP_TTL);
 }
 
-function renderRedeem(msg) {
+function renderHighlight(msg) {
   const item = document.createElement("div");
-  item.className = "ov-item ov-redeem";
+  item.className = "ov-item ov-highlight";
   const who = document.createElement("span");
-  who.className = "ov-redeem-who";
-  who.textContent = (msg.user || "someone") + " redeemed:";
-  const name = document.createElement("span");
-  name.className = "ov-redeem-name";
-  const cost = msg.cost != null ? ` (${msg.cost})` : "";
-  name.textContent = (msg.label || "") + cost;
-  item.append(who, name);
-  append(item, REDEEM_TTL);
-  // Keep only the most recent few redemptions on screen, like the chat cap.
-  const items = overlay.querySelectorAll(".ov-redeem");
+  who.className = "ov-highlight-who";
+  who.textContent = (msg.user || "someone") + " highlighted:";
+  const body = document.createElement("span");
+  body.className = "ov-highlight-body";
+  body.textContent = msg.message || "";
+  item.append(who, body);
+  append(item, HIGHLIGHT_TTL);
+  // Keep only the most recent few highlights on screen, like the chat cap.
+  const items = overlay.querySelectorAll(".ov-highlight");
   for (let i = 0; i < items.length - MAX_CHAT; i++) items[i].remove();
+  playChime();
+}
+
+// A soft two-tone chime when a highlight lands, synthesized with the Web Audio
+// API so the overlay ships no audio assets. Guarded end to end: a browser source
+// with no audio device (or a browser that blocks autoplay) must never throw here
+// and break the overlay, so a failure just leaves the highlight silent.
+let audioCtx = null;
+
+function playChime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx) audioCtx = new Ctx();
+    const now = audioCtx.currentTime;
+    // Two short sine notes, a rising third, at a low gain so it sits under the
+    // broadcast rather than over it.
+    [[523.25, 0], [659.25, 0.16]].forEach(([freq, offset]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = now + offset;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+  } catch (e) {
+    /* no audio device or autoplay blocked: the overlay still works silently */
+  }
 }
 
 function applyDelete(id) {
@@ -137,8 +169,8 @@ function connect() {
       if (!msg.deleted) renderChat(msg);
     } else if (msg.type === "clip") {
       renderClip(msg);
-    } else if (msg.type === "redeem") {
-      renderRedeem(msg);
+    } else if (msg.type === "highlight") {
+      renderHighlight(msg);
     } else if (msg.type === "system") {
       // Join lines are the only system notice the overlay surfaces; "left" and
       // command replies stay off-screen to keep it quiet.
