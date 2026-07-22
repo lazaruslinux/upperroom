@@ -277,6 +277,33 @@ def test_overlay_key_generate_persist_and_regenerate(fresh_db):
     assert db.get_overlay_key() == key2
 
 
+def test_stream_key_generate_persist_and_regenerate(fresh_db):
+    # A fresh channel has no publish key until one is generated.
+    assert db.get_stream_key() is None
+    key = db.regenerate_stream_key()
+    assert key
+    # It persists and reads back as the same value.
+    assert db.get_stream_key() == key
+    # Regenerating replaces it, rotating the key that OBS must use.
+    key2 = db.regenerate_stream_key()
+    assert key2 != key
+    assert db.get_stream_key() == key2
+
+
+def test_stream_key_seeds_from_env_only_while_unset(tmp_path, monkeypatch):
+    # On first init the publish key is seeded from PUBLISH_PASS so an existing
+    # install keeps publishing after the switch to gate-delegated auth.
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "seed.db"))
+    monkeypatch.setenv("PUBLISH_PASS", "legacy-obs-pass")
+    db.init_db()
+    assert db.get_stream_key() == "legacy-obs-pass"
+    # Once a key exists, a later env change never overwrites it: the seed is a
+    # one-time bootstrap, not an ongoing source of truth.
+    monkeypatch.setenv("PUBLISH_PASS", "some-other-pass")
+    db.init_db()
+    assert db.get_stream_key() == "legacy-obs-pass"
+
+
 def test_clip_count_since(fresh_db):
     now = int(time.time())
     db.create_clip("c1", "", "alice", None, now, now + 30, 30, now)

@@ -260,6 +260,8 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("GET", "/api/admin/notify", None),
         ("GET", "/api/admin/overlay", None),
         ("POST", "/api/admin/overlay/regenerate", None),
+        ("GET", "/api/admin/stream-key", None),
+        ("POST", "/api/admin/stream-key/regenerate", None),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -431,6 +433,72 @@ def test_ws_overlay_bad_key_is_refused(client):
         with client.websocket_connect("/ws?overlay=not-the-real-key"):
             pass
     assert excinfo.value.code == 4401
+
+
+# ---- 6c. MediaMTX publish/read auth callback ------------------------------
+
+def test_mtx_auth_publish_requires_the_current_key(client):
+    key = db.regenerate_stream_key()
+    anon = make_client()
+    # The right key publishes.
+    ok = anon.post("/mtx-auth", json={"action": "publish", "password": key})
+    assert ok.status_code == 200
+    # A wrong key is refused, and the user field is ignored (legacy OBS/demo URLs
+    # send user=publisher and still work).
+    bad = anon.post(
+        "/mtx-auth",
+        json={"action": "publish", "user": "publisher", "password": "nope"},
+    )
+    assert bad.status_code == 401
+
+
+def test_mtx_auth_publish_refused_before_any_key_exists(client):
+    # No key has been generated yet, so nothing may publish: a blank password must
+    # never authenticate.
+    anon = make_client()
+    resp = anon.post("/mtx-auth", json={"action": "publish", "password": ""})
+    assert resp.status_code == 401
+
+
+def test_mtx_auth_read_allows_only_internal_ips(client):
+    anon = make_client()
+    # A read from inside the docker network (Caddy, the gate's own ffmpeg) is fine.
+    inside = anon.post("/mtx-auth", json={"action": "read", "ip": "172.20.0.5"})
+    assert inside.status_code == 200
+    # A read from a public IP is refused.
+    outside = anon.post("/mtx-auth", json={"action": "read", "ip": "203.0.113.7"})
+    assert outside.status_code == 401
+    # An unparseable IP is refused rather than erroring.
+    garbage = anon.post("/mtx-auth", json={"action": "read", "ip": "not-an-ip"})
+    assert garbage.status_code == 401
+
+
+def test_mtx_auth_internal_ip_never_grants_publish(client):
+    # Being on the docker network is enough to read, but a publish still needs the
+    # key: an attacker inside the network must not publish keyless.
+    db.regenerate_stream_key()
+    anon = make_client()
+    resp = anon.post(
+        "/mtx-auth",
+        json={"action": "publish", "ip": "172.20.0.5", "password": "wrong"},
+    )
+    assert resp.status_code == 401
+
+
+def test_mtx_auth_regenerate_rotates_the_accepted_key(client):
+    old = db.regenerate_stream_key()
+    anon = make_client()
+    assert anon.post(
+        "/mtx-auth", json={"action": "publish", "password": old}
+    ).status_code == 200
+    new = db.regenerate_stream_key()
+    # The old key stops being accepted; the freshly minted one is.
+    assert anon.post(
+        "/mtx-auth", json={"action": "publish", "password": old}
+    ).status_code == 401
+    assert anon.post(
+        "/mtx-auth", json={"action": "publish", "password": new}
+    ).status_code == 200
 
 
 def test_clip_event_broadcast_reaches_a_watcher(client):

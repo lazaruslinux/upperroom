@@ -84,7 +84,12 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- A long random bearer key for the OBS chat overlay. Anyone who has it can
     -- open the read-only overlay socket, since OBS cannot sign in. Nullable
     -- until first generated; regenerating it revokes the old URL.
-    overlay_key TEXT
+    overlay_key TEXT,
+    -- The RTMP publish key OBS sends to go live. MediaMTX delegates publish auth
+    -- to the gate, which checks this value. Nullable until first generated (or
+    -- seeded from PUBLISH_PASS on an upgrade); regenerating it takes effect from
+    -- the next connect and never kicks a live broadcast.
+    stream_key TEXT
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -223,11 +228,25 @@ def init_db():
             conn, "channel_settings", "accent", "TEXT NOT NULL DEFAULT 'green'"
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
+        _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
         # Ensure the single channel_settings row exists so getters always find it.
         conn.execute(
             "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
             "VALUES (1, 'Live Stream')"
         )
+        # Seed the publish key from PUBLISH_PASS on an existing install so OBS and
+        # the demo keep working across the switch to gate-delegated auth. Only
+        # while it is still NULL: once a key exists (generated or already seeded),
+        # changing the env never overwrites it. Read from the environment here,
+        # not config.py, because demo_seed imports db without config and config
+        # hard-requires the JWT secret.
+        publish_pass = os.environ.get("PUBLISH_PASS", "")
+        if publish_pass:
+            conn.execute(
+                "UPDATE channel_settings SET stream_key = ? "
+                "WHERE id = 1 AND stream_key IS NULL",
+                (publish_pass,),
+            )
         # If the gate restarted while people were watching, their sessions never
         # got a left_at. Close them at their start so they do not count as one
         # endless session, and so the next start is clean.
@@ -476,6 +495,34 @@ def regenerate_overlay_key():
     with connect() as conn:
         conn.execute(
             "UPDATE channel_settings SET overlay_key = ? WHERE id = 1", (key,)
+        )
+    return key
+
+
+# ---- Stream key -----------------------------------------------------------
+# The RTMP publish key OBS sends to go live. MediaMTX delegates publish auth to
+# the gate (see routes/auth.py), which compares the connecting password against
+# this value. It is a bearer secret shown only on the admin dashboard, and can
+# be regenerated to rotate it; rotation applies from the next connect, so it
+# never interrupts a broadcast already in progress.
+
+def get_stream_key():
+    """The current publish key, or None if one has never been generated."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT stream_key FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return row["stream_key"] if row else None
+
+
+def regenerate_stream_key():
+    """Mint a fresh publish key, replacing any previous one, and return it. The
+    old key stops being accepted, but a live broadcast keeps going: auth is
+    per-connection, so the change only bites on the next publish."""
+    key = secrets.token_urlsafe(32)
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET stream_key = ? WHERE id = 1", (key,)
         )
     return key
 

@@ -7,7 +7,9 @@ own account.
 """
 
 import io
+import ipaddress
 import os
+import secrets
 import time
 
 from fastapi import APIRouter, File, Request, Response, UploadFile
@@ -27,6 +29,14 @@ from config import (
 from hub import hub
 
 router = APIRouter()
+
+# The networks that may read/record from MediaMTX: loopback and the docker
+# private range. Mirrors the old mediamtx `ips` allowlist. The gate's own ffmpeg
+# pulls and Caddy's HLS reads all arrive from these, so allowing them keeps
+# recording, thumbnails, and playback working.
+_INTERNAL_NETS = tuple(
+    ipaddress.ip_network(n) for n in ("127.0.0.1/32", "::1/128", "172.16.0.0/12")
+)
 
 
 def _signed_in_response(user, payload=None):
@@ -111,6 +121,36 @@ def geo(request: Request):
     if country_allowed(client_ip(request)):
         return Response(status_code=200)
     return Response(status_code=403)
+
+
+@router.post("/mtx-auth")
+async def mtx_auth(request: Request):
+    # MediaMTX delegates every publish/read to the gate over HTTP (authMethod:
+    # http). It POSTs one JSON payload per new connection; 2xx allows it, anything
+    # else denies. This route is deliberately not under /api/, so Caddy never
+    # proxies it: only MediaMTX, inside the docker network, calls it directly.
+    body = await request.json()
+    action = body.get("action")
+
+    if action == "publish":
+        # Only OBS (or the demo publisher) may publish, and only with the current
+        # stream key. The user field is ignored: old URLs send user=publisher and
+        # keep working. Refuse until a key exists so a blank one never authorizes.
+        stored = db.get_stream_key()
+        password = str(body.get("password") or "")
+        if stored and secrets.compare_digest(password, stored):
+            return Response(status_code=200)
+        return Response(status_code=401)
+
+    # Every other action (read from Caddy/ffmpeg, the control API) is allowed only
+    # from inside the container network. An unparseable IP is denied.
+    try:
+        ip = ipaddress.ip_address(str(body.get("ip") or ""))
+    except ValueError:
+        return Response(status_code=401)
+    if any(ip in net for net in _INTERNAL_NETS):
+        return Response(status_code=200)
+    return Response(status_code=401)
 
 
 @router.post("/api/auth")

@@ -265,6 +265,28 @@ def admin_overlay_regenerate(request: Request):
     return {"key": db.regenerate_overlay_key()}
 
 
+# ---- Stream key -----------------------------------------------------------
+
+@router.get("/api/admin/stream-key")
+def admin_stream_key_get(request: Request):
+    # The RTMP publish key OBS uses to go live. Generated on first read so the
+    # panel always has a key to show (a fresh install needs no PUBLISH_PASS);
+    # regenerate to rotate it. Rotation applies from the next connect only.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    key = db.get_stream_key()
+    if not key:
+        key = db.regenerate_stream_key()
+    return {"key": key}
+
+
+@router.post("/api/admin/stream-key/regenerate")
+def admin_stream_key_regenerate(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"key": db.regenerate_stream_key()}
+
+
 @router.get("/api/admin/notify")
 def admin_notify_get(request: Request):
     # Current go-live notification config, plus what is wired up, so the dashboard
