@@ -21,10 +21,10 @@ import httpx
 
 import db
 from config import (
-    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, RECORD_BACKOFF,
-    RECORD_STALL_POLLS, RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP,
-    RTMP_SOURCE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
-    VOD_KEEP, VOD_KEEP_DAYS,
+    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, POINTS_PER_MINUTE,
+    RECORD_BACKOFF, RECORD_STALL_POLLS, RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS,
+    RECORD_TMP, RTMP_SOURCE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP,
+    VOD_DIR, VOD_KEEP, VOD_KEEP_DAYS,
 )
 from hub import hub
 from notify import notify_live
@@ -47,9 +47,34 @@ async def fetch_path():
     return None
 
 
+def credit_watch_points():
+    """Credit one round of watch points: POINTS_PER_MINUTE to each distinct
+    viewer connected to chat right now, but only while the stream is live. The
+    stream watcher calls this once per minute of live time. A single UPDATE
+    covers everyone, and each person is credited once no matter how many tabs
+    they have open. Best effort: it never raises into the watcher loop. Returns
+    the number of accounts credited."""
+    if not hub.is_live():
+        return 0
+    usernames = hub.present_usernames()
+    if not usernames:
+        return 0
+    try:
+        return db.credit_points(usernames, POINTS_PER_MINUTE)
+    except Exception:
+        logger.debug("credit_watch_points failed", exc_info=True)
+        return 0
+
+
 async def stream_watcher():
     """Wipe the chat when a broadcast ends, so the next stream starts clean."""
     was_online = False
+    # Accrue watch points once per minute of live time. We track elapsed live
+    # seconds across polls with a monotonic clock and credit a round each time it
+    # crosses 60, so the rate stays one round per minute regardless of the poll
+    # interval. The accumulator resets when the stream goes offline.
+    live_seconds = 0.0
+    last_tick = time.monotonic()
     while True:
         try:
             data = await fetch_path()
@@ -57,6 +82,15 @@ async def stream_watcher():
             # Open/close watch sessions on the live<->offline transition so
             # watch time only counts while the stream is live.
             await hub.set_live(online)
+            now = time.monotonic()
+            if online:
+                live_seconds += now - last_tick
+                while live_seconds >= 60:
+                    live_seconds -= 60
+                    credit_watch_points()
+            else:
+                live_seconds = 0.0
+            last_tick = now
             if online and not was_online:
                 logger.info("stream online")
                 # Fresh broadcast: clear any leftover failure-streak backoff.

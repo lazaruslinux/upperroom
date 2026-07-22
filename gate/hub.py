@@ -55,6 +55,16 @@ class Hub:
         viewers = self.viewers()
         return {"type": "presence", "viewers": viewers, "count": len(viewers)}
 
+    def is_live(self):
+        """Whether the stream watcher currently considers the stream live."""
+        return self._live
+
+    def present_usernames(self):
+        """The distinct authenticated usernames connected to chat right now, one
+        entry per person no matter how many tabs they have open. Overlay watchers
+        are never included, so they never earn points."""
+        return list({who["username"] for who in self._sockets.values()})
+
     async def broadcast(self, message):
         dead = []
         for socket in list(self._sockets):
