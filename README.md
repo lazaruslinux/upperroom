@@ -19,6 +19,8 @@ whole thing.
   (`/mod`, `/timeout`, `/ban`, `/del`) and dashboards for each.
 - Provides a transparent chat overlay you add to OBS as a browser source, so the
   broadcast itself shows chat, joins, and clip alerts. See `docs/08-overlay.md`.
+- Gives viewers channel points for watching live, which they spend on rewards you
+  define; redemptions post in chat and on the overlay. See `docs/09-points.md`.
 
 It does not transcode. Your computer does the encoding inside OBS, so the
 server only repackages the video and stays light.
