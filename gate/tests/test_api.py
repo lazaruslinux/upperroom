@@ -262,6 +262,9 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("POST", "/api/admin/overlay/regenerate", None),
         ("GET", "/api/admin/stream-key", None),
         ("POST", "/api/admin/stream-key/regenerate", None),
+        ("GET", "/api/admin/rewards", None),
+        ("POST", "/api/admin/rewards", {"label": "x", "cost": 1}),
+        ("DELETE", "/api/admin/rewards/1", None),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -555,9 +558,152 @@ def test_status_exposes_accent(client):
         ("POST", "/api/clip"),
         ("GET", "/api/vods/1/chat"),
         ("GET", "/api/clips/1/chat"),
+        ("GET", "/api/rewards"),
+        ("POST", "/api/redeem"),
     ],
 )
 def test_media_endpoints_require_a_session(client, method, path):
     # No cookie: the gate should turn these away cleanly, never error out.
     resp = client.request(method, path, json={} if method == "POST" else None)
     assert resp.status_code in (401, 403)
+
+
+# ---- 9. Channel points and rewards ----------------------------------------
+
+def test_admin_can_create_list_and_delete_rewards(client):
+    setup_admin(client)
+    created = client.post("/api/admin/rewards", json={"label": "hydrate", "cost": 50})
+    assert created.status_code == 200
+    rid = created.json()["id"]
+    listed = client.get("/api/admin/rewards").json()["rewards"]
+    assert any(r["id"] == rid and r["label"] == "hydrate" and r["cost"] == 50
+               for r in listed)
+    assert client.request("DELETE", f"/api/admin/rewards/{rid}").status_code == 200
+    # A second delete reports it is gone, confirming the first one landed.
+    assert client.request("DELETE", f"/api/admin/rewards/{rid}").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"label": "", "cost": 10},
+        {"label": "   ", "cost": 10},
+        {"label": "ok", "cost": 0},
+        {"label": "ok", "cost": 2000000},
+        {"label": "ok", "cost": "lots"},
+    ],
+    ids=["empty-label", "blank-label", "zero-cost", "over-max", "non-number"],
+)
+def test_admin_reward_create_validates_input(client, body):
+    setup_admin(client)
+    assert client.post("/api/admin/rewards", json=body).status_code == 400
+    assert db.list_rewards() == []
+
+
+def test_rewards_endpoint_returns_own_balance_and_catalog(client):
+    setup_admin(client, username="owner")
+    client.post("/api/admin/rewards", json={"label": "hydrate", "cost": 50})
+    add_user("viewer")
+    db.credit_points(["viewer"], 120)
+    viewer = make_client()
+    login(viewer, "viewer")
+    body = viewer.get("/api/rewards").json()
+    assert body["points"] == 120
+    assert len(body["rewards"]) == 1
+    assert body["rewards"][0]["label"] == "hydrate"
+
+
+def test_redeem_spends_points_and_returns_new_balance(client):
+    setup_admin(client, username="owner")
+    rid = client.post(
+        "/api/admin/rewards", json={"label": "hydrate", "cost": 50}
+    ).json()["id"]
+    add_user("viewer")
+    db.credit_points(["viewer"], 120)
+    viewer = make_client()
+    login(viewer, "viewer")
+    resp = viewer.post("/api/redeem", json={"reward_id": rid})
+    assert resp.status_code == 200
+    assert resp.json()["points"] == 70
+    assert db.get_points("viewer") == 70
+
+
+def test_redeem_insufficient_balance_is_rejected_unchanged(client):
+    setup_admin(client, username="owner")
+    rid = client.post(
+        "/api/admin/rewards", json={"label": "big", "cost": 500}
+    ).json()["id"]
+    add_user("viewer")
+    db.credit_points(["viewer"], 100)
+    viewer = make_client()
+    login(viewer, "viewer")
+    resp = viewer.post("/api/redeem", json={"reward_id": rid})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "not enough points"
+    assert db.get_points("viewer") == 100          # balance untouched
+
+
+def test_redeem_unknown_reward_is_404(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    assert viewer.post("/api/redeem", json={"reward_id": 9999}).status_code == 404
+    assert viewer.post("/api/redeem", json={"reward_id": "nope"}).status_code == 404
+
+
+def test_profile_reports_points(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    db.credit_points(["viewer"], 7)
+    login(client, "owner")
+    assert client.get("/api/profile/viewer").json()["points"] == 7
+
+
+def test_redeem_event_broadcast_reaches_a_watcher(client):
+    # Mirror the clip-event test: the redeem announcement is a plain hub
+    # broadcast, so a connected watcher (the overlay) receives its exact shape.
+    import asyncio
+
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, message):
+            self.sent.append(message)
+
+    sock = FakeSocket()
+    hub.add_watcher(sock)
+    try:
+        asyncio.run(hub.broadcast(
+            {"type": "redeem", "user": "Owner", "label": "hydrate", "cost": 50}
+        ))
+    finally:
+        hub.remove_watcher(sock)
+    assert sock.sent == [
+        {"type": "redeem", "user": "Owner", "label": "hydrate", "cost": 50}
+    ]
+
+
+def test_watch_points_accrue_once_per_user_and_only_when_live(client):
+    # The credit function is what the stream watcher calls once a minute. It
+    # credits each distinct present viewer exactly once, and only while live.
+    from media import credit_watch_points
+
+    add_user("alice")
+    add_user("bob")
+    # Two tabs for alice, one for bob (fake sockets keyed by identity).
+    hub._sockets[object()] = {"username": "alice"}
+    hub._sockets[object()] = {"username": "alice"}
+    hub._sockets[object()] = {"username": "bob"}
+    try:
+        hub._live = False
+        assert credit_watch_points() == 0          # offline: nothing accrues
+        assert db.get_points("alice") == 0
+        hub._live = True
+        assert credit_watch_points() == 2          # two distinct viewers credited
+        assert db.get_points("alice") == 1         # once, despite two tabs
+        assert db.get_points("bob") == 1
+    finally:
+        hub._live = False
+        hub._sockets.clear()

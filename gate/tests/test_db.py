@@ -304,6 +304,72 @@ def test_stream_key_seeds_from_env_only_while_unset(tmp_path, monkeypatch):
     assert db.get_stream_key() == "legacy-obs-pass"
 
 
+# ---- channel points and rewards -------------------------------------------
+
+def test_points_credit_dedupes_and_accumulates(fresh_db):
+    db.add_user("alice", "Alice", "password1")
+    db.add_user("bob", "Bob", "password1")
+    assert db.get_points("alice") == 0
+    # One round: each distinct account is credited once, even if a username
+    # appears several times (a viewer with several tabs open).
+    updated = db.credit_points(["alice", "alice", "bob"], 1)
+    assert updated == 2                        # two accounts touched, not three
+    assert db.get_points("alice") == 1         # deduped, not doubled
+    assert db.get_points("bob") == 1
+    db.credit_points(["alice"], 5)
+    assert db.get_points("alice") == 6         # accumulates across rounds
+
+
+def test_spend_points_guards_the_balance(fresh_db):
+    db.add_user("alice", "Alice", "password1")
+    db.credit_points(["alice"], 50)
+    assert db.spend_points("alice", 30) == 20     # affordable: decremented
+    assert db.spend_points("alice", 30) is None   # too low: no change, no debt
+    assert db.get_points("alice") == 20
+
+
+def test_spend_points_is_atomic_under_a_race(fresh_db):
+    # Two redemptions of 60 racing on a balance that covers only one. The guarded
+    # UPDATE serializes them, so exactly one wins and the balance never goes
+    # negative, no matter the interleaving.
+    import threading
+
+    db.add_user("alice", "Alice", "password1")
+    db.credit_points(["alice"], 100)
+    results = []
+
+    def spend():
+        results.append(db.spend_points("alice", 60))
+
+    threads = [threading.Thread(target=spend) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert results.count(None) == 1               # exactly one was refused
+    assert db.get_points("alice") == 40           # only one spend landed
+
+
+def test_rewards_crud(fresh_db):
+    assert db.list_rewards() == []
+    assert db.count_rewards() == 0
+    rid = db.add_reward("hydrate", 50)
+    assert db.get_reward(rid) == {"id": rid, "label": "hydrate", "cost": 50}
+    assert db.count_rewards() == 1
+    assert db.list_rewards() == [{"id": rid, "label": "hydrate", "cost": 50}]
+    assert db.delete_reward(rid) is True
+    assert db.get_reward(rid) is None
+    assert db.delete_reward(rid) is False         # already gone
+
+
+def test_rewards_are_listed_cheapest_first(fresh_db):
+    db.add_reward("big", 500)
+    db.add_reward("small", 50)
+    costs = [r["cost"] for r in db.list_rewards()]
+    assert costs == [50, 500]
+
+
 def test_clip_count_since(fresh_db):
     now = int(time.time())
     db.create_clip("c1", "", "alice", None, now, now + 30, 30, now)
