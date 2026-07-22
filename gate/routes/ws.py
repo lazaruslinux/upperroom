@@ -60,16 +60,16 @@ async def handle_command(websocket, who, text):
         lines = ["Chat commands:"]
         if is_admin or is_mod:
             lines += [
-                "/timeout <user> [seconds] — mute a viewer (default 300)",
-                "/untimeout <user> — lift a timeout",
-                "/del <user> — delete that viewer's last message",
-                "/ban <user> [reason] — ban a viewer from chat",
-                "/unban <user> — lift a ban (yours, or any if admin)",
+                "/timeout <user> [seconds] - mute a viewer (default 300)",
+                "/untimeout <user> - lift a timeout",
+                "/del <user> - delete that viewer's last message",
+                "/ban <user> [reason] - ban a viewer from chat",
+                "/unban <user> - lift a ban (yours, or any if admin)",
             ]
         if is_admin:
             lines += [
-                "/mod <user> — make someone a chat moderator",
-                "/unmod <user> — remove a chat moderator",
+                "/mod <user> - make someone a chat moderator",
+                "/unmod <user> - remove a chat moderator",
             ]
         if len(lines) == 1:
             lines.append("Your account has no chat commands.")

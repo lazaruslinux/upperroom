@@ -679,7 +679,7 @@ async def make_clip(user, name):
         elapsed = int(time.time()) - db.last_clip_at(username)
         if elapsed < cooldown:
             return None, (
-                f"Clip cooldown — you can clip again in "
+                f"Clip cooldown - you can clip again in "
                 f"{format_remaining(cooldown - elapsed)}."
             )
     started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
