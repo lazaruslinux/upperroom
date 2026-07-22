@@ -12,12 +12,15 @@ const descEl = document.getElementById("media-desc");
 const replayMessages = document.getElementById("replay-messages");
 const replayEmpty = document.getElementById("replay-empty");
 const replayToggle = document.getElementById("replay-toggle");
+const heatmap = document.getElementById("heatmap");
 
 let replay = [];        // chat lines, sorted by offset_s
 let shownIdx = 0;       // how many have been revealed
 let lastT = 0;
 let replayOn = true;
 let viewCounted = false;
+let hmPlayhead = null;   // the moving marker, once the strip is built
+let hmDuration = 0;      // media length the strip was bucketed against
 
 // ---- shared render helpers (kept local to this page) ----
 
@@ -123,6 +126,7 @@ function resetTo(t) {
 }
 
 video.addEventListener("timeupdate", () => {
+  updateHeatmapPlayhead();
   if (!replayOn) return;
   const t = video.currentTime;
   if (t + 0.5 < lastT) resetTo(t);   // jumped backward
@@ -130,13 +134,68 @@ video.addEventListener("timeupdate", () => {
   lastT = t;
   countView();
 });
-video.addEventListener("seeking", () => { if (replayOn) resetTo(video.currentTime); });
+video.addEventListener("seeking", () => {
+  updateHeatmapPlayhead();
+  if (replayOn) resetTo(video.currentTime);
+});
 
 replayToggle.addEventListener("click", () => {
   replayOn = !replayOn;
   replayToggle.textContent = replayOn ? "On" : "Off";
   if (replayOn) resetTo(video.currentTime);
   else replayMessages.innerHTML = "";
+});
+
+// ---- chat-activity heatmap ----
+
+// Bucket the recorded chat by timestamp and draw a bar per bucket, so the
+// busy moments of the stream stand out. Bail quietly if there is nothing to
+// show; the strip stays hidden.
+function buildHeatmap(duration) {
+  if (!duration) return;
+  const msgs = replay.filter((m) => !m.deleted);
+  if (!msgs.length) return;
+
+  const bucketSeconds = Math.max(2, Math.ceil(duration / 100));
+  const n = Math.ceil(duration / bucketSeconds);
+  const counts = new Array(n).fill(0);
+  for (const m of msgs) {
+    let i = Math.floor(m.offset_s / bucketSeconds);
+    if (i >= n) i = n - 1;   // clamp anything at or past the end into the last bucket
+    counts[i]++;
+  }
+  const max = Math.max(...counts);
+
+  for (let i = 0; i < n; i++) {
+    const bar = document.createElement("div");
+    bar.className = "hm-bar";
+    bar.style.height = counts[i] ? `${18 + (82 * counts[i]) / max}%` : "2px";
+    const label = counts[i] === 1 ? "1 message" : `${counts[i]} messages`;
+    bar.title = `${clock(i * bucketSeconds)} · ${label}`;
+    heatmap.appendChild(bar);
+  }
+
+  hmPlayhead = document.createElement("div");
+  hmPlayhead.className = "hm-playhead";
+  heatmap.appendChild(hmPlayhead);
+
+  hmDuration = duration;
+  heatmap.hidden = false;
+  updateHeatmapPlayhead();
+}
+
+// Slide the marker to match playback. No-op until the strip is built.
+function updateHeatmapPlayhead() {
+  if (!hmPlayhead || !hmDuration) return;
+  const pct = Math.min(1, Math.max(0, video.currentTime / hmDuration)) * 100;
+  hmPlayhead.style.left = `${pct}%`;
+}
+
+heatmap.addEventListener("click", (event) => {
+  if (!hmDuration) return;
+  const rect = heatmap.getBoundingClientRect();
+  const t = ((event.clientX - rect.left) / rect.width) * hmDuration;
+  video.currentTime = Math.min(hmDuration, Math.max(0, t));
 });
 
 // ---- view count (once per visit, after playback starts) ----
@@ -185,6 +244,8 @@ async function loadMedia() {
     replayEmpty.hidden = false;
     replayToggle.hidden = true;
   }
+
+  buildHeatmap(meta.duration);
 }
 
 // The channel accent (the brand color) is server-driven. The head bootstrap

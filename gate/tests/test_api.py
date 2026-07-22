@@ -553,6 +553,8 @@ def test_status_exposes_accent(client):
         ("GET", "/api/vods"),
         ("GET", "/api/clips"),
         ("POST", "/api/clip"),
+        ("GET", "/api/vods/1/chat"),
+        ("GET", "/api/clips/1/chat"),
     ],
 )
 def test_media_endpoints_require_a_session(client, method, path):

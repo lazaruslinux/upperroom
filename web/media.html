@@ -9,7 +9,7 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=20">
+  <link rel="stylesheet" href="/assets/style.css?v=21">
 </head>
 <body class="media">
   <header class="home-bar">
@@ -22,6 +22,7 @@
   <main class="media-main">
     <section class="media-stage">
       <video id="video" controls playsinline></video>
+      <div id="heatmap" class="heatmap" aria-label="Chat activity. Click to seek." hidden></div>
       <div class="media-info">
         <h1 id="media-title" class="media-page-title">Loading…</h1>
         <div id="media-sub" class="media-sub muted"></div>
@@ -39,6 +40,6 @@
     </aside>
   </main>
 
-  <script src="/assets/media.js?v=3"></script>
+  <script src="/assets/media.js?v=4"></script>
 </body>
 </html>

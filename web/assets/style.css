@@ -840,6 +840,35 @@ form { display: flex; flex-direction: column; gap: 12px; }
   border: 1px solid var(--border);
   display: block;
 }
+.heatmap {
+  position: relative;
+  height: 32px;
+  margin-top: 2px;
+  padding: 2px;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  cursor: pointer;
+}
+.hm-bar {
+  flex: 1;
+  min-width: 0;
+  background: var(--accent);
+  opacity: .55;
+  transition: opacity 120ms;
+}
+.hm-bar:hover { opacity: 1; }
+.hm-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text);
+  pointer-events: none;
+}
+
 .media-info { padding: 14px 2px 0; }
 .media-page-title { font-family: var(--sans); font-weight: 600; font-size: 17px; margin: 0 0 4px; }
 .media-desc { font-family: var(--sans); font-size: 14px; color: var(--text); margin: 12px 0 0; line-height: 1.5; white-space: pre-wrap; }
