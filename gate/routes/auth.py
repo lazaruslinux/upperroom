@@ -478,4 +478,5 @@ def get_profile(username: str, request: Request):
         "avatar": user["avatar_version"],
         "bio": user["bio"],
         "joined": user["created_at"],
+        "points": user["points"],
     }
