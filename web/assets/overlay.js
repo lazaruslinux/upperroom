@@ -15,6 +15,7 @@ const KEY = new URLSearchParams(location.search).get("key") || "";
 const CHAT_TTL = 45000;
 const JOIN_TTL = 10000;
 const CLIP_TTL = 12000;
+const REDEEM_TTL = 12000;
 const MAX_CHAT = 8;
 
 // ---- accent flavor ----
@@ -96,6 +97,23 @@ function renderClip(msg) {
   append(item, CLIP_TTL);
 }
 
+function renderRedeem(msg) {
+  const item = document.createElement("div");
+  item.className = "ov-item ov-redeem";
+  const who = document.createElement("span");
+  who.className = "ov-redeem-who";
+  who.textContent = (msg.user || "someone") + " redeemed:";
+  const name = document.createElement("span");
+  name.className = "ov-redeem-name";
+  const cost = msg.cost != null ? ` (${msg.cost})` : "";
+  name.textContent = (msg.label || "") + cost;
+  item.append(who, name);
+  append(item, REDEEM_TTL);
+  // Keep only the most recent few redemptions on screen, like the chat cap.
+  const items = overlay.querySelectorAll(".ov-redeem");
+  for (let i = 0; i < items.length - MAX_CHAT; i++) items[i].remove();
+}
+
 function applyDelete(id) {
   if (id == null) return;
   const line = overlay.querySelector(`[data-msgid="${id}"]`);
@@ -119,6 +137,8 @@ function connect() {
       if (!msg.deleted) renderChat(msg);
     } else if (msg.type === "clip") {
       renderClip(msg);
+    } else if (msg.type === "redeem") {
+      renderRedeem(msg);
     } else if (msg.type === "system") {
       // Join lines are the only system notice the overlay surfaces; "left" and
       // command replies stay off-screen to keep it quiet.
