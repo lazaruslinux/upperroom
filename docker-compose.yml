@@ -9,13 +9,11 @@
 
 services:
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    # Pinned: the HTTP auth contract the gate relies on (the callback payload
+    # fields) is version-specific, so an unattended :latest bump could break
+    # publish auth.
+    image: bluenviron/mediamtx:1.19.1
     restart: unless-stopped
-    environment:
-      # MediaMTX does not substitute ${VAR} inside its config file, so the
-      # publisher password is injected with MediaMTX's own MTX_ override, which
-      # replaces the password of the first user in authInternalUsers.
-      - MTX_AUTHINTERNALUSERS_0_PASS=${PUBLISH_PASS}
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     ports:
@@ -30,6 +28,10 @@ services:
     restart: unless-stopped
     environment:
       - SELFSTREAM_JWT_SECRET=${SELFSTREAM_JWT_SECRET}
+      # Seeds the stream key on first start so an existing install and the demo
+      # keep publishing across the switch to gate-delegated auth. Only used while
+      # the key is still unset; once a key exists, changing this does nothing.
+      - PUBLISH_PASS=${PUBLISH_PASS:-}
       - SELFSTREAM_SESSION_HOURS=${SELFSTREAM_SESSION_HOURS:-6}
       - SELFSTREAM_PATH=live
       - MEDIAMTX_API=http://mediamtx:9997
@@ -110,9 +112,10 @@ services:
       - gate
 
   # Synthetic broadcaster. Loops an ffmpeg publish of an animated 720p30 source
-  # with audio into MediaMTX using the same PUBLISH_PASS as OBS would, so the
-  # watch page shows live video. The shell loop retries with a short backoff so
-  # it survives MediaMTX starting slowly.
+  # with audio into MediaMTX, so the watch page shows live video. It publishes
+  # with PUBLISH_PASS, which the gate seeds into the stream key on first start,
+  # so the demo authenticates without any dashboard step. The shell loop retries
+  # with a short backoff so it survives MediaMTX starting slowly.
   demo-stream:
     profiles: ["demo"]
     image: linuxserver/ffmpeg:latest

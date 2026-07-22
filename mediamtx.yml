@@ -31,26 +31,21 @@ hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
 hlsAllowOrigins: ['*']
 
-# Only a client with the publish password may send a stream. Reading is allowed
-# only from inside the container network, since Caddy is the only reader and it
-# enforces the session check itself.
-authMethod: internal
-authInternalUsers:
-  - user: publisher
-    # The real password is injected at runtime by MTX_AUTHINTERNALUSERS_0_PASS
-    # in docker-compose.yml. MediaMTX does not expand ${VAR} inside this file,
-    # so this value is a placeholder that the override replaces.
-    pass: set-via-env
-    permissions:
-      - action: publish
-        path: live
-  - user: any
-    ips: ['127.0.0.1', '::1', '172.16.0.0/12']
-    permissions:
-      - action: read
-      # Lets the gate query the control API for stream status, from inside the
-      # container network only (the API port is never published to the host).
-      - action: api
+# Publish auth is delegated to the gate over HTTP: MediaMTX POSTs each new
+# connection to the address below, and a 2xx allows it. The gate checks a publish
+# against the stream key stored in its database (editable on the admin
+# dashboard), and allows reads only from inside the container network, the same
+# rule the old static ips allowlist enforced. Because auth is per-connection,
+# rotating the stream key never interrupts a broadcast already in progress: it
+# only applies to the next connect. authHTTPExclude keeps the control API,
+# metrics, and pprof off the callback, so the gate's own status polls do not loop
+# back through it (api must stay exempt).
+authMethod: http
+authHTTPAddress: http://gate:8000/mtx-auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
 
 paths:
   live:
