@@ -293,6 +293,77 @@ document.getElementById("invite-new").addEventListener("click", async (e) => {
   btn.disabled = false;
 });
 
+// ---- rewards (channel points catalog: add, list, delete) ----
+
+let rewards = [];
+
+async function loadRewards() {
+  try { rewards = (await (await fetch("/api/admin/rewards")).json()).rewards || []; }
+  catch { rewards = []; }
+  renderRewards();
+}
+
+function renderRewards() {
+  const list = document.getElementById("reward-list");
+  document.getElementById("reward-empty").hidden = rewards.length > 0;
+  list.innerHTML = "";
+  rewards.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "activity-row ban-row";
+    const left = document.createElement("span");
+    const label = document.createElement("b");
+    label.textContent = r.label;
+    const cost = document.createElement("span");
+    cost.className = "muted";
+    cost.textContent = ` · pts ${r.cost}`;
+    left.append(label, cost);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip-btn danger-chip";
+    btn.textContent = "Delete";
+    btn.addEventListener("click", () => deleteReward(r, btn));
+    row.append(left, btn);
+    list.appendChild(row);
+  });
+}
+
+async function deleteReward(reward, btn) {
+  if (!confirm(`Delete "${reward.label}"? Viewers can no longer redeem it.`)) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/admin/rewards/${reward.id}`, { method: "DELETE" });
+    if (reply.ok) { loadRewards(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not delete the reward.");
+  } catch { alert("Could not delete the reward."); }
+  btn.disabled = false;
+}
+
+document.getElementById("reward-new").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const label = document.getElementById("reward-label").value.trim();
+  const cost = parseInt(document.getElementById("reward-cost").value, 10);
+  if (!label) { alert("Enter a reward label."); return; }
+  if (Number.isNaN(cost) || cost < 1) { alert("Enter a cost of at least 1."); return; }
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/admin/rewards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, cost }),
+    });
+    if (reply.ok) {
+      document.getElementById("reward-label").value = "";
+      document.getElementById("reward-cost").value = "";
+      loadRewards();
+    } else {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not add the reward.");
+    }
+  } catch { alert("Could not reach the server."); }
+  btn.disabled = false;
+});
+
 function renderStats() {
   const admins = users.filter((u) => u.is_admin).length;
   const watch = users.reduce((sum, u) => sum + (u.watch_seconds || 0), 0);
@@ -865,6 +936,7 @@ async function boot() {
   if (!(await requireAdmin())) return;
   loadUsers();
   loadInvites();
+  loadRewards();
   loadChannel();
   loadStreamKey();
   loadOverlay();
