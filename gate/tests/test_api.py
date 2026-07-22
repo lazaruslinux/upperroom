@@ -19,7 +19,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import auth
 import db
-from config import COOKIE_NAME
+from config import COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
 from conftest import make_client
 from hub import hub
 
@@ -262,9 +262,6 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("POST", "/api/admin/overlay/regenerate", None),
         ("GET", "/api/admin/stream-key", None),
         ("POST", "/api/admin/stream-key/regenerate", None),
-        ("GET", "/api/admin/rewards", None),
-        ("POST", "/api/admin/rewards", {"label": "x", "cost": 1}),
-        ("DELETE", "/api/admin/rewards/1", None),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -558,7 +555,7 @@ def test_status_exposes_accent(client):
         ("POST", "/api/clip"),
         ("GET", "/api/vods/1/chat"),
         ("GET", "/api/clips/1/chat"),
-        ("GET", "/api/rewards"),
+        ("GET", "/api/points"),
         ("POST", "/api/redeem"),
     ],
 )
@@ -568,88 +565,107 @@ def test_media_endpoints_require_a_session(client, method, path):
     assert resp.status_code in (401, 403)
 
 
-# ---- 9. Channel points and rewards ----------------------------------------
+# ---- 9. Channel points and the highlight redemption -----------------------
 
-def test_admin_can_create_list_and_delete_rewards(client):
-    setup_admin(client)
-    created = client.post("/api/admin/rewards", json={"label": "hydrate", "cost": 50})
-    assert created.status_code == 200
-    rid = created.json()["id"]
-    listed = client.get("/api/admin/rewards").json()["rewards"]
-    assert any(r["id"] == rid and r["label"] == "hydrate" and r["cost"] == 50
-               for r in listed)
-    assert client.request("DELETE", f"/api/admin/rewards/{rid}").status_code == 200
-    # A second delete reports it is gone, confirming the first one landed.
-    assert client.request("DELETE", f"/api/admin/rewards/{rid}").status_code == 404
+class _CaptureSocket:
+    """A stand-in overlay watcher that records the broadcasts it receives, so a
+    test can assert the exact event shape a redeem sends over the hub."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, message):
+        self.sent.append(message)
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"label": "", "cost": 10},
-        {"label": "   ", "cost": 10},
-        {"label": "ok", "cost": 0},
-        {"label": "ok", "cost": 2000000},
-        {"label": "ok", "cost": "lots"},
-    ],
-    ids=["empty-label", "blank-label", "zero-cost", "over-max", "non-number"],
-)
-def test_admin_reward_create_validates_input(client, body):
-    setup_admin(client)
-    assert client.post("/api/admin/rewards", json=body).status_code == 400
-    assert db.list_rewards() == []
-
-
-def test_rewards_endpoint_returns_own_balance_and_catalog(client):
+def _viewer_with_points(client, points):
+    """Sign a fresh viewer client in and give the account a starting balance."""
     setup_admin(client, username="owner")
-    client.post("/api/admin/rewards", json={"label": "hydrate", "cost": 50})
     add_user("viewer")
-    db.credit_points(["viewer"], 120)
+    db.credit_points(["viewer"], points)
     viewer = make_client()
     login(viewer, "viewer")
-    body = viewer.get("/api/rewards").json()
+    return viewer
+
+
+def test_points_endpoint_returns_balance_and_cost(client):
+    viewer = _viewer_with_points(client, 120)
+    body = viewer.get("/api/points").json()
     assert body["points"] == 120
-    assert len(body["rewards"]) == 1
-    assert body["rewards"][0]["label"] == "hydrate"
+    assert body["cost"] == HIGHLIGHT_COST
 
 
-def test_redeem_spends_points_and_returns_new_balance(client):
-    setup_admin(client, username="owner")
-    rid = client.post(
-        "/api/admin/rewards", json={"label": "hydrate", "cost": 50}
-    ).json()["id"]
-    add_user("viewer")
-    db.credit_points(["viewer"], 120)
-    viewer = make_client()
-    login(viewer, "viewer")
-    resp = viewer.post("/api/redeem", json={"reward_id": rid})
+def test_redeem_requires_a_message(client):
+    viewer = _viewer_with_points(client, 120)
+    for body in ({}, {"message": ""}, {"message": "   "}):
+        resp = viewer.post("/api/redeem", json=body)
+        assert resp.status_code == 400
+    assert db.get_points("viewer") == 120          # nothing spent on an empty say
+
+
+def test_redeem_highlights_and_broadcasts_the_event(client):
+    # The success path spends the cost, returns the new balance, and broadcasts a
+    # highlight event of the documented shape to every connected watcher (the
+    # overlay). Mirror the WS event test: seat a fake watcher, then drive redeem.
+    viewer = _viewer_with_points(client, 120)
+    sock = _CaptureSocket()
+    hub.add_watcher(sock)
+    try:
+        resp = viewer.post("/api/redeem", json={"message": "hello stream"})
+    finally:
+        hub.remove_watcher(sock)
     assert resp.status_code == 200
-    assert resp.json()["points"] == 70
-    assert db.get_points("viewer") == 70
+    assert resp.json()["points"] == 120 - HIGHLIGHT_COST
+    assert db.get_points("viewer") == 120 - HIGHLIGHT_COST
+    assert sock.sent == [
+        {"type": "highlight", "user": "Viewer", "message": "hello stream",
+         "cost": HIGHLIGHT_COST}
+    ]
+
+
+def test_redeem_truncates_over_length_message_like_chat(client):
+    # The chat socket truncates to MAX_MESSAGE_LENGTH; the highlight text must obey
+    # the same limit, so an over-length message is accepted and clipped, not
+    # rejected.
+    viewer = _viewer_with_points(client, 120)
+    sock = _CaptureSocket()
+    hub.add_watcher(sock)
+    try:
+        resp = viewer.post(
+            "/api/redeem", json={"message": "x" * (MAX_MESSAGE_LENGTH + 50)}
+        )
+    finally:
+        hub.remove_watcher(sock)
+    assert resp.status_code == 200
+    assert len(sock.sent[0]["message"]) == MAX_MESSAGE_LENGTH
 
 
 def test_redeem_insufficient_balance_is_rejected_unchanged(client):
-    setup_admin(client, username="owner")
-    rid = client.post(
-        "/api/admin/rewards", json={"label": "big", "cost": 500}
-    ).json()["id"]
-    add_user("viewer")
-    db.credit_points(["viewer"], 100)
-    viewer = make_client()
-    login(viewer, "viewer")
-    resp = viewer.post("/api/redeem", json={"reward_id": rid})
+    viewer = _viewer_with_points(client, HIGHLIGHT_COST - 1)
+    resp = viewer.post("/api/redeem", json={"message": "hi"})
     assert resp.status_code == 400
     assert resp.json()["detail"] == "not enough points"
-    assert db.get_points("viewer") == 100          # balance untouched
+    assert db.get_points("viewer") == HIGHLIGHT_COST - 1    # balance untouched
 
 
-def test_redeem_unknown_reward_is_404(client):
-    setup_admin(client, username="owner")
-    add_user("viewer")
-    viewer = make_client()
-    login(viewer, "viewer")
-    assert viewer.post("/api/redeem", json={"reward_id": 9999}).status_code == 404
-    assert viewer.post("/api/redeem", json={"reward_id": "nope"}).status_code == 404
+def test_redeem_timed_out_viewer_is_forbidden(client):
+    # A timed-out viewer cannot highlight, checked through the same hub timeout
+    # the chat send path consults, and the spend never runs.
+    viewer = _viewer_with_points(client, 120)
+    hub.set_timeout("viewer", 300)
+    resp = viewer.post("/api/redeem", json={"message": "hi"})
+    assert resp.status_code == 403
+    assert db.get_points("viewer") == 120
+
+
+def test_redeem_banned_viewer_is_forbidden(client):
+    # A banned viewer is likewise refused, through the same hub ban set the chat
+    # send path consults.
+    viewer = _viewer_with_points(client, 120)
+    hub.add_ban_local("viewer")
+    resp = viewer.post("/api/redeem", json={"message": "hi"})
+    assert resp.status_code == 403
+    assert db.get_points("viewer") == 120
 
 
 def test_profile_reports_points(client):
@@ -658,31 +674,6 @@ def test_profile_reports_points(client):
     db.credit_points(["viewer"], 7)
     login(client, "owner")
     assert client.get("/api/profile/viewer").json()["points"] == 7
-
-
-def test_redeem_event_broadcast_reaches_a_watcher(client):
-    # Mirror the clip-event test: the redeem announcement is a plain hub
-    # broadcast, so a connected watcher (the overlay) receives its exact shape.
-    import asyncio
-
-    class FakeSocket:
-        def __init__(self):
-            self.sent = []
-
-        async def send_json(self, message):
-            self.sent.append(message)
-
-    sock = FakeSocket()
-    hub.add_watcher(sock)
-    try:
-        asyncio.run(hub.broadcast(
-            {"type": "redeem", "user": "Owner", "label": "hydrate", "cost": 50}
-        ))
-    finally:
-        hub.remove_watcher(sock)
-    assert sock.sent == [
-        {"type": "redeem", "user": "Owner", "label": "hydrate", "cost": 50}
-    ]
 
 
 def test_watch_points_accrue_once_per_user_and_only_when_live(client):

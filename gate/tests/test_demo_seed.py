@@ -58,8 +58,8 @@ def test_seed_empty_creates_everything(fresh_db):
     assert len(invites) == 1                                # one unredeemed code
     assert invites[0]["created_by"] == "demo"
 
-    rewards = db.list_rewards()
-    assert {r["label"] for r in rewards} == {"hydrate", "streamer does ten pushups"}
+    # One viewer gets a starting balance so the highlight redemption is usable.
+    assert db.get_points("viewer_one") == 120
 
 
 def test_seed_is_idempotent(fresh_db):
@@ -67,7 +67,7 @@ def test_seed_is_idempotent(fresh_db):
     demo_seed.seed()                                        # second run changes nothing
     assert db.count_users() == 3                            # no duplicate accounts
     assert len(_active_invites("try me")) == 1              # no duplicate invite
-    assert len(db.list_rewards()) == 2                      # no duplicate rewards
+    assert db.get_points("viewer_one") == 120               # balance not re-added
 
 
 def test_seed_refuses_real_install(fresh_db):
@@ -80,5 +80,4 @@ def test_seed_refuses_real_install(fresh_db):
     assert db.get_user("viewer_one") is None               # no viewers created
     assert db.count_users() == 1                            # untouched
     assert _active_invites("try me") == []                 # no invite minted
-    assert db.list_rewards() == []                         # no rewards seeded
     assert db.get_stream_info()["stream_title"] == "Live Stream"   # default kept

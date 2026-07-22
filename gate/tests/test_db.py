@@ -304,7 +304,7 @@ def test_stream_key_seeds_from_env_only_while_unset(tmp_path, monkeypatch):
     assert db.get_stream_key() == "legacy-obs-pass"
 
 
-# ---- channel points and rewards -------------------------------------------
+# ---- channel points -------------------------------------------------------
 
 def test_points_credit_dedupes_and_accumulates(fresh_db):
     db.add_user("alice", "Alice", "password1")
@@ -349,25 +349,6 @@ def test_spend_points_is_atomic_under_a_race(fresh_db):
 
     assert results.count(None) == 1               # exactly one was refused
     assert db.get_points("alice") == 40           # only one spend landed
-
-
-def test_rewards_crud(fresh_db):
-    assert db.list_rewards() == []
-    assert db.count_rewards() == 0
-    rid = db.add_reward("hydrate", 50)
-    assert db.get_reward(rid) == {"id": rid, "label": "hydrate", "cost": 50}
-    assert db.count_rewards() == 1
-    assert db.list_rewards() == [{"id": rid, "label": "hydrate", "cost": 50}]
-    assert db.delete_reward(rid) is True
-    assert db.get_reward(rid) is None
-    assert db.delete_reward(rid) is False         # already gone
-
-
-def test_rewards_are_listed_cheapest_first(fresh_db):
-    db.add_reward("big", 500)
-    db.add_reward("small", 50)
-    costs = [r["cost"] for r in db.list_rewards()]
-    assert costs == [50, 500]
 
 
 def test_clip_count_since(fresh_db):
