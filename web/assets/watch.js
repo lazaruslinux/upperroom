@@ -260,6 +260,15 @@ function renderSystem(msg) {
   addLine(line);
 }
 
+// A redemption reads as a system-style notice line, e.g. "Sam redeemed hydrate
+// (50)". textContent only, so a crafted reward label can never inject markup.
+function renderRedeem(msg) {
+  const line = document.createElement("div");
+  line.className = "msg system";
+  line.textContent = `${msg.user} redeemed ${msg.label} (${msg.cost})`;
+  addLine(line);
+}
+
 function renderPresence(msg) {
   lastViewerCount = msg.count;
   setViewerLabel();
@@ -286,6 +295,7 @@ function connectChat() {
     const msg = JSON.parse(event.data);
     if (msg.type === "chat") renderChat(msg);
     else if (msg.type === "system") renderSystem(msg);
+    else if (msg.type === "redeem") renderRedeem(msg);
     else if (msg.type === "presence") renderPresence(msg);
     else if (msg.type === "delete") applyDelete(msg.id);
     else if (msg.type === "wipe") messages.innerHTML = "";
@@ -395,6 +405,7 @@ const profileAvatar = document.getElementById("profile-avatar");
 const profileName = document.getElementById("profile-name");
 const profileBio = document.getElementById("profile-bio");
 const profileJoined = document.getElementById("profile-joined");
+const profilePoints = document.getElementById("profile-points");
 
 function formatJoined(ts) {
   // Date only, in the same compact M.D.YY style as chat timestamps.
@@ -414,6 +425,7 @@ async function openProfile(username) {
     profileName.textContent = data.name;
     profileBio.textContent = data.bio || "No bio yet.";
     profileJoined.textContent = formatJoined(data.joined);
+    profilePoints.textContent = data.points != null ? `pts ${data.points}` : "";
     openModal(profileModal);
   } catch {
     /* a failed lookup just does nothing */
@@ -550,6 +562,98 @@ clipSave.addEventListener("click", async () => {
   }
 });
 
+// ---- channel points and rewards ----
+
+const pointsChip = document.getElementById("points-chip");
+const rewardsModal = document.getElementById("rewards-modal");
+const rewardsList = document.getElementById("rewards-list");
+const rewardsBalance = document.getElementById("rewards-balance");
+const rewardsEmpty = document.getElementById("rewards-empty");
+const rewardsMsg = document.getElementById("rewards-msg");
+
+let myPoints = 0;
+let rewards = [];
+
+function setPoints(n) {
+  myPoints = n;
+  pointsChip.textContent = `pts ${n}`;
+  pointsChip.hidden = false;
+  rewardsBalance.textContent = `pts ${n}`;
+  renderRewards();
+}
+
+// Redeem buttons dim (and disable) when the balance will not cover the cost.
+function renderRewards() {
+  rewardsList.innerHTML = "";
+  rewardsEmpty.hidden = rewards.length > 0;
+  rewards.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "reward-row";
+    const info = document.createElement("span");
+    info.className = "reward-info";
+    const label = document.createElement("span");
+    label.className = "reward-label";
+    label.textContent = r.label;
+    const cost = document.createElement("span");
+    cost.className = "reward-cost muted";
+    cost.textContent = `pts ${r.cost}`;
+    info.append(label, cost);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip-btn";
+    btn.textContent = "Redeem";
+    btn.disabled = myPoints < r.cost;
+    btn.addEventListener("click", () => redeem(r, btn));
+    row.append(info, btn);
+    rewardsList.appendChild(row);
+  });
+}
+
+async function loadRewards() {
+  try {
+    const data = await (await fetch("/api/rewards")).json();
+    rewards = data.rewards || [];
+    setPoints(data.points || 0);
+  } catch {
+    /* leave the chip as it is */
+  }
+}
+
+async function redeem(reward, btn) {
+  rewardsMsg.hidden = true;
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reward_id: reward.id }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      setPoints(data.points);   // renderRewards re-runs, re-enabling what fits
+      showRewardsMsg(`Redeemed ${reward.label}.`, true);
+    } else {
+      showRewardsMsg(data.detail || "Could not redeem that.", false);
+      renderRewards();
+    }
+  } catch {
+    showRewardsMsg("Could not reach the server.", false);
+    renderRewards();
+  }
+}
+
+function showRewardsMsg(text, ok) {
+  rewardsMsg.className = "pw-msg " + (ok ? "ok" : "bad");
+  rewardsMsg.textContent = text;
+  rewardsMsg.hidden = false;
+}
+
+pointsChip.addEventListener("click", () => {
+  rewardsMsg.hidden = true;
+  openModal(rewardsModal);
+  loadRewards();   // fetch fresh balance and rewards each time it opens
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
   // Let moderators and admins know the commands exist, without cluttering chat
@@ -558,6 +662,7 @@ async function boot() {
     chatInput.placeholder = "say something, or /help";
   }
   loadMyProfile();
+  loadRewards();
   connectChat();
   checkStream();
 }
