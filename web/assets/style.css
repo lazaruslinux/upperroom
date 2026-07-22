@@ -753,7 +753,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 /* highlight composer: current balance, a cost note, and the message field */
 .highlight-balance { font-family: var(--mono); font-size: 12px; color: var(--accent); margin: 0 0 4px; }
 .highlight-note { font-size: 12px; margin: 0 0 12px; }
-.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans); }
+input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans); }
 
 /* a highlighted message someone spent points on: accent border, square corners,
    no glow, sitting inline with the other chat lines */
