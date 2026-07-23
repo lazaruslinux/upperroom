@@ -23,7 +23,7 @@ from auth import (
 )
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
-    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_STREAM_TITLE, MIN_PASSWORD,
+    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_SITE_NAME, MIN_PASSWORD,
     SAFE_USERNAME, SESSION_HOURS,
 )
 from hub import hub
@@ -85,6 +85,7 @@ def channel(request: Request):
     info = db.get_stream_info()
     owner = db.channel_owner()
     base = {
+        "site_name": info["site_name"],
         "title": info["stream_title"],
         "description": info["stream_description"],
         "clip_cooldown_user": info["clip_cooldown_user"],
@@ -225,10 +226,12 @@ async def setup(request: Request):
             status_code=400,
         )
     display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
-    channel_name = (body.get("channel_name") or "").strip()[:MAX_STREAM_TITLE]
-    if not channel_name:
+    # The wizard's one name field is the site name (the operator's brand); older
+    # clients sent it as channel_name, so accept either.
+    site_name = (body.get("site_name") or body.get("channel_name") or "").strip()[:MAX_SITE_NAME]
+    if not site_name:
         return JSONResponse(
-            {"error": "Channel name cannot be empty."}, status_code=400
+            {"error": "Site name cannot be empty."}, status_code=400
         )
 
     # The insert is guarded to fire only on an empty users table, so even a race
@@ -237,7 +240,7 @@ async def setup(request: Request):
         return JSONResponse(
             {"error": "Setup is already complete."}, status_code=403
         )
-    db.set_stream_info(title=channel_name)
+    db.set_stream_info(site_name=site_name)
     return _signed_in_response(db.get_user(username))
 
 

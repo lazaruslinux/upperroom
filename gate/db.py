@@ -69,6 +69,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_log (ts);
 -- the home card and stamped onto each VOD when a broadcast begins. A single row.
 CREATE TABLE IF NOT EXISTS channel_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- The operator's own brand, shown leading the visitor pages next to
+    -- "powered by upperroom". Distinct from stream_title (the per-broadcast
+    -- title): this is the permanent site identity. Defaults to the platform
+    -- name until the operator sets their own.
+    site_name TEXT NOT NULL DEFAULT 'upperroom',
     stream_title TEXT NOT NULL DEFAULT 'Live Stream',
     stream_description TEXT NOT NULL DEFAULT '',
     -- Per-role minimum minutes between clips (0 disables the cooldown for that
@@ -213,6 +218,9 @@ def init_db():
         # Provenance: which invite code (if any) this account was created from.
         _ensure_column(conn, "users", "invite_code", "TEXT")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
+        _ensure_column(
+            conn, "channel_settings", "site_name", "TEXT NOT NULL DEFAULT 'upperroom'"
+        )
         _ensure_column(
             conn, "channel_settings", "clip_cooldown_user", "INTEGER NOT NULL DEFAULT 15"
         )
@@ -402,12 +410,13 @@ def get_stream_info():
     cooldowns in minutes."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT stream_title, stream_description, clip_cooldown_user, "
+            "SELECT site_name, stream_title, stream_description, clip_cooldown_user, "
             "clip_cooldown_mod, clip_cooldown_admin, accent "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
             return {
+                "site_name": "upperroom",
                 "stream_title": "Live Stream",
                 "stream_description": "",
                 "clip_cooldown_user": 15,
@@ -418,11 +427,14 @@ def get_stream_info():
         return dict(row)
 
 
-def set_stream_info(title=None, description=None, clip_cooldown_user=None,
-                    clip_cooldown_mod=None, clip_cooldown_admin=None,
-                    accent=None):
+def set_stream_info(site_name=None, title=None, description=None,
+                    clip_cooldown_user=None, clip_cooldown_mod=None,
+                    clip_cooldown_admin=None, accent=None):
     sets = []
     values = []
+    if site_name is not None:
+        sets.append("site_name = ?")
+        values.append(site_name)
     if title is not None:
         sets.append("stream_title = ?")
         values.append(title)

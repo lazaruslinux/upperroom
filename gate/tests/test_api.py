@@ -134,12 +134,14 @@ def test_setup_status_flips_once_an_account_exists(client):
     assert client.get("/api/setup").json() == {"needs_setup": False}
 
 
-def test_setup_creates_admin_names_channel_and_signs_in(client):
+def test_setup_creates_admin_names_site_and_signs_in(client):
     resp = setup_admin(client, username="owner", channel="Room One")
     assert COOKIE_NAME in resp.cookies
     row = db.get_user("owner")
     assert row["is_admin"] == 1
-    assert db.get_stream_info()["stream_title"] == "Room One"
+    # The wizard's one name field is the site name (the operator's brand), not the
+    # per-broadcast stream title, which keeps its default until an admin edits it.
+    assert db.get_stream_info()["site_name"] == "Room One"
     # The returned cookie is a working session straight away.
     assert client.get("/api/verify").status_code == 200
 
@@ -542,6 +544,35 @@ def test_status_exposes_accent(client):
     client.post("/api/stream-info", json={"title": "x", "accent": "ghost"})
     body = client.get("/api/status").json()
     assert body["accent"] == "ghost"
+
+
+# ---- 7c. Site name (the operator's brand) ---------------------------------
+
+def test_stream_info_accepts_and_validates_site_name(client):
+    setup_admin(client, channel="Old Name")
+    ok = client.post("/api/stream-info", json={"site_name": "Northwind Live"})
+    assert ok.status_code == 200
+    assert db.get_stream_info()["site_name"] == "Northwind Live"
+    # An empty site name is refused and the stored value is left as it was.
+    bad = client.post("/api/stream-info", json={"site_name": "   "})
+    assert bad.status_code == 400
+    assert db.get_stream_info()["site_name"] == "Northwind Live"
+
+
+def test_site_name_is_clamped_to_max_length(client):
+    from config import MAX_SITE_NAME
+    setup_admin(client)
+    client.post("/api/stream-info", json={"site_name": "z" * (MAX_SITE_NAME + 50)})
+    assert len(db.get_stream_info()["site_name"]) == MAX_SITE_NAME
+
+
+def test_site_name_surfaces_on_public_status_and_channel(client):
+    # The login page (pre-auth) reads it from /api/status; signed-in pages read it
+    # from /api/channel. Both must carry the operator's brand.
+    setup_admin(client)
+    client.post("/api/stream-info", json={"site_name": "Northwind Live"})
+    assert client.get("/api/status").json()["site_name"] == "Northwind Live"
+    assert client.get("/api/channel").json()["site_name"] == "Northwind Live"
 
 
 # ---- 8. Session-gated media endpoints -------------------------------------

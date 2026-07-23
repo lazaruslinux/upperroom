@@ -1,5 +1,5 @@
 // First-run setup wizard. Creates the first account as admin and names the
-// channel. On success the gate signs the account in and sends it to the home
+// site. On success the gate signs the account in and sends it to the home
 // page. If setup is already done (any account exists) this page redirects to the
 // login page: the wizard is a one-time bootstrap.
 
@@ -43,7 +43,7 @@ form.addEventListener("submit", async (event) => {
     username: document.getElementById("username").value,
     display_name: document.getElementById("display-name").value,
     password: document.getElementById("password").value,
-    channel_name: document.getElementById("channel-name").value,
+    site_name: document.getElementById("site-name").value,
   };
   let reply;
   try {

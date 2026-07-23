@@ -186,14 +186,18 @@ async def status():
     # long it has been running.
     data = await fetch_path()
     watching = len(hub.viewers())
-    # accent is public here so pre-login pages (the login screen) can paint the
-    # channel's brand color before any session exists.
-    accent = db.get_stream_info()["accent"]
+    # accent and site_name are public here so pre-login pages (the login screen)
+    # can paint the channel's brand color and show the operator's site name before
+    # any session exists.
+    info = db.get_stream_info()
+    accent = info["accent"]
+    site_name = info["site_name"]
     if data and data.get("ready", False):
         return {
             "online": True,
             "since": ready_epoch(data.get("readyTime")),
             "watching": watching,
             "accent": accent,
+            "site_name": site_name,
         }
-    return {"online": False, "watching": watching, "accent": accent}
+    return {"online": False, "watching": watching, "accent": accent, "site_name": site_name}

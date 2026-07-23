@@ -602,6 +602,7 @@ document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
 
 // ---- channel settings (title, description, clip cooldowns) ----
 
+const chSite = document.getElementById("ch-site");
 const chTitle = document.getElementById("ch-title");
 const chDesc = document.getElementById("ch-desc");
 const chCdUser = document.getElementById("ch-cd-user");
@@ -638,6 +639,7 @@ function showChMsg(text, ok) {
 async function loadChannel() {
   let data = {};
   try { data = await (await fetch("/api/channel")).json(); } catch { return; }
+  chSite.value = data.site_name || "";
   chTitle.value = data.title || "";
   chDesc.value = data.description || "";
   chCdUser.value = data.clip_cooldown_user != null ? data.clip_cooldown_user : 15;
@@ -647,6 +649,8 @@ async function loadChannel() {
 }
 
 document.getElementById("ch-save").addEventListener("click", async () => {
+  const siteName = chSite.value.trim();
+  if (!siteName) { showChMsg("Site name cannot be empty.", false); return; }
   const title = chTitle.value.trim();
   if (!title) { showChMsg("Stream title cannot be empty.", false); return; }
   const u = parseInt(chCdUser.value, 10);
@@ -659,7 +663,7 @@ document.getElementById("ch-save").addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title, description: chDesc.value.trim(),
+        site_name: siteName, title, description: chDesc.value.trim(),
         clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a,
         accent,
       }),

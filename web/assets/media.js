@@ -259,9 +259,22 @@ function applyAccent(value) {
   }
 }
 
+// The operator's site name leads the top bar and names the browser tab, so the
+// platform brand ("powered by upperroom") stays a credit rather than the title.
+function applySiteName(value) {
+  if (!value) return;
+  const el = document.getElementById("site-title");
+  if (el) el.textContent = value;
+  document.title = value;
+}
+
 async function boot() {
   if (!(await requireAuth())) return;
-  try { applyAccent((await (await fetch("/api/status")).json()).accent); } catch (e) {}
+  try {
+    const status = await (await fetch("/api/status")).json();
+    applyAccent(status.accent);
+    applySiteName(status.site_name);
+  } catch (e) {}
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
 }

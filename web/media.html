@@ -9,11 +9,14 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=24">
+  <link rel="stylesheet" href="/assets/style.css?v=25">
 </head>
 <body class="media">
   <header class="home-bar">
-    <div class="brand">upperroom<span class="cursor">▮</span></div>
+    <div class="brand brand-column">
+      <span id="site-title">upperroom</span>
+      <span class="powered">powered by <span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span></span>
+    </div>
     <nav class="home-actions">
       <a href="/home" class="ghost-btn">home</a>
     </nav>
@@ -40,6 +43,6 @@
     </aside>
   </main>
 
-  <script src="/assets/media.js?v=4"></script>
+  <script src="/assets/media.js?v=5"></script>
 </body>
 </html>

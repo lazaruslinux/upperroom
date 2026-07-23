@@ -115,6 +115,8 @@ async function checkStream() {
   const reply = await fetch("/api/status");
   const data = await reply.json();
   applyAccent(data.accent);
+  // Name the browser tab after the operator's site, not the platform.
+  if (data.site_name && document.title !== data.site_name) document.title = data.site_name;
   if (data.online && !hls) {
     startVideo();
   } else if (!data.online) {

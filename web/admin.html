@@ -9,11 +9,11 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=24">
+  <link rel="stylesheet" href="/assets/style.css?v=25">
 </head>
 <body class="admin">
   <header class="home-bar">
-    <div class="brand">upperroom<span class="cursor">▮</span> <span class="admin-tag">admin</span></div>
+    <div class="brand"><span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span> <span class="admin-tag">admin</span></div>
     <nav class="home-actions">
       <a href="/home" class="ghost-btn">home</a>
       <button id="new-user" type="button" class="solid-btn">+ new user</button>
@@ -46,6 +46,10 @@
 
     <h2 class="section-title" style="margin-top:1.75rem;">Channel</h2>
     <div class="notify-panel">
+      <label>Site name
+        <input id="ch-site" type="text" maxlength="60" placeholder="Your brand, e.g. Northwind Live" autocomplete="off">
+      </label>
+      <span class="muted">Shown leading the login and home pages, next to "powered by upperroom".</span>
       <label>Stream title
         <input id="ch-title" type="text" maxlength="100" placeholder="What you're streaming" autocomplete="off">
       </label>
@@ -220,6 +224,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=12"></script>
+  <script src="/assets/admin.js?v=13"></script>
 </body>
 </html>

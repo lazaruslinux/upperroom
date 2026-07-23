@@ -49,6 +49,10 @@ VIEWERS = (
     ("viewer_two", "Viewer Two"),
 )
 
+# The operator's brand, shown leading the visitor pages next to "powered by
+# upperroom". A placeholder name so the demo shows off the two-layer brand: the
+# site name up top, the per-broadcast stream title on the card below.
+SITE_NAME = "Northwind Live"
 STREAM_TITLE = "Demo Stream"
 STREAM_DESCRIPTION = (
     "A synthetic broadcast so you can explore the site with live video, chat, "
@@ -115,8 +119,10 @@ def seed():
 
     # The title and description shown on the home card and stamped onto the demo
     # recording. Setting the single settings row is safe to repeat.
-    db.set_stream_info(title=STREAM_TITLE, description=STREAM_DESCRIPTION)
-    logger.info("set stream title %r", STREAM_TITLE)
+    db.set_stream_info(
+        site_name=SITE_NAME, title=STREAM_TITLE, description=STREAM_DESCRIPTION
+    )
+    logger.info("set site name %r and stream title %r", SITE_NAME, STREAM_TITLE)
 
     # One unredeemed invite so the login-page invite flow is demonstrable. Only
     # mint a fresh code if no active (unredeemed, unrevoked) "try me" code exists.

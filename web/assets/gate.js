@@ -108,6 +108,16 @@ function applyAccent(value) {
   }
 }
 
+// The operator's site name also rides the public status poll, so the login page
+// shows their brand (leading "livestream powered by upperroom") before anyone
+// signs in. Falls back to the static "upperroom" already in the markup.
+function applySiteName(value) {
+  if (!value) return;
+  const el = document.getElementById("site-title");
+  if (el && el.textContent !== value) el.textContent = value;
+  if (document.title !== value) document.title = value;
+}
+
 const statusBox = document.getElementById("status");
 const statusLabel = document.getElementById("status-label");
 const statusTime = document.getElementById("status-time");
@@ -136,6 +146,7 @@ async function refreshStatus() {
     online = !!data.online;
     since = data.since;
     applyAccent(data.accent);
+    applySiteName(data.site_name);
   } catch {
     online = false;
   }

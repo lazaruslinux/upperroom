@@ -10,7 +10,7 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=24">
+  <link rel="stylesheet" href="/assets/style.css?v=25">
 </head>
 <body class="center">
   <main class="card">
@@ -19,7 +19,10 @@
       <span id="status-label">Checking status…</span>
       <span id="status-time" class="status-time"></span>
     </div>
-    <h1 class="brand">upperroom<span class="cursor">▮</span></h1>
+    <div class="masthead">
+      <h1 class="site-title" id="site-title">upperroom</h1>
+      <p class="powered">livestream powered by <span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span></p>
+    </div>
     <p class="muted">&gt; sign in</p>
     <form id="login-form" autocomplete="off">
       <input type="text" id="username" placeholder="Username" autocomplete="off" required>
@@ -45,6 +48,6 @@
       </p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=15"></script>
+  <script src="/assets/gate.js?v=16"></script>
 </body>
 </html>

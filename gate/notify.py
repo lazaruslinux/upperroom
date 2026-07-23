@@ -60,7 +60,7 @@ def _send_emails_blocking(recipients, subject, body):
         logger.warning("go-live email relay failed: %r", exc)
 
 
-async def send_live_emails(title):
+async def send_live_emails(title, site_name="upperroom"):
     """Email everyone who opted in that the channel is live. No-op unless an SMTP
     relay is configured and at least one account has an address."""
     if not (SMTP_HOST and SMTP_FROM):
@@ -73,7 +73,7 @@ async def send_live_emails(title):
         lines += ["", f"Watch: {SITE_URL}/home"]
     body = "\n".join(lines)
     await asyncio.to_thread(
-        _send_emails_blocking, recipients, "upperroom is live", body
+        _send_emails_blocking, recipients, f"{site_name} is live", body
     )
 
 
@@ -92,9 +92,10 @@ async def notify_live(force=False):
         db.mark_notified(now)
     info = db.get_stream_info()
     title = info["stream_title"] or "Live Stream"
+    site_name = info["site_name"] or "upperroom"
     discord_text = f"**{title}** is live now."
     if SITE_URL:
         discord_text += f"\n{SITE_URL}/home"
     logger.info("announcing go-live%s", " (test)" if force else "")
     await send_discord(settings["discord_webhook"], discord_text)
-    await send_live_emails(title)
+    await send_live_emails(title, site_name)

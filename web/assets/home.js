@@ -78,6 +78,13 @@ function setupIdentity() {
 // shows their name, @username, and avatar.
 function renderChannel() {
   if (!channel) return;
+  // The operator's site name leads the top bar (above "powered by upperroom")
+  // and names the browser tab. Distinct from the stream title on the card below.
+  if (channel.site_name) {
+    const siteTitle = document.getElementById("site-title");
+    if (siteTitle) siteTitle.textContent = channel.site_name;
+    document.title = channel.site_name;
+  }
   const fresh = avatarNode(channel.username, channel.name, channel.avatar || 0, "card-avatar");
   document.querySelector(".card-avatar").replaceWith(fresh);
   if (channel.title) cardTitle.textContent = channel.title;

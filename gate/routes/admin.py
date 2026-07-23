@@ -14,8 +14,9 @@ from fastapi.responses import JSONResponse
 import db
 from auth import _clean_username, admin_user
 from config import (
-    MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL, MAX_STREAM_DESC,
-    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
+    MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL, MAX_SITE_NAME,
+    MAX_STREAM_DESC, MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM,
+    SMTP_HOST,
 )
 from hub import hub
 from notify import notify_live
@@ -30,6 +31,13 @@ async def set_stream_info(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     body = await request.json()
+    site_name = None
+    if "site_name" in body:
+        site_name = str(body.get("site_name") or "").strip()[:MAX_SITE_NAME]
+        if not site_name:
+            return JSONResponse(
+                {"error": "Site name cannot be empty."}, status_code=400
+            )
     title = None
     if "title" in body:
         title = str(body.get("title") or "").strip()[:MAX_STREAM_TITLE]
@@ -61,7 +69,7 @@ async def set_stream_info(request: Request):
             )
 
     db.set_stream_info(
-        title=title, description=description,
+        site_name=site_name, title=title, description=description,
         clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
         clip_cooldown_admin=cd_admin, accent=accent,
     )
