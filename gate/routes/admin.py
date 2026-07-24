@@ -14,9 +14,9 @@ from fastapi.responses import JSONResponse
 import db
 from auth import _clean_username, admin_user
 from config import (
-    MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL, MAX_SITE_NAME,
-    MAX_STREAM_DESC, MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM,
-    SMTP_HOST,
+    MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL,
+    MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE,
+    MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from notify import notify_live
@@ -73,6 +73,36 @@ async def set_stream_info(request: Request):
         clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
         clip_cooldown_admin=cd_admin, accent=accent,
     )
+    return {"ok": True}
+
+
+@router.get("/api/admin/moderation")
+def get_moderation(request: Request):
+    # The chat moderation settings for the admin panel. Kept off the public
+    # endpoints so the banned-words list is never exposed to viewers.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return db.get_chat_moderation()
+
+
+@router.post("/api/admin/moderation")
+async def set_moderation(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    slow = None
+    if "slow_mode_seconds" in body:
+        try:
+            slow = max(0, min(MAX_SLOW_SECONDS, int(body["slow_mode_seconds"])))
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "Slow mode must be a whole number of seconds."},
+                status_code=400,
+            )
+    words = None
+    if "banned_words" in body:
+        words = str(body.get("banned_words") or "")[:MAX_BANNED_WORDS_LEN]
+    db.set_chat_moderation(slow_mode_seconds=slow, banned_words=words)
     return {"ok": True}
 
 

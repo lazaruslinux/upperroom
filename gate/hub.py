@@ -34,6 +34,7 @@ class Hub:
         self._live = False            # whether the stream is currently live
         self._timeouts = {}           # username -> epoch until which they are muted
         self._banned = set()          # usernames with a persistent chat ban
+        self._last_post = {}          # username -> epoch of last message, for slow mode
 
     def viewers(self):
         # One entry per person, even if they have several tabs open.
@@ -47,6 +48,7 @@ class Hub:
                 "avatar": w.get("avatar", 0),
                 "admin": bool(w.get("admin")),
                 "mod": bool(w.get("mod")),
+                "name_color": w.get("name_color", ""),
             }
             for w in seen.values()
         ]
@@ -149,6 +151,8 @@ class Hub:
             "mod": who.get("mod", False),
             "avatar": who.get("avatar", 0),
             "font": who.get("font", "system"),
+            "name_color": who.get("name_color", ""),
+            "msg_color": who.get("msg_color", ""),
             "text": text,
             "ts": ts,
         }
@@ -183,6 +187,21 @@ class Hub:
     def is_banned(self, username):
         return username in self._banned
 
+    def slow_wait(self, username, interval):
+        """Seconds a viewer must still wait before their next message under slow
+        mode, or 0 if they may post now. interval<=0 means slow mode is off."""
+        if interval <= 0:
+            return 0
+        last = self._last_post.get(username)
+        if not last:
+            return 0
+        remaining = interval - (int(time.time()) - last)
+        return remaining if remaining > 0 else 0
+
+    def record_post(self, username):
+        """Stamp a viewer's last-message time, used by slow mode."""
+        self._last_post[username] = int(time.time())
+
     def add_ban_local(self, username):
         self._banned.add(username)
 
@@ -207,6 +226,42 @@ class Hub:
                 logger.debug("mark_chat_deleted failed", exc_info=True)
         await self.broadcast({"type": "delete", "id": target.get("id")})
         return target
+
+    async def delete_all_by(self, username, by):
+        """Mark every visible message from a user as deleted, in the backlog and
+        on every open page (a moderator's /purge). Returns the count of logged
+        rows newly marked deleted."""
+        for message in self._history:
+            if message.get("user") == username and not message.get("deleted"):
+                message["deleted"] = True
+                if message.get("id"):
+                    await self.broadcast({"type": "delete", "id": message.get("id")})
+        try:
+            return db.mark_all_chat_deleted(username, by)
+        except Exception:
+            logger.debug("mark_all_chat_deleted failed", exc_info=True)
+            return 0
+
+    async def delete_by_id(self, msg_id, by, actor_is_admin):
+        """Mark one specific message (by id) as deleted, for the hover-to-delete
+        button. A non-admin cannot delete an admin's line. Returns 'ok',
+        'forbidden', or None when the id is not in the live backlog."""
+        target = None
+        for message in self._history:
+            if message.get("id") == msg_id and not message.get("deleted"):
+                target = message
+                break
+        if not target:
+            return None
+        if target.get("admin") and not actor_is_admin:
+            return "forbidden"
+        target["deleted"] = True
+        try:
+            db.mark_chat_deleted(msg_id, by)
+        except Exception:
+            logger.debug("mark_chat_deleted failed", exc_info=True)
+        await self.broadcast({"type": "delete", "id": msg_id})
+        return "ok"
 
     async def update_role(self, username, mod=None):
         """Reflect a role change on a user's open sockets so their next message
@@ -262,10 +317,11 @@ class Hub:
         logger.info("chat wiped")
         await self.broadcast({"type": "wipe"})
 
-    async def update_member(self, username, avatar=None, font=None, name=None):
-        # A viewer changed their avatar, chat font, or display name mid-session.
-        # Point their open sockets at the new value so their next messages and
-        # the watching list reflect it, without making them reconnect.
+    async def update_member(self, username, avatar=None, font=None, name=None,
+                            name_color=None, msg_color=None):
+        # A viewer changed their avatar, chat font, display name, or chat colors
+        # mid-session. Point their open sockets at the new value so their next
+        # messages and the watching list reflect it, without a reconnect.
         for who in self._sockets.values():
             if who["username"] == username:
                 if avatar is not None:
@@ -274,6 +330,10 @@ class Hub:
                     who["font"] = font
                 if name is not None:
                     who["name"] = name
+                if name_color is not None:
+                    who["name_color"] = name_color
+                if msg_color is not None:
+                    who["msg_color"] = msg_color
         await self.broadcast(self.presence_message())
 
 

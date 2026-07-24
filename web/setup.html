@@ -10,12 +10,12 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=25">
+  <link rel="stylesheet" href="/assets/style.css?v=26">
 </head>
 <body class="center">
   <main class="card">
-    <h1 class="brand"><span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span></h1>
-    <p class="muted">&gt; first-run setup</p>
+    <h1 class="brand"><span class="wordmark">upper<span class="wm-accent">room</span></span></h1>
+    <p class="muted">first-run setup</p>
     <p class="setup-intro muted">This creates the first account as the admin and names the site. It runs only once.</p>
     <form id="setup-form" autocomplete="off">
       <input type="text" id="username" placeholder="Username" autocomplete="off" required>

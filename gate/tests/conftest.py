@@ -66,4 +66,5 @@ def client(tmp_path, monkeypatch):
     hub._history.clear()
     hub._timeouts.clear()
     hub._banned.clear()
+    hub._last_post.clear()
     return make_client()

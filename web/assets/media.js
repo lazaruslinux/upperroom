@@ -53,12 +53,25 @@ function avatarNode(username, name, version) {
   return span;
 }
 
-// Square mono text tag: amber "op" for admin, blue "mod" for moderator.
+// The host (admin) shows a bright-red video-camera icon; a moderator shows a
+// small blue "mod" tag. Matches the live chat marks.
+const CAMERA_SVG =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">' +
+  '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9A1.5 1.5 0 0 1 13.5 18h-9' +
+  'A1.5 1.5 0 0 1 3 16.5v-9Zm14 3 3.25-2.17a.6.6 0 0 1 .95.5v6.34a.6.6 0 0 1-.95.5L17 13.5v-3Z"/></svg>';
+
 function roleBadgeNode(admin, mod) {
   if (!admin && !mod) return null;
   const span = document.createElement("span");
-  span.className = "role-tag " + (admin ? "op" : "mod");
-  span.textContent = admin ? "op" : "mod";
+  if (admin) {
+    span.className = "role-tag host";
+    span.title = "Broadcaster";
+    span.innerHTML = CAMERA_SVG;   // a static, trusted icon; no user data
+  } else {
+    span.className = "role-tag mod";
+    span.title = "Moderator";
+    span.textContent = "mod";
+  }
   return span;
 }
 

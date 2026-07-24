@@ -39,7 +39,12 @@ CREATE TABLE IF NOT EXISTS users (
     notify_live INTEGER NOT NULL DEFAULT 1,
     -- Channel points, earned by watching the stream live and spent to highlight
     -- a short message on stream.
-    points INTEGER NOT NULL DEFAULT 0
+    points INTEGER NOT NULL DEFAULT 0,
+    -- Optional per-viewer chat colors: the display-name color and the message
+    -- text color, each a validated "#rrggbb" or empty for the theme default.
+    -- They ride along on the viewer's messages so everyone sees them.
+    name_color TEXT NOT NULL DEFAULT '',
+    msg_color TEXT NOT NULL DEFAULT ''
 );
 
 -- One row per time someone opened the watch page. left_at is filled in when
@@ -97,7 +102,12 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- to the gate, which checks this value. Nullable until first generated (or
     -- seeded from PUBLISH_PASS on an upgrade); regenerating it takes effect from
     -- the next connect and never kicks a live broadcast.
-    stream_key TEXT
+    stream_key TEXT,
+    -- Chat moderation. slow_mode_seconds is the minimum gap between messages for
+    -- a plain viewer (0 = off; mods and admins are exempt). banned_words is a
+    -- newline/comma separated list; a message containing any of them is dropped.
+    slow_mode_seconds INTEGER NOT NULL DEFAULT 0,
+    banned_words TEXT NOT NULL DEFAULT ''
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -215,6 +225,8 @@ def init_db():
         _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "notify_live", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "users", "points", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "name_color", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "users", "msg_color", "TEXT NOT NULL DEFAULT ''")
         # Provenance: which invite code (if any) this account was created from.
         _ensure_column(conn, "users", "invite_code", "TEXT")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
@@ -241,6 +253,12 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        _ensure_column(
+            conn, "channel_settings", "slow_mode_seconds", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "banned_words", "TEXT NOT NULL DEFAULT ''"
+        )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
         # same lightweight in-init migration as the column adds above.
@@ -465,6 +483,36 @@ def set_stream_info(site_name=None, title=None, description=None,
         )
 
 
+def get_chat_moderation():
+    """The admin-only chat moderation settings: the slow-mode interval in seconds
+    (0 = off) and the banned-words list. Kept out of get_stream_info so the
+    banned-words list never rides a public endpoint."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT slow_mode_seconds, banned_words FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"slow_mode_seconds": 0, "banned_words": ""}
+        return dict(row)
+
+
+def set_chat_moderation(slow_mode_seconds=None, banned_words=None):
+    sets = []
+    values = []
+    if slow_mode_seconds is not None:
+        sets.append("slow_mode_seconds = ?")
+        values.append(int(slow_mode_seconds))
+    if banned_words is not None:
+        sets.append("banned_words = ?")
+        values.append(banned_words)
+    if not sets:
+        return
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE channel_settings SET {', '.join(sets)} WHERE id = 1", values
+        )
+
+
 def get_notify_settings():
     """The channel's go-live notification settings: the Discord webhook URL and
     the epoch of the last announcement (used for the cooldown)."""
@@ -588,6 +636,26 @@ def set_chat_font(username, font):
         )
 
 
+def set_chat_colors(username, name_color=None, msg_color=None):
+    """Store a viewer's chosen chat colors. Each argument is a validated
+    "#rrggbb" string or "" to clear it; None leaves that column unchanged."""
+    sets = []
+    values = []
+    if name_color is not None:
+        sets.append("name_color = ?")
+        values.append(name_color)
+    if msg_color is not None:
+        sets.append("msg_color = ?")
+        values.append(msg_color)
+    if not sets:
+        return
+    values.append(username)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE users SET {', '.join(sets)} WHERE username = ?", values
+        )
+
+
 def set_bio(username, bio):
     with connect() as conn:
         conn.execute("UPDATE users SET bio = ? WHERE username = ?", (bio, username))
@@ -609,12 +677,14 @@ def set_notify_live(username, on):
 
 
 def list_live_recipients():
-    """Email addresses to notify when the channel goes live: accounts that have
-    an address and have not opted out. Returns a list of (display_name, email)."""
+    """Email addresses to notify when the channel goes live: non-admin accounts
+    that have an address and have not opted out. Admins run the broadcast, so
+    they are never emailed that their own stream is live. Returns a list of
+    (display_name, email)."""
     with connect() as conn:
         rows = conn.execute(
             "SELECT display_name, email FROM users "
-            "WHERE notify_live = 1 AND email != ''"
+            "WHERE notify_live = 1 AND email != '' AND is_admin = 0"
         ).fetchall()
         return [(r["display_name"], r["email"]) for r in rows]
 
@@ -883,6 +953,19 @@ def mark_chat_deleted(msg_id, by):
         conn.execute(
             "UPDATE chat_log SET deleted_by = ? WHERE id = ?", (by, msg_id)
         )
+
+
+def mark_all_chat_deleted(username, by):
+    """Flag every not-yet-deleted logged message from a user as removed, for a
+    moderator's /purge. Rows stay in the log, labeled as deleted. Returns the
+    number of rows affected."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE chat_log SET deleted_by = ? "
+            "WHERE username = ? AND deleted_by IS NULL",
+            (by, username),
+        )
+        return cur.rowcount
 
 
 def purge_old_chat(cutoff):

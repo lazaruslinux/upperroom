@@ -59,8 +59,8 @@ async function requireAuth() {
 
 function renderGreeting() {
   const name = (me.name || me.username || "there").split(" ")[0];
-  // Prompt-style line: "> signed in as name", with the name in accent green.
-  greeting.textContent = "> signed in as ";
+  // "signed in as name", with the name in the accent color.
+  greeting.textContent = "signed in as ";
   const who = document.createElement("b");
   who.textContent = name;
   greeting.appendChild(who);
@@ -327,14 +327,30 @@ const emailPromptInput = document.getElementById("email-prompt-input");
 const emailPromptMsg = document.getElementById("email-prompt-msg");
 
 function maybePromptEmail() {
+  if (me.admin) return;                                   // the host runs the stream
   if (me.email) return;                                   // already has one
   try { if (localStorage.getItem(EMAIL_PROMPT_KEY)) return; } catch {}
   openModal(emailModal);
   emailPromptInput.focus();
 }
 
-document.getElementById("email-ignore").addEventListener("click", () => {
-  try { localStorage.setItem(EMAIL_PROMPT_KEY, "1"); } catch {}
+// Dismissing the prompt honors the "Don't show this again" checkbox (checked by
+// default, so by default the nudge appears at most once). Unchecking it lets the
+// prompt return on a later login. Runs on every close path: Not now, the
+// backdrop, and Escape.
+function rememberEmailDismissal() {
+  const dontShow = document.getElementById("email-dont-show");
+  if (dontShow && dontShow.checked) {
+    try { localStorage.setItem(EMAIL_PROMPT_KEY, "1"); } catch {}
+  }
+}
+
+document.getElementById("email-ignore").addEventListener("click", rememberEmailDismissal);
+emailModal.addEventListener("click", (e) => {
+  if (e.target === emailModal || e.target.hasAttribute("data-close")) rememberEmailDismissal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !emailModal.hidden) rememberEmailDismissal();
 });
 
 document.getElementById("email-prompt-save").addEventListener("click", async () => {

@@ -10,13 +10,13 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=25">
+  <link rel="stylesheet" href="/assets/style.css?v=26">
 </head>
 <body class="home">
   <header class="home-bar">
     <div class="brand brand-column">
       <span id="site-title">upperroom</span>
-      <span class="powered">powered by <span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span></span>
+      <span class="powered">powered by <span class="wordmark">upper<span class="wm-accent">room</span></span></span>
     </div>
     <nav class="home-actions">
       <button id="settings-btn" type="button" class="ghost-btn">settings</button>
@@ -142,6 +142,7 @@
       <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime in Settings.</p>
       <input id="email-prompt-input" type="email" placeholder="name@example.com" autocomplete="email">
       <p id="email-prompt-msg" class="pw-msg"></p>
+      <label class="check-line"><input id="email-dont-show" type="checkbox" checked> Don't show this again</label>
       <div class="crop-actions">
         <button id="email-ignore" type="button" class="pill" data-close>Not now</button>
         <button id="email-prompt-save" type="button" class="pill primary">Save</button>
@@ -164,6 +165,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=11"></script>
+  <script src="/assets/home.js?v=12"></script>
 </body>
 </html>

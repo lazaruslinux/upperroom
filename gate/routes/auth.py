@@ -24,7 +24,7 @@ from auth import (
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
     MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_SITE_NAME, MIN_PASSWORD,
-    SAFE_USERNAME, SESSION_HOURS,
+    SAFE_USERNAME, SESSION_HOURS, sanitize_chat_color,
 )
 from hub import hub
 
@@ -73,6 +73,8 @@ def me(request: Request):
         "bio": user["bio"] if user else "",
         "notify_live": bool(user["notify_live"]) if user else True,
         "email": user["email"] if user else "",
+        "name_color": user["name_color"] if user else "",
+        "msg_color": user["msg_color"] if user else "",
     }
 
 
@@ -421,6 +423,21 @@ async def set_profile(request: Request):
         bio = str(body.get("bio") or "").strip()[:MAX_BIO_LENGTH]
         db.set_bio(username, bio)
 
+    # Chat colors: each is a validated "#rrggbb" or "" to clear. The guard rejects
+    # unreadable or reserved-red picks with a clear message; a rejected color
+    # leaves the stored value unchanged.
+    name_color = None
+    msg_color = None
+    try:
+        if "name_color" in body:
+            name_color = sanitize_chat_color(body.get("name_color"))
+        if "msg_color" in body:
+            msg_color = sanitize_chat_color(body.get("msg_color"))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if name_color is not None or msg_color is not None:
+        db.set_chat_colors(username, name_color=name_color, msg_color=msg_color)
+
     if "notify_live" in body:
         db.set_notify_live(username, bool(body.get("notify_live")))
 
@@ -441,11 +458,17 @@ async def set_profile(request: Request):
             )
         db.update_user(username, display_name=name)
 
-    # Push font/name changes to the live chat so others see them at once.
-    if font is not None or name is not None:
-        await hub.update_member(username, font=font, name=name)
+    # Push font/name/color changes to the live chat so others see them at once.
+    if font is not None or name is not None or name_color is not None or msg_color is not None:
+        await hub.update_member(
+            username, font=font, name=name,
+            name_color=name_color, msg_color=msg_color,
+        )
 
-    response = JSONResponse({"ok": True, "font": font, "bio": bio, "name": name})
+    response = JSONResponse({
+        "ok": True, "font": font, "bio": bio, "name": name,
+        "name_color": name_color, "msg_color": msg_color,
+    })
     # The display name is baked into the session token (used for chat and the
     # greeting), so re-issue the cookie when it changes or it would look stale
     # until the next sign in.

@@ -10,7 +10,7 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=25">
+  <link rel="stylesheet" href="/assets/style.css?v=26">
 </head>
 <body class="center">
   <main class="card">
@@ -21,9 +21,9 @@
     </div>
     <div class="masthead">
       <h1 class="site-title" id="site-title">upperroom</h1>
-      <p class="powered">livestream powered by <span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span></p>
+      <p class="powered">livestream powered by <span class="wordmark">upper<span class="wm-accent">room</span></span></p>
     </div>
-    <p class="muted">&gt; sign in</p>
+    <p class="muted">sign in</p>
     <form id="login-form" autocomplete="off">
       <input type="text" id="username" placeholder="Username" autocomplete="off" required>
       <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
@@ -36,7 +36,7 @@
     </p>
 
     <form id="register-form" autocomplete="off" hidden>
-      <p class="muted">&gt; redeem an invite</p>
+      <p class="muted">redeem an invite</p>
       <input type="text" id="r-code" placeholder="Invite code" autocomplete="off" required>
       <input type="text" id="r-username" placeholder="Username" autocomplete="off" required>
       <input type="text" id="r-name" placeholder="Display name" autocomplete="off" required>

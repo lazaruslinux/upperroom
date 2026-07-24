@@ -575,6 +575,146 @@ def test_site_name_surfaces_on_public_status_and_channel(client):
     assert client.get("/api/channel").json()["site_name"] == "Northwind Live"
 
 
+# ---- 7d. Chat colors (per-user name + message color) ----------------------
+
+def test_chat_color_accepts_readable_and_rejects_dim_and_reserved_red(client):
+    setup_admin(client, username="owner")
+    # A bright, readable color is stored.
+    ok = client.post("/api/profile", json={"name_color": "#8ab4ff"})
+    assert ok.status_code == 200
+    assert db.get_user("owner")["name_color"] == "#8ab4ff"
+    # Too dark to read on the near-black panel: rejected, prior value kept.
+    dim = client.post("/api/profile", json={"name_color": "#111111"})
+    assert dim.status_code == 400
+    assert db.get_user("owner")["name_color"] == "#8ab4ff"
+    # The reserved live/host red is refused.
+    assert client.post("/api/profile", json={"msg_color": "#ff4d4d"}).status_code == 400
+    # Malformed input is refused.
+    assert client.post("/api/profile", json={"name_color": "not-a-color"}).status_code == 400
+    # An empty value clears back to the theme default.
+    clear = client.post("/api/profile", json={"name_color": ""})
+    assert clear.status_code == 200
+    assert db.get_user("owner")["name_color"] == ""
+
+
+def test_chat_color_rides_on_the_message_payload(client):
+    setup_admin(client, username="owner")
+    client.post("/api/profile", json={"name_color": "#8ab4ff", "msg_color": "#c8f0d8"})
+    with ws_connect(client) as ws:
+        drain_join(ws)
+        ws.send_json({"type": "chat", "text": "hello"})
+        frame = ws.receive_json()
+    assert frame["type"] == "chat"
+    assert frame["name_color"] == "#8ab4ff"
+    assert frame["msg_color"] == "#c8f0d8"
+
+
+# ---- 7e. Moderation: purge, hover-delete, slow mode, banned words ---------
+
+def test_ws_purge_deletes_all_of_a_users_messages(client):
+    setup_admin(client, username="owner")
+    add_user("chatty")
+    chatty = make_client()
+    login(chatty, "chatty")
+    with ws_connect(chatty) as cw:
+        drain_join(cw)
+        cw.send_json({"type": "chat", "text": "one"})
+        cw.receive_json()
+        cw.send_json({"type": "chat", "text": "two"})
+        cw.receive_json()
+    # After chatty leaves, the owner purges their backlog.
+    with ws_connect(client) as ow:
+        drain_join(ow)
+        ow.send_json({"type": "chat", "text": "/purge chatty"})
+        reply = recv_system(ow)
+    assert "purged 2" in reply.lower()
+
+
+def test_ws_moddelete_removes_one_message_by_id(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as vw:
+        drain_join(vw)
+        vw.send_json({"type": "chat", "text": "hi"})
+        msg_id = vw.receive_json()["id"]
+    with ws_connect(client) as ow:
+        drain_join(ow)
+        ow.send_json({"type": "moddelete", "id": msg_id})
+        deleted = None
+        for _ in range(5):
+            frame = ow.receive_json()
+            if frame.get("type") == "delete":
+                deleted = frame
+                break
+    assert deleted is not None and deleted["id"] == msg_id
+
+
+def test_ws_moddelete_mod_cannot_delete_an_admin_message(client):
+    setup_admin(client, username="owner")   # owner is the admin
+    add_user("mod1", is_moderator=True)
+    with ws_connect(client) as ow:
+        drain_join(ow)
+        ow.send_json({"type": "chat", "text": "admin speaking"})
+        admin_msg_id = ow.receive_json()["id"]
+    mod = make_client()
+    login(mod, "mod1")
+    with ws_connect(mod) as mw:
+        drain_join(mw)
+        mw.send_json({"type": "moddelete", "id": admin_msg_id})
+        reply = recv_system(mw)
+    assert "admin" in reply.lower()
+
+
+def test_slow_mode_blocks_fast_repeats_but_exempts_admin(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    db.set_chat_moderation(slow_mode_seconds=30)
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as vw:
+        drain_join(vw)
+        vw.send_json({"type": "chat", "text": "first"})
+        assert vw.receive_json()["type"] == "chat"
+        vw.send_json({"type": "chat", "text": "too soon"})
+        blocked = vw.receive_json()
+    assert blocked["type"] == "system"
+    assert "slow mode" in blocked["text"].lower()
+    # The admin is exempt: two quick messages both broadcast as chat.
+    with ws_connect(client) as ow:
+        drain_join(ow)
+        ow.send_json({"type": "chat", "text": "a"})
+        first = ow.receive_json()
+        ow.send_json({"type": "chat", "text": "b"})
+        second = ow.receive_json()
+    assert first["type"] == "chat" and second["type"] == "chat"
+
+
+def test_banned_word_message_is_dropped(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    db.set_chat_moderation(banned_words="pineapple\nbadword")
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as vw:
+        drain_join(vw)
+        vw.send_json({"type": "chat", "text": "I love PINEAPPLE pizza"})
+        frame = vw.receive_json()
+    assert frame["type"] == "system"
+    assert "blocked" in frame["text"].lower()
+
+
+def test_admin_is_excluded_from_go_live_email_recipients(client):
+    setup_admin(client, username="owner")
+    db.set_email("owner", "owner@example.com")
+    add_user("viewer")
+    db.set_email("viewer", "viewer@example.com")
+    emails = [email for _, email in db.list_live_recipients()]
+    assert "viewer@example.com" in emails
+    assert "owner@example.com" not in emails
+
+
 # ---- 8. Session-gated media endpoints -------------------------------------
 
 @pytest.mark.parametrize(

@@ -168,27 +168,37 @@ function avatarNode(username, name, version, big, clickable) {
   return node;
 }
 
-// Role badges sit just to the right of the avatar, in place of any "(admin)"
-// text: small square mono text tags, amber "op" for an admin, blue "mod" for a
-// moderator. An admin keeps every moderator power, so an admin shows "op".
+// Role marks sit just to the right of the avatar, in place of any "(admin)"
+// text. The host (admin) shows a bright-red video-camera icon that reads as
+// "broadcaster"; a moderator shows a small blue "mod" tag. An admin keeps every
+// moderator power, so an admin shows only the camera.
+const CAMERA_SVG =
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">' +
+  '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9A1.5 1.5 0 0 1 13.5 18h-9' +
+  'A1.5 1.5 0 0 1 3 16.5v-9Zm14 3 3.25-2.17a.6.6 0 0 1 .95.5v6.34a.6.6 0 0 1-.95.5L17 13.5v-3Z"/></svg>';
+
 function roleBadgeNode(admin, mod, big) {
   if (!admin && !mod) return null;
   const span = document.createElement("span");
-  span.className = "role-tag " + (admin ? "op" : "mod") + (big ? " role-tag-lg" : "");
-  span.title = admin ? "Admin" : "Moderator";
-  span.textContent = admin ? "op" : "mod";
+  if (admin) {
+    span.className = "role-tag host" + (big ? " role-tag-lg" : "");
+    span.title = "Broadcaster";
+    span.innerHTML = CAMERA_SVG;   // a static, trusted icon; no user data
+  } else {
+    span.className = "role-tag mod" + (big ? " role-tag-lg" : "");
+    span.title = "Moderator";
+    span.textContent = "mod";
+  }
   return span;
 }
 
 function formatTimestamp(ts) {
-  // Compact local stamp shown in tiny print on each line, e.g. "6.26.26 4:32pm".
+  // 24-hour local time, no date, e.g. "17:51". Chat is ephemeral, so the day
+  // only matters on saved VODs and clips, where it is shown on the media page.
   const d = ts ? new Date(ts * 1000) : new Date();
-  const yr = String(d.getFullYear()).slice(-2);
-  let hour = d.getHours();
-  const min = String(d.getMinutes()).padStart(2, "0");
-  const ampm = hour >= 12 ? "pm" : "am";
-  hour = hour % 12 || 12;
-  return `${d.getMonth() + 1}.${d.getDate()}.${yr} ${hour}:${min}${ampm}`;
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 }
 
 function atBottom() {
@@ -220,6 +230,9 @@ function renderChat(msg) {
   const name = document.createElement("span");
   name.className = msg.admin ? "name admin" : "name";
   name.textContent = msg.name;
+  // Each person's chosen name color, if any, overrides the theme default (and the
+  // admin amber). Colors are guarded server-side for readability.
+  if (msg.name_color) name.style.color = msg.name_color;
   const time = document.createElement("span");
   time.className = "msg-time";
   time.textContent = formatTimestamp(msg.ts);
@@ -230,11 +243,30 @@ function renderChat(msg) {
     markBodyDeleted(body);
   } else {
     body.textContent = msg.text;        // textContent keeps any HTML inert
-    // Each person's own font rides along on their messages for everyone to see.
+    // Each person's own font and message color ride along on their messages for
+    // everyone to see.
     body.style.fontFamily = FONTS[msg.font] || "";
+    if (msg.msg_color) body.style.color = msg.msg_color;
   }
   bodyWrap.append(head, body);
   line.appendChild(bodyWrap);
+  // Host and moderators get a hover delete button on every line, removing that
+  // one message for everyone by its id.
+  if (me && (me.admin || me.mod) && msg.id != null) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "msg-del";
+    del.title = "Delete message";
+    del.setAttribute("aria-label", "Delete message");
+    del.textContent = "×";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "moddelete", id: msg.id }));
+      }
+    });
+    line.appendChild(del);
+  }
   addLine(line);
 }
 
@@ -290,6 +322,7 @@ function renderPresence(msg) {
     const youSuffix = me && viewer.username === me.username ? " (you)" : "";
     const label = document.createElement("span");
     label.textContent = viewer.name + youSuffix;
+    if (viewer.name_color) label.style.color = viewer.name_color;
     item.appendChild(label);
     viewerList.appendChild(item);
   });
@@ -401,10 +434,67 @@ function buildFontPicker() {
   });
 }
 
-// Reflect the signed in account's saved chat font in the settings panel. Avatar,
-// bio, and password now live in the home page's "Your settings" menu.
+// ---- chat colors (name + message text) ----
+// Each viewer can color their own display name and message text. The choice is
+// saved on the server so it rides along on their messages for everyone, and the
+// server guards it for readability (rejecting invisible or reserved-red picks).
+const nameColorInput = document.getElementById("name-color");
+const msgColorInput = document.getElementById("msg-color");
+const colorReset = document.getElementById("color-reset");
+const colorMsg = document.getElementById("color-msg");
+const DEFAULT_SWATCH = "#e6e8e2";
+
+function showColorMsg(text, ok) {
+  colorMsg.textContent = text || "";
+  colorMsg.className = "settings-note pw-msg" + (text ? (ok ? " ok" : " bad") : "");
+}
+
+// Like saveProfile but returns the server's error text, so a rejected color can
+// explain why (too dark, reserved red, malformed).
+async function saveColor(patch) {
+  try {
+    const reply = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = await reply.json().catch(() => ({}));
+    return { ok: reply.ok, error: data.error };
+  } catch {
+    return { ok: false, error: "Could not reach the server." };
+  }
+}
+
+function setupColorPickers() {
+  nameColorInput.value = me.name_color || DEFAULT_SWATCH;
+  msgColorInput.value = me.msg_color || DEFAULT_SWATCH;
+  nameColorInput.addEventListener("change", async () => {
+    const r = await saveColor({ name_color: nameColorInput.value });
+    if (r.ok) { me.name_color = nameColorInput.value; showColorMsg("Name color saved.", true); }
+    else showColorMsg(r.error || "That color was rejected.", false);
+  });
+  msgColorInput.addEventListener("change", async () => {
+    const r = await saveColor({ msg_color: msgColorInput.value });
+    if (r.ok) { me.msg_color = msgColorInput.value; showColorMsg("Text color saved.", true); }
+    else showColorMsg(r.error || "That color was rejected.", false);
+  });
+  colorReset.addEventListener("click", async () => {
+    const r = await saveColor({ name_color: "", msg_color: "" });
+    if (r.ok) {
+      me.name_color = ""; me.msg_color = "";
+      nameColorInput.value = DEFAULT_SWATCH;
+      msgColorInput.value = DEFAULT_SWATCH;
+      showColorMsg("Colors reset to default.", true);
+    } else showColorMsg(r.error || "Could not reset.", false);
+  });
+}
+
+// Reflect the signed in account's saved chat font and colors in the settings
+// panel. Avatar, bio, and password now live in the home page's "Your settings".
 function loadMyProfile() {
-  if (me) buildFontPicker();
+  if (!me) return;
+  buildFontPicker();
+  setupColorPickers();
 }
 
 // ---- profile popup (tap any avatar) ----
@@ -415,9 +505,49 @@ const profileName = document.getElementById("profile-name");
 const profileBio = document.getElementById("profile-bio");
 const profileJoined = document.getElementById("profile-joined");
 const profilePoints = document.getElementById("profile-points");
+const profileModActions = document.getElementById("profile-modactions");
+
+function sendChatCommand(text) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "chat", text }));
+  }
+}
+
+// Host and moderators get quick moderation actions inside a viewer's profile
+// popup: timeout, purge, ban, and (admin only) promote/demote. Each sends the
+// matching chat command over the socket; the server authorizes it against a
+// fresh role read and replies privately with the outcome.
+function buildModActions(data) {
+  profileModActions.hidden = true;
+  profileModActions.innerHTML = "";
+  if (!me || !(me.admin || me.mod)) return;           // plain viewers see none
+  if (data.username === me.username) return;           // not on yourself
+  if (data.admin && !me.admin) return;                 // a mod can't act on an admin
+  const u = data.username;
+  const actions = [
+    ["Timeout 5m", () => sendChatCommand(`/timeout ${u} 300`)],
+    ["Timeout 1h", () => sendChatCommand(`/timeout ${u} 3600`)],
+    ["Delete all", () => { if (confirm(`Delete all of ${data.name}'s messages?`)) sendChatCommand(`/purge ${u}`); }],
+    ["Ban", () => { if (confirm(`Ban ${data.name} from chat?`)) sendChatCommand(`/ban ${u}`); }],
+  ];
+  if (me.admin) {
+    actions.push(data.mod
+      ? ["Remove mod", () => sendChatCommand(`/unmod ${u}`)]
+      : ["Make mod", () => sendChatCommand(`/mod ${u}`)]);
+  }
+  actions.forEach(([label, fn]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pill mod-action";
+    btn.textContent = label;
+    btn.addEventListener("click", () => { fn(); closeModal(profileModal); });
+    profileModActions.appendChild(btn);
+  });
+  profileModActions.hidden = false;
+}
 
 function formatJoined(ts) {
-  // Date only, in the same compact M.D.YY style as chat timestamps.
+  // Date only, in a compact M.D.YY style (chat timestamps are time-only now).
   if (!ts) return "";
   const d = new Date(ts * 1000);
   const yr = String(d.getFullYear()).slice(-2);
@@ -435,6 +565,7 @@ async function openProfile(username) {
     profileBio.textContent = data.bio || "No bio yet.";
     profileJoined.textContent = formatJoined(data.joined);
     profilePoints.textContent = data.points != null ? `pts ${data.points}` : "";
+    buildModActions(data);
     openModal(profileModal);
   } catch {
     /* a failed lookup just does nothing */

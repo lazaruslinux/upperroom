@@ -6,6 +6,12 @@
 
 const overlay = document.getElementById("overlay");
 
+// The host (admin) shows a red video-camera icon; a moderator shows a "mod" tag.
+const CAMERA_SVG =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9A1.5 1.5 0 0 1 13.5 18h-9' +
+  'A1.5 1.5 0 0 1 3 16.5v-9Zm14 3 3.25-2.17a.6.6 0 0 1 .95.5v6.34a.6.6 0 0 1-.95.5L17 13.5v-3Z"/></svg>';
+
 // The bearer key rides in the URL. Without it there is nothing to authenticate,
 // so the page just sits blank rather than hammering the socket.
 const KEY = new URLSearchParams(location.search).get("key") || "";
@@ -52,11 +58,16 @@ function renderChat(msg) {
   item.className = "ov-item ov-chat";
   if (msg.id != null) item.dataset.msgid = msg.id;
 
-  // Role tag chip (op for admin, mod for moderator), like the site.
+  // Role mark (red camera for the host, "mod" tag for a moderator), like the site.
   if (msg.admin || msg.mod) {
     const tag = document.createElement("span");
-    tag.className = "ov-tag " + (msg.admin ? "op" : "mod");
-    tag.textContent = msg.admin ? "op" : "mod";
+    if (msg.admin) {
+      tag.className = "ov-tag host";
+      tag.innerHTML = CAMERA_SVG;   // a static, trusted icon; no user data
+    } else {
+      tag.className = "ov-tag mod";
+      tag.textContent = "mod";
+    }
     item.appendChild(tag);
   }
 

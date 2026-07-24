@@ -13,8 +13,8 @@
      20 mono   stat        stat numbers
      15 mono   brand       brand mark (bold)
    Text inputs stay 16px (iOS zoom rule) and are exempt from the scale.
-   Mono is the self-hosted DejaVu Sans Mono so every device renders identically;
-   no letter-spacing on mono chrome (it renders evenly), only on uppercase tags.
+   The UI face is self-hosted Inter so every device renders identically; no
+   letter-spacing on body text, only the deliberate tracking on uppercase tags.
 
    Buttons: three variants (ghost / accent / danger), two sizes (sm 28px /
    md 36px). Same lowercase mono everywhere. See the button system below.
@@ -40,8 +40,12 @@
   --mod: #3f7cff;            /* moderator - blue */
   /* Fixed dark fills for chips that always sit over the black video/thumb. */
   --avatar-default: #1c3a29;
-  --mono: "DejaVu Sans Mono", ui-monospace, Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Inter is the self-hosted UI face for the whole app: a clean, professional
+     sans that reads well large and small. Both variables lead with it so the
+     former mono chrome now renders in Inter too (the terminal look is gone; the
+     smoky colors and square edges stay). Per-user chat fonts are separate. */
+  --mono: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --accent-tint: rgba(106, 180, 138, 0.08);
   --error-tint: rgba(255, 107, 107, 0.08);
 }
@@ -152,25 +156,16 @@ body {
   font-weight: 700;
   color: var(--text);
 }
-/* The cursor is the only glow in the whole app. */
-.cursor {
-  color: var(--accent);
-  margin-left: 2px;
-  font-weight: 400;
-  animation: blink 1.1s steps(1) infinite;
-  text-shadow: 0 0 6px var(--accent-glow);
-}
 
-/* The "upperroom" wordmark: always lowercase, split so the second half glows in
-   the live accent. Bright and bold on every accent theme, since it rides the
-   same --accent as the cursor rather than a fixed color. */
+/* The "upperroom" wordmark: always lowercase, split so the second half carries
+   the live accent color. Bright and bold on every accent theme, since it rides
+   the same --accent, but no glow now that the terminal look is gone. */
 .wordmark {
   font-family: var(--mono);
   font-weight: 700;
 }
 .wm-accent {
   color: var(--accent);
-  text-shadow: 0 0 6px var(--accent-glow);
 }
 
 /* Visitor masthead: the operator's own site name leads, upperroom rides below as
@@ -341,6 +336,16 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .role-tag.op, .role-badge { background: var(--op); }
 .role-tag.mod, .role-badge.mod { background: var(--mod); }
 .role-tag-lg { font-size: 12px; padding: 2px 6px; }
+/* The host (broadcaster) mark is a bright-red video-camera icon, not a text
+   chip: transparent background, the icon drawn in the reserved live red. */
+.role-tag.host {
+  background: transparent;
+  color: var(--live-red);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.role-tag.host svg { display: block; }
 
 /* Admin/mod dashboard user cards reuse the same chip look. */
 .role-badge {
@@ -471,7 +476,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   margin: 0 auto;
   padding: 16px 16px 32px;
 }
-/* Prompt-style greeting: "> signed in as name" in dim mono, name in accent. */
+/* Greeting: "signed in as name" in dim text, the name in the accent color. */
 .home-greeting {
   font-family: var(--mono);
   font-size: 12px;
@@ -756,6 +761,51 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .msg .body { display: block; font-family: var(--sans); font-size: 14px; line-height: 1.4; margin-top: 3px; }
 .msg .body.deleted { color: var(--muted); font-style: italic; }
 .msg.system { font-family: var(--mono); color: var(--muted); font-style: italic; font-size: 12px; white-space: pre-wrap; }
+
+/* Hover-to-delete: a small x at the right of a line, only rendered for the host
+   and moderators. Faint until the row is hovered; on touch it stays lightly
+   visible since there is no hover. */
+.msg-del {
+  flex: none;
+  align-self: flex-start;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.msg:hover .msg-del { opacity: 0.6; }
+.msg-del:hover { color: var(--error); opacity: 1; }
+@media (hover: none) { .msg-del { opacity: 0.4; } }
+
+/* Chat color pickers in the watch settings panel. */
+.color-pickers { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.color-pick { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.color-pick input[type="color"] {
+  width: 30px; height: 24px; padding: 0;
+  border: 1px solid var(--border); background: none; cursor: pointer;
+}
+
+/* Quick moderation actions inside a viewer's profile popup (host + mods). */
+.profile-modactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.mod-action { font-size: 12px; padding: 4px 8px; }
+
+/* A checkbox + label on one line, e.g. the email prompt's "Don't show again". */
+.check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+.check-line input { flex: none; }
 
 .chat-form {
   flex: none;                /* fixed at the bottom, never shrinks away */
@@ -1259,12 +1309,14 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #clip-msg a { color: var(--accent); margin-left: 4px; }
 
 /* =========================================================================
-   Self-hosted chat fonts (per-author). Feature untouched; declarations kept.
+   Self-hosted fonts. Inter is the app-wide UI face; the rest are the optional
+   per-author chat fonts (that feature is untouched).
    ========================================================================= */
 
-/* App mono: self-hosted so every device renders the chrome identically. */
-@font-face { font-family: "DejaVu Sans Mono"; src: url("/assets/fonts/dejavu-sans-mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "DejaVu Sans Mono"; src: url("/assets/fonts/dejavu-sans-mono-bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+/* App UI: self-hosted Inter (latin subset) so every device renders identically. */
+@font-face { font-family: "Inter"; src: url("/assets/fonts/inter-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/inter-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/inter-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
 
 @font-face { font-family: "Roboto Mono"; src: url("/assets/fonts/roboto-mono.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "Comic Neue"; src: url("/assets/fonts/comic-neue.woff2") format("woff2"); font-display: swap; }

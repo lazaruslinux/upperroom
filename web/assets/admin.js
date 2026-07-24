@@ -677,6 +677,45 @@ document.getElementById("ch-save").addEventListener("click", async () => {
   showChMsg("Saved.", true);
 });
 
+// ---- chat moderation (slow mode + banned words) ----
+
+const modSlow = document.getElementById("mod-slow");
+const modBanned = document.getElementById("mod-banned");
+const modMsg = document.getElementById("mod-msg");
+
+function showModMsg(text, ok) {
+  modMsg.textContent = text;
+  modMsg.classList.toggle("good", !!ok);
+  modMsg.classList.toggle("bad", !ok);
+  modMsg.hidden = false;
+}
+
+async function loadModeration() {
+  let data = {};
+  try { data = await (await fetch("/api/admin/moderation")).json(); } catch { return; }
+  modSlow.value = data.slow_mode_seconds != null ? data.slow_mode_seconds : 0;
+  modBanned.value = data.banned_words || "";
+}
+
+document.getElementById("mod-save").addEventListener("click", async () => {
+  const slow = parseInt(modSlow.value, 10);
+  if (Number.isNaN(slow) || slow < 0) { showModMsg("Slow mode must be a whole number of seconds.", false); return; }
+  modMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/admin/moderation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slow_mode_seconds: slow, banned_words: modBanned.value }),
+    });
+    if (!reply.ok) {
+      const d = await reply.json().catch(() => ({}));
+      showModMsg(d.error || "Could not save.", false);
+      return;
+    }
+  } catch { showModMsg("Could not reach the server.", false); return; }
+  showModMsg("Saved.", true);
+});
+
 // ---- go-live notifications ----
 
 const notifyWebhook = document.getElementById("notify-webhook");
@@ -870,6 +909,7 @@ async function boot() {
   loadUsers();
   loadInvites();
   loadChannel();
+  loadModeration();
   loadStreamKey();
   loadOverlay();
   loadNotify();

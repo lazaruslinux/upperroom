@@ -43,6 +43,40 @@ def _target_name(arg):
     return arg.strip().lower().lstrip("@")
 
 
+def _split_banned(raw):
+    """The admin's banned-words text is split on newlines and commas into a set
+    of lowercased phrases, empties dropped."""
+    words = set()
+    for chunk in str(raw or "").replace(",", "\n").split("\n"):
+        word = chunk.strip().lower()
+        if word:
+            words.add(word)
+    return words
+
+
+def _contains_banned(text_lower, raw):
+    return any(word in text_lower for word in _split_banned(raw))
+
+
+async def handle_mod_delete(websocket, who, raw_id):
+    """The hover-to-delete button on a chat line. Authorize against a fresh role
+    read (so a demotion takes effect at once), then remove that one message for
+    everyone. A non-admin cannot delete an admin's line."""
+    actor = db.get_user(who["username"])
+    is_admin = bool(actor and actor["is_admin"])
+    is_mod = bool(actor and actor["is_moderator"])
+    if not (is_admin or is_mod):
+        await system_reply(websocket, "You do not have permission to delete messages.")
+        return
+    try:
+        msg_id = int(raw_id)
+    except (TypeError, ValueError):
+        return
+    result = await hub.delete_by_id(msg_id, who["username"], is_admin)
+    if result == "forbidden":
+        await system_reply(websocket, "You can't delete an admin's message.")
+
+
 async def handle_command(websocket, who, text):
     parts = text[1:].split()
     if not parts:
@@ -63,6 +97,7 @@ async def handle_command(websocket, who, text):
                 "/timeout <user> [seconds] - mute a viewer (default 300)",
                 "/untimeout <user> - lift a timeout",
                 "/del <user> - delete that viewer's last message",
+                "/purge <user> - delete all of that viewer's messages",
                 "/ban <user> [reason] - ban a viewer from chat",
                 "/unban <user> - lift a ban (yours, or any if admin)",
             ]
@@ -160,6 +195,14 @@ async def handle_command(websocket, who, text):
             await system_reply(
                 websocket, f"No recent message from {target['display_name']}."
             )
+        return
+
+    if cmd == "purge":
+        count = await hub.delete_all_by(target["username"], who["username"])
+        await system_reply(
+            websocket,
+            f"Purged {count} message{'' if count == 1 else 's'} from {target['display_name']}.",
+        )
         return
 
     if cmd == "ban":
@@ -263,6 +306,8 @@ async def chat_socket(websocket: WebSocket):
         "mod": bool(user["is_moderator"]),
         "avatar": user["avatar_version"],
         "font": user["chat_font"],
+        "name_color": user["name_color"],
+        "msg_color": user["msg_color"],
     }
     await websocket.accept()
     await hub.join(websocket, who)
@@ -276,6 +321,11 @@ async def chat_socket(websocket: WebSocket):
                 break
             except Exception:
                 logger.debug("ignoring unparseable chat frame", exc_info=True)
+                continue
+            # The hover-to-delete button on a chat line sends this instead of a
+            # chat message; it removes one message by id for everyone.
+            if data.get("type") == "moddelete":
+                await handle_mod_delete(websocket, who, data.get("id"))
                 continue
             if data.get("type") != "chat":
                 continue
@@ -298,11 +348,30 @@ async def chat_socket(websocket: WebSocket):
                     websocket, f"You are timed out for {remaining} more seconds."
                 )
                 continue
+            # Chat moderation settings are read fresh so an admin's change to the
+            # word filter or slow-mode interval takes effect immediately.
+            settings = db.get_chat_moderation()
+            if _contains_banned(text.lower(), settings.get("banned_words", "")):
+                await system_reply(
+                    websocket, "Your message was blocked by the word filter."
+                )
+                continue
+            interval = settings.get("slow_mode_seconds", 0) or 0
+            # Mods and admins are exempt from slow mode.
+            if interval and not (who["admin"] or who.get("mod")):
+                wait = hub.slow_wait(who["username"], interval)
+                if wait:
+                    await system_reply(
+                        websocket,
+                        f"Slow mode is on. Wait {wait}s before posting again.",
+                    )
+                    continue
             # Flood guard: drop anything past five messages in three seconds.
             now = time.time()
             sent_times.append(now)
             if len(sent_times) == sent_times.maxlen and now - sent_times[0] < 3:
                 continue
             await hub.say(who, text)
+            hub.record_post(who["username"])
     finally:
         await hub.leave(websocket)

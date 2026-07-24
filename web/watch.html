@@ -10,7 +10,7 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=25">
+  <link rel="stylesheet" href="/assets/style.css?v=26">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -50,6 +50,15 @@
         <span>Chat font</span>
         <div id="font-picker" class="font-picker"></div>
       </div>
+      <div class="setting setting-colors">
+        <span>Chat colors</span>
+        <div class="color-pickers">
+          <label class="color-pick">Name <input id="name-color" type="color"></label>
+          <label class="color-pick">Text <input id="msg-color" type="color"></label>
+          <button id="color-reset" type="button" class="pill">Reset</button>
+        </div>
+      </div>
+      <p id="color-msg" class="settings-note pw-msg"></p>
       <p class="settings-note muted">Account settings like your avatar, bio, and password are on the home page.</p>
     </div>
     <ul id="viewer-list" class="viewer-list" hidden></ul>
@@ -89,6 +98,7 @@
       <div id="profile-bio" class="profile-bio muted"></div>
       <div id="profile-joined" class="profile-joined"></div>
       <div id="profile-points" class="profile-joined"></div>
+      <div id="profile-modactions" class="profile-modactions" hidden></div>
     </div>
   </div>
 
@@ -108,6 +118,6 @@
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=20"></script>
+  <script src="/assets/watch.js?v=21"></script>
 </body>
 </html>

@@ -9,11 +9,11 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=25">
+  <link rel="stylesheet" href="/assets/style.css?v=26">
 </head>
 <body class="admin">
   <header class="home-bar">
-    <div class="brand"><span class="wordmark">upper<span class="wm-accent">room</span><span class="cursor">▮</span></span> <span class="admin-tag">admin</span></div>
+    <div class="brand"><span class="wordmark">upper<span class="wm-accent">room</span></span> <span class="admin-tag">admin</span></div>
     <nav class="home-actions">
       <a href="/home" class="ghost-btn">home</a>
       <button id="new-user" type="button" class="solid-btn">+ new user</button>
@@ -49,7 +49,6 @@
       <label>Site name
         <input id="ch-site" type="text" maxlength="60" placeholder="Your brand, e.g. Northwind Live" autocomplete="off">
       </label>
-      <span class="muted">Shown leading the login and home pages, next to "powered by upperroom".</span>
       <label>Stream title
         <input id="ch-title" type="text" maxlength="100" placeholder="What you're streaming" autocomplete="off">
       </label>
@@ -81,6 +80,21 @@
         <button type="button" id="ch-save" class="solid-btn">Save channel settings</button>
       </div>
       <p id="ch-msg" class="notify-msg" hidden></p>
+    </div>
+
+    <h2 class="section-title" style="margin-top:1.75rem;">Chat moderation</h2>
+    <div class="notify-panel">
+      <label>Slow mode: seconds between messages per viewer (0 = off)
+        <input id="mod-slow" type="number" min="0" max="3600" inputmode="numeric" placeholder="0">
+      </label>
+      <span class="muted">Mods and admins are exempt from slow mode.</span>
+      <label>Banned words
+        <textarea id="mod-banned" maxlength="2000" rows="3" placeholder="One word or phrase per line. A message containing any of these is removed."></textarea>
+      </label>
+      <div class="edit-actions">
+        <button type="button" id="mod-save" class="solid-btn">Save moderation settings</button>
+      </div>
+      <p id="mod-msg" class="notify-msg" hidden></p>
     </div>
 
     <h2 class="section-title" style="margin-top:1.75rem;">Stream key</h2>
@@ -224,6 +238,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=13"></script>
+  <script src="/assets/admin.js?v=14"></script>
 </body>
 </html>

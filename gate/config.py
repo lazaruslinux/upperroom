@@ -55,6 +55,40 @@ MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
 SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
 ALLOWED_FONTS = {"system", "mono", "comic", "retro", "caveat"}
 MAX_BIO_LENGTH = 200
+
+# Chat moderation knobs the admin sets on the dashboard.
+MAX_SLOW_SECONDS = 3600         # cap on the slow-mode interval (a typo can't lock chat for a day)
+MAX_BANNED_WORDS_LEN = 2000     # length cap on the banned-words text
+
+
+def sanitize_chat_color(value):
+    """Validate a viewer-chosen chat color (for their name or their message text).
+
+    Returns a normalized "#rrggbb" string to store, or "" to clear it and fall
+    back to the theme default. Raises ValueError with a human-readable message
+    when the color is malformed, too dim to read on the near-black chat panel, or
+    inside the red range reserved for the LIVE tag and the host camera mark. The
+    readability floor is deliberately strict: a color must clear roughly a 4.5:1
+    contrast ratio against the dark panel so nobody can pick an invisible name."""
+    text = str(value or "").strip().lower()
+    if text == "":
+        return ""
+    if not re.fullmatch(r"#[0-9a-f]{6}", text):
+        raise ValueError("Pick a color in #rrggbb form.")
+    r, g, b = (int(text[i:i + 2], 16) for i in (1, 3, 5))
+    # Reserved: a strong red would mimic the LIVE tag and the host camera badge.
+    if r > 180 and g < 90 and b < 90:
+        raise ValueError("That red is reserved for the live and host marks. Pick another color.")
+
+    def _linear(channel):
+        c = channel / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    luminance = 0.2126 * _linear(r) + 0.7152 * _linear(g) + 0.0722 * _linear(b)
+    # (L + 0.05) / (0 + 0.05) >= 4.5  =>  L >= 0.175 against a ~black panel.
+    if luminance < 0.18:
+        raise ValueError("That color is too dark to read on the chat background. Pick a brighter one.")
+    return text
 MAX_DISPLAY_NAME = 40
 MIN_PASSWORD = 8
 MAX_SITE_NAME = 60
