@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="upperroom">
+  <!-- The maskable variant: the same mark, scaled to sit inside the safe circle
+       (80% of the canvas) that Android crops to, so no platform's mask can clip
+       it. Bleed the background to the edges for the same reason. -->
+  <rect width="512" height="512" fill="#0b0c0b"/>
+  <g transform="translate(256 256) scale(0.68) translate(-256 -256)">
+    <path d="M170 146 V290 A86 86 0 0 0 342 290 V146"
+          fill="none" stroke="#6ab48a" stroke-width="56"/>
+  </g>
+</svg>

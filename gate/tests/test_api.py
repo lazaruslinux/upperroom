@@ -12,6 +12,7 @@ workers live in its lifespan, which these tests never enter, and no handler
 covered here reaches MediaMTX or ffmpeg.
 """
 
+import os
 import time
 
 import pytest
@@ -1040,3 +1041,46 @@ def test_a_long_schedule_note_is_clamped_not_rejected(client):
     )
     assert resp.status_code == 200
     assert len(db.get_schedule()["next_stream_note"]) == MAX_SCHEDULE_NOTE
+
+
+# ---- 12. Web app manifest -------------------------------------------------
+
+def test_the_manifest_is_public_and_carries_the_operators_name(client):
+    # A browser asks for the manifest before anyone signs in, and the installed
+    # app should appear under the operator's brand, not the software's.
+    setup_admin(client, channel="Northwind Live")
+    anon = make_client()
+    resp = anon.get("/api/manifest.webmanifest")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/manifest+json")
+    body = resp.json()
+    assert body["name"] == "Northwind Live"
+    assert body["start_url"] == "/home"
+    assert body["display"] == "standalone"
+
+
+def test_the_manifest_theme_color_follows_the_channel_accent(client):
+    setup_admin(client)
+    client.post("/api/stream-info", json={"accent": "blue"})
+    assert client.get("/api/manifest.webmanifest").json()["theme_color"] == "#7aa3c0"
+    client.post("/api/stream-info", json={"accent": "amber"})
+    assert client.get("/api/manifest.webmanifest").json()["theme_color"] == "#c2a05c"
+
+
+def test_every_icon_the_manifest_names_is_actually_committed(client):
+    # The one check that catches shipping a manifest that points at a file
+    # nobody committed, which is otherwise invisible until a phone fails to
+    # install the app.
+    web = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "web",
+    )
+    icons = client.get("/api/manifest.webmanifest").json()["icons"]
+    assert icons
+    for icon in icons:
+        relative = icon["src"].split("?")[0].lstrip("/")
+        assert os.path.exists(os.path.join(web, relative)), icon["src"]
+    # And the pieces the HTML head points at directly.
+    for name in ("favicon.ico", "sw.js", "assets/icons/icon.svg",
+                 "assets/icons/apple-touch-icon.png", "assets/icons/og-default.png"):
+        assert os.path.exists(os.path.join(web, name)), name

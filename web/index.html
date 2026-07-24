@@ -10,7 +10,25 @@
     // Apply the saved accent flavor too, so the brand color never flashes.
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="/assets/style.css?v=26">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
+  <link rel="manifest" href="/api/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0c0b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- How the site looks when someone pastes the link into a chat. Only this
+       page needs them: every other page is behind the sign in and will never be
+       scraped. A crawler does not run JavaScript, so this says upperroom rather
+       than the operator's own name, which the pages themselves fill in. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="upperroom">
+  <meta property="og:description" content="A private livestream. Sign in to watch.">
+  <meta property="og:image" content="/assets/icons/og-default.png?v=1">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/assets/style.css?v=27">
 </head>
 <body class="center">
   <main class="card">
@@ -52,6 +70,6 @@
       </p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=17"></script>
+  <script src="/assets/gate.js?v=18"></script>
 </body>
 </html>

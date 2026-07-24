@@ -202,6 +202,49 @@ async def set_clip_keep(clip_id: int, request: Request):
     return await _set_keep("clip", clip_id, request, "No such clip.")
 
 
+# The accent flavors as hex, for the manifest's theme color. The same four
+# values are in style.css (as CSS custom properties) and on the admin swatches;
+# a phone's task switcher cannot read CSS, so they are repeated here.
+_ACCENT_HEX = {
+    "green": "#6ab48a",
+    "amber": "#c2a05c",
+    "blue": "#7aa3c0",
+    "ghost": "#9aa39a",
+}
+
+
+@router.get("/api/manifest.webmanifest")
+def manifest():
+    # Rendered rather than served as a static file, because the installed app
+    # should carry the operator's own name, and because everything under
+    # /assets is cached as immutable for a year. Public, like /api/status: a
+    # browser fetches the manifest before anyone has signed in.
+    info = db.get_stream_info()
+    site_name = info["site_name"] or "upperroom"
+    return JSONResponse(
+        {
+            "name": site_name,
+            "short_name": site_name[:12],
+            "description": "A private livestream.",
+            "start_url": "/home",
+            "scope": "/",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#0b0c0b",
+            "theme_color": _ACCENT_HEX.get(info["accent"], _ACCENT_HEX["green"]),
+            "icons": [
+                {"src": "/assets/icons/icon-192.png?v=1", "sizes": "192x192",
+                 "type": "image/png"},
+                {"src": "/assets/icons/icon-512.png?v=1", "sizes": "512x512",
+                 "type": "image/png"},
+                {"src": "/assets/icons/icon-512-maskable.png?v=1", "sizes": "512x512",
+                 "type": "image/png", "purpose": "maskable"},
+            ],
+        },
+        media_type="application/manifest+json",
+    )
+
+
 @router.get("/api/status")
 async def status():
     # Ask MediaMTX whether a publisher is connected to our stream path, so the

@@ -686,3 +686,11 @@ async function boot() {
 }
 
 boot();
+
+// Register the pass-through service worker. It caches nothing; it exists so
+// Chrome will offer to install the site to a phone's home screen.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
