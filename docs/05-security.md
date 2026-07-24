@@ -10,9 +10,13 @@ yourself rather than take it on faith.
    automated scanners and password guessing scripts that try to hammer the
    login.
 
-2. **Named accounts, no sign ups.** There is no public registration. Every
-   account is created by the admin with `manage.py`. Someone with the link still
-   cannot get in without an account you made.
+2. **Named accounts, no open sign ups.** There is no public registration. The
+   first account is made by the one-time setup wizard, which closes for good the
+   moment it exists. After that, an account can only be created by an admin, or
+   by someone redeeming a single-use invite code an admin generated. Codes are
+   claimed with a single guarded write, so one code can never make two accounts,
+   and revoking one takes effect at once. Someone with the link still cannot get
+   in without an account you allowed.
 
 3. **Passwords are hashed.** Passwords are never stored as written. Each one is
    run through scrypt with a random per account salt. Even if someone got the
@@ -23,8 +27,9 @@ yourself rather than take it on faith.
    whether or not the username is real, so an attacker cannot learn which
    usernames exist by timing the replies.
 
-5. **Rate limited login.** No more than five attempts per address per minute.
-   Past that, the server returns a wait and try again message.
+5. **One rate limit across every way in.** The same per-address limit covers
+   signing in, redeeming an invite, and the setup wizard, so none of them can be
+   used to get around the others.
 
 6. **Signed session cookies.** After a correct login, the server sets a cookie
    that is a signed token. The signature uses a secret only the server knows, so

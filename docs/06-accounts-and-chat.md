@@ -39,7 +39,10 @@ If your account has the admin flag, sign in and open `/admin` (there is also an
 - See each person's **watch activity** (when they watched and for how long) and
   their **chat history** from the last 7 days, under the **Activity** button.
 - Review and lift **bans** under the **Bans** section.
-- Review and delete recordings and clips under the **Content** section.
+- Review, pin and delete recordings and clips under the **Content** section,
+  and set how much of them to keep under **Storage**.
+- Announce the **Next stream**, so viewers see a countdown to it.
+- Set **Chat moderation**: slow mode, and a list of banned words.
 
 The dashboard is gated server side, so only a signed in admin can reach any of
 it. The last remaining admin cannot be deleted or demoted, so you can never lock
@@ -52,7 +55,8 @@ power, but a moderator cannot manage accounts and never sees admin accounts.
 
 The easiest way to grant the role is in chat: an admin types `/mod <username>`.
 The change takes effect immediately, and that person's messages then carry a
-shield badge. `/unmod <username>` removes it. (Admins show a crown badge.)
+`mod` tag. `/unmod <username>` removes it. The host's own messages carry a small
+red camera instead, so it is always clear who is streaming.
 
 A moderator gets a **Mod** link on the home page leading to `/mod`, a trimmed
 dashboard where they can review watch and chat history and lift bans they set.
@@ -68,6 +72,7 @@ handled privately and never shown to other viewers:
 - `/untimeout <user>` — lift a timeout early.
 - `/del <user>` — delete that viewer's most recent message for everyone. It is
   replaced with "deleted by a moderator" and kept in the admin log as deleted.
+- `/purge <user>` — delete every message that viewer has sent, the same way.
 - `/ban <user> [reason]` — ban a viewer from chat. A ban is persistent.
 - `/unban <user>` — lift a ban. A moderator can only lift bans they set; an
   admin can lift any.
@@ -77,11 +82,23 @@ handled privately and never shown to other viewers:
 
 A moderator cannot act on an admin's messages, and cannot grant moderators.
 
+Single messages can also be removed without typing anything: hover a line in
+chat and a small delete control appears.
+
+### Slow mode and banned words
+
+Two settings under **Chat moderation** in the admin dashboard apply to everyone
+at once. Slow mode sets a minimum number of seconds between one viewer's
+messages; moderators and admins are exempt. The banned words list is one word or
+phrase per line, and a message containing any of them is dropped, with only the
+sender told why. The list is admin-only and never leaves the dashboard.
+
 ## Changing your own password
 
-Anyone signed in can change their own password from the **Settings** panel on
-the watch page (the gear icon). They enter their current password and a new one.
-This does not need an admin.
+Anyone signed in can change their own password from **Settings** on the home
+page. They enter their current password and a new one. This does not need an
+admin. The gear on the watch page is for the things that only affect how chat
+looks to them: the theme, their chat font, and their name and message colors.
 
 ## Accounts (command line, recovery only)
 
@@ -136,16 +153,21 @@ Notes:
   used as the display name.
 - If you do not pass `--password`, you are prompted for it without it showing on
   screen, which is the safer way.
-- The admin flag adds a crown badge next to your name in chat and unlocks the
-  admin dashboard at `/admin` described above. The moderator role adds a shield
-  badge and the `/mod` dashboard instead.
+- The admin flag marks that account as the host, whose messages carry a small
+  red camera in chat, and unlocks the admin dashboard at `/admin` described
+  above. The moderator role adds a `mod` tag and the `/mod` dashboard instead.
 
 ## Chat
 
 Chat is live for everyone signed in. Messages appear instantly through a
 WebSocket, with no page reloads. The last fifty messages stay on screen, each
-with a small local timestamp like `6.26.26 4:32pm`, and the whole chat is wiped
+with a small local timestamp like `19:42`, and the whole chat is wiped
 automatically when a broadcast ends, so the next stream starts clean.
+
+Everyone can pick their own name and message colors from the gear on the watch
+page. The server checks the choice rather than trusting it: a color too dark to
+read against the panel is refused, and so is the red kept for the LIVE tag and
+the host's camera mark.
 
 Separately, the gate keeps an admin-only copy of chat in its database for the
 last 7 days, so you can review history from the dashboard. It is purged

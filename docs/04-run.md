@@ -37,8 +37,8 @@ docker compose logs -f
 
 Open `https://watch.example.com` in a browser. On a brand new install the login
 page sends you straight to a one-time setup wizard at `/setup`. Fill in a
-username, a display name, a password, and a name for the channel, then create the
-account. That first account is the admin, you are signed in at once, and the
+username, a display name, a password, and a site name (your own brand, shown
+above "powered by upperroom" on every page), then create the account. That first account is the admin, you are signed in at once, and the
 wizard closes for good the moment it exists.
 
 From then on you let other people in with invite codes: open the admin dashboard
@@ -73,10 +73,23 @@ gate finalizes whatever it captured, starts a fresh recording while you stay
 live, and backs off if failures repeat. You may see more than one VOD for a
 single broadcast when this happens; nothing is lost.
 
-To stop recordings from filling the disk, only the most recent
-`SELFSTREAM_VOD_KEEP` are kept (20 by default); older ones are deleted. You can
-also delete any VOD or clip by hand from the admin dashboard's **Content**
-section. Per-role daily clip limits are set in the home **Settings** menu.
+Nothing is deleted automatically unless you ask for it. The admin dashboard's
+**Storage** section shows what your recordings and clips are using and how much
+room is left on the disk, and lets you set limits: a number of recordings, a
+number of days, the same two for clips, and a ceiling on the total size. Every
+one of them is off until you set it, and lowering a limit takes effect as soon
+as you save.
+
+Anything you want to keep for good, pin. A pinned recording or clip is never
+removed by any limit, and it does not use up a slot in the count, so "keep the
+last 20, plus the ones I pinned" is exactly what you get. The size limit never
+removes your newest recording or newest clip, so one large broadcast cannot
+delete itself. Pin and Delete both sit next to each item under **Content**.
+
+The one thing to know if you are updating an older install: it has been keeping
+only the most recent 20 recordings, from a setting in `.env`. That value is
+carried over into the dashboard once, so nothing changes under you, and from
+then on the dashboard is where it lives.
 
 ### Storing recordings on a bigger disk
 

@@ -1,6 +1,6 @@
 # 1. Prepare the server
 
-selfstream runs on any small Linux server with a public IP. A cheap virtual
+upperroom runs on any small Linux server with a public IP. A cheap virtual
 server with one CPU and 1 GB of memory is enough for a single viewer, since the
 server only repackages video and never transcodes it. These steps use Debian or
 Ubuntu, which is what most providers offer by default.
@@ -88,8 +88,8 @@ ufw allow from NEW_HOME_IP to any port 1935 proto tcp
 ## 1.5 Get the project onto the server
 
 ```
-git clone YOUR_PRIVATE_REPO_URL selfstream
-cd selfstream
+git clone YOUR_REPO_URL upperroom
+cd upperroom
 ```
 
 Continue with `docs/02-cloudflare.md`.

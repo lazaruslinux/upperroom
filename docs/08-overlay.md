@@ -1,7 +1,7 @@
 # The chat overlay
 
-The overlay is a transparent page that shows recent chat, join notices, and clip
-alerts in the site's terminal look. You add it to OBS as a browser source and
+The overlay is a transparent page that shows recent chat, join notices, clip
+alerts and highlighted messages, styled to match the site. You add it to OBS as a browser source and
 composite it over your video, so the broadcast itself carries the chat. Nothing
 about it touches your viewers' watch page; it is purely for the outgoing stream.
 
@@ -33,7 +33,8 @@ running for a whole broadcast unattended.
 
 ## What it shows
 
-- **Chat**, newest at the bottom, with the author's name and any op/mod tag. Lines
+- **Chat**, newest at the bottom, with the author's name in whatever color they
+  chose. The host shows a small red camera, a moderator a `mod` tag. Lines
   clear themselves after about a minute, and only the last several stay on screen,
   so it stays ambient rather than piling up.
 - **Join notices** ("someone joined") as a smaller muted line.
