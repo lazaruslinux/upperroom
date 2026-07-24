@@ -32,7 +32,8 @@ import db
 from hub import chat_purge_worker, hub
 from notify import schedule_worker
 from media import (
-    cleanup_record_scratch, retention_worker, stream_watcher, thumbnail_worker,
+    cleanup_record_scratch, retention_worker, stream_watcher, sweep_orphan_media,
+    thumbnail_worker,
 )
 from routes import admin as admin_routes
 from routes import auth as auth_routes
@@ -82,6 +83,9 @@ async def lifespan(_app):
     # Their scratch files can outlive the rows (a restart mid-recording), so sweep
     # the recording scratch dir of anything not tied to an active recording.
     cleanup_record_scratch()
+    # And the archived side: files whose rows were dropped above are bytes
+    # nothing points at, which would otherwise count against the size cap.
+    sweep_orphan_media()
     tasks = [
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),

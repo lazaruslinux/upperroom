@@ -1383,12 +1383,15 @@ def set_media_keep(kind, ref_id, keep):
 
 def _rows_for_retention(conn, kind):
     """Every unpinned, finished item of one kind, newest first. Pinned rows are
-    left out entirely, so a pin does not use up a slot in the count limit."""
+    left out entirely, so a pin does not use up a slot in the count limit. So
+    are rows without a filename yet: a clip's row exists while ffmpeg is still
+    cutting it, and deleting it mid-cut would strand the file it is writing."""
     table, ts_column = _MEDIA_KINDS[kind]
     ready = " AND ready = 1" if kind == "vod" else ""
     return conn.execute(
         f"SELECT id, filename, {ts_column} AS ts FROM {table} "
-        f"WHERE keep = 0{ready} ORDER BY ts DESC, id DESC"
+        f"WHERE keep = 0{ready} AND filename IS NOT NULL AND filename != '' "
+        "ORDER BY ts DESC, id DESC"
     ).fetchall()
 
 
@@ -1399,10 +1402,11 @@ def _delete_media_row(conn, kind, ref_id):
     conn.execute(f"DELETE FROM {table} WHERE id = ?", (ref_id,))
 
 
-def prune_media(limits, now):
-    """Drop VODs and clips past the count and age limits, newest kept and pinned
-    items always kept. Returns the deleted rows as {kind, id, filename} so the
-    caller can remove the files (and posters) from disk."""
+def prune_candidates(limits, now):
+    """The VODs and clips past the count and age limits, newest kept and pinned
+    items always kept, as {kind, id, filename}. This only reads: the caller
+    removes the files first and deletes the rows for the ones that actually
+    went, so a file that cannot be removed never loses its row."""
     doomed = []
     with connect() as conn:
         for kind in _MEDIA_KINDS:
@@ -1417,9 +1421,20 @@ def prune_media(limits, now):
                     doomed.append(
                         {"kind": kind, "id": row["id"], "filename": row["filename"]}
                     )
-        for item in doomed:
-            _delete_media_row(conn, item["kind"], item["id"])
     return doomed
+
+
+def media_filenames():
+    """Every filename and poster the database expects to exist, by kind, so a
+    sweep can tell a real file from one nothing points at any more."""
+    known = {"vod": set(), "clip": set()}
+    with connect() as conn:
+        for kind, (table, _ts) in _MEDIA_KINDS.items():
+            for row in conn.execute(f"SELECT id, filename FROM {table}"):
+                if row["filename"]:
+                    known[kind].add(os.path.basename(row["filename"]))
+                known[kind].add(f"{row['id']}.jpg")
+    return known
 
 
 def retention_candidates():

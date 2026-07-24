@@ -234,14 +234,23 @@ def test_retention_is_off_on_a_fresh_install(fresh_db):
     assert limits == {field: 0 for field in db.RETENTION_FIELDS}
     now = int(time.time())
     _aged_vods(5, now)
-    assert db.prune_media(limits, now) == []
+    assert db.prune_candidates(limits, now) == []
     assert len(db.list_vods()) == 5
+
+
+def _prune(limits, now):
+    """Select and then delete, the way the media layer does once it has removed
+    the files. prune_candidates only reads, so a file that cannot be removed
+    never loses its row."""
+    doomed = db.prune_candidates(limits, now)
+    db.delete_media_rows(doomed)
+    return doomed
 
 
 def test_prune_media_keeps_the_newest_by_count(fresh_db):
     now = int(time.time())
     ids = _aged_vods(5, now)
-    doomed = db.prune_media({"vod_keep_count": 2}, now)
+    doomed = _prune({"vod_keep_count": 2}, now)
     remaining = {v["id"] for v in db.list_vods()}
     assert remaining == {ids[-1], ids[-2]}                 # two newest kept
     assert {d["id"] for d in doomed} == set(ids[:3])
@@ -255,7 +264,7 @@ def test_a_pinned_vod_survives_and_does_not_use_up_a_slot(fresh_db):
     now = int(time.time())
     ids = _aged_vods(4, now)
     db.set_media_keep("vod", ids[0], True)
-    db.prune_media({"vod_keep_count": 2}, now)
+    _prune({"vod_keep_count": 2}, now)
     remaining = {v["id"] for v in db.list_vods()}
     assert remaining == {ids[0], ids[-1], ids[-2]}         # pinned plus two newest
 
@@ -263,7 +272,7 @@ def test_a_pinned_vod_survives_and_does_not_use_up_a_slot(fresh_db):
 def test_prune_media_age_limit_ignores_the_count(fresh_db):
     now = int(time.time())
     ids = _aged_vods(3, now, spacing=86400 * 3)            # 9, 6 and 3 days old
-    db.prune_media({"vod_keep_days": 5}, now)
+    _prune({"vod_keep_days": 5}, now)
     assert {v["id"] for v in db.list_vods()} == {ids[-1]}
 
 
@@ -273,7 +282,7 @@ def test_prune_media_prunes_clips_too(fresh_db):
     now = int(time.time())
     for i in range(4):
         db.create_clip(f"c{i}", f"{i}.mp4", "alice", None, now, now, 30, now - (4 - i) * 10)
-    doomed = db.prune_media({"clip_keep_count": 1}, now)
+    doomed = _prune({"clip_keep_count": 1}, now)
     assert len(doomed) == 3 and all(d["kind"] == "clip" for d in doomed)
     assert len(db.list_clips()) == 1
 
@@ -282,7 +291,7 @@ def test_prune_media_leaves_the_other_kind_alone(fresh_db):
     now = int(time.time())
     _aged_vods(3, now)
     db.create_clip("c", "c.mp4", "alice", None, now, now, 30, now)
-    db.prune_media({"vod_keep_count": 1}, now)
+    _prune({"vod_keep_count": 1}, now)
     assert len(db.list_clips()) == 1
 
 

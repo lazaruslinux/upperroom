@@ -142,3 +142,60 @@ def test_enforce_retention_swallows_a_broken_store(store, monkeypatch):
     # never raise into either of them.
     monkeypatch.setattr(db, "get_retention", lambda: (_ for _ in ()).throw(RuntimeError))
     assert asyncio.run(media.enforce_retention()) == 0
+
+
+def test_size_cap_removes_nothing_when_it_cannot_get_under(store):
+    # The defect this exists to prevent: usage is measured from the disk, but
+    # only rows can be deleted, so bytes retention cannot reach (a recording
+    # still being written, or a file no row points at) would otherwise be paid
+    # for by deleting the entire archive and still be over the cap afterwards.
+    vods, _ = store
+    now = int(time.time())
+    gb = 1024 * 1024 * 1024
+    ids = [_vod_with_file(store, now - (3 - i) * 100, gb, poster=False)
+           for i in range(3)]
+    _write(vods / "orphan.mp4", 50 * gb)      # bytes with no row behind them
+    db.set_retention(media_cap_gb=10)
+    asyncio.run(media.enforce_retention())
+    assert {v["id"] for v in db.list_vods()} == set(ids)
+
+
+def test_a_file_that_cannot_be_removed_keeps_its_row(store, monkeypatch):
+    # Files go before rows. If the store is read-only or the permissions are
+    # wrong, the recording must stay listed and deletable rather than becoming
+    # bytes nothing points at, which the size cap would then try to reclaim by
+    # deleting somebody else's recording.
+    now = int(time.time())
+    ids = [_vod_with_file(store, now - (3 - i) * 100, 1000) for i in range(3)]
+    monkeypatch.setattr(
+        media, "_remove_item_files", lambda item: False
+    )
+    db.set_retention(vod_keep_count=1)
+    assert asyncio.run(media.enforce_retention()) == 0
+    assert {v["id"] for v in db.list_vods()} == set(ids)
+
+
+def test_the_orphan_sweep_removes_only_files_no_row_points_at(store):
+    vods, clips = store
+    now = int(time.time())
+    kept = _vod_with_file(store, now, 1000)
+    _write(vods / "9999.mp4", 1000)           # left by a gate that stopped early
+    _write(clips / "stray.jpg", 100)
+    assert media.sweep_orphan_media() == 2
+    assert (vods / f"{kept}.mp4").exists()
+    assert (vods / f"{kept}.jpg").exists()    # the poster is a known file too
+    assert not (vods / "9999.mp4").exists()
+    assert not (clips / "stray.jpg").exists()
+
+
+def test_a_clip_still_being_cut_is_never_a_retention_candidate(store):
+    # make_clip writes the row before ffmpeg finishes, so for up to forty
+    # seconds there is a row with no filename. Deleting it would strand the file
+    # ffmpeg is about to write.
+    now = int(time.time())
+    in_flight = db.create_clip("cutting", "", "alice", None, now, now, 30, now - 500)
+    for i in range(3):
+        db.create_clip(f"c{i}", f"{i}.mp4", "alice", None, now, now, 30, now - i)
+    assert in_flight not in {c["id"] for c in db.retention_candidates()}
+    doomed = db.prune_candidates({"clip_keep_count": 1}, now)
+    assert in_flight not in {d["id"] for d in doomed}

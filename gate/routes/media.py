@@ -185,8 +185,11 @@ async def _set_keep(kind, ref_id, request, missing):
     # above use. A pinned item is exempt from every retention limit.
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    body = await request.json()
-    keep = bool(body.get("keep"))
+    try:
+        body = await request.json()
+        keep = bool(body["keep"])
+    except (ValueError, TypeError, KeyError):
+        return JSONResponse({"error": "Say whether to keep it."}, status_code=400)
     if not db.set_media_keep(kind, ref_id, keep):
         return JSONResponse({"error": missing}, status_code=404)
     return {"ok": True, "keep": keep}

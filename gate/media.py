@@ -426,70 +426,140 @@ def _item_bytes(item):
 
 
 def _remove_item_files(item):
+    """Remove a VOD or clip's file and poster. True when nothing of it is left
+    on disk, which is what lets the caller decide whether the row may go."""
     folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
     _remove_media_files(folder, item.get("filename"), item["id"])
+    for name in (item.get("filename"), f"{item['id']}.jpg"):
+        if name and os.path.exists(os.path.join(folder, os.path.basename(name))):
+            return False
+    return True
 
 
 def _over_cap(cap_gb, used_bytes):
     return cap_gb > 0 and used_bytes > cap_gb * 1024 * 1024 * 1024
 
 
+def _remove_batch(items, why):
+    """Remove the files for a batch, then delete the rows of the ones whose
+    files really went. Files first, deliberately: a row whose file could not be
+    removed keeps its recording visible and deletable, while deleting the row
+    anyway would leave bytes on disk that nothing points at and that the size
+    cap would then try to reclaim by deleting somebody else's recording."""
+    gone = []
+    for item in items:
+        if _remove_item_files(item):
+            gone.append(item)
+            logger.info("%s removed by %s: id=%s", item["kind"], why, item["id"])
+        else:
+            logger.warning(
+                "%s id=%s was kept: its files could not be removed",
+                item["kind"], item["id"],
+            )
+    if gone:
+        db.delete_media_rows(gone)
+    return gone
+
+
 def _apply_size_cap(cap_gb):
-    """Delete oldest first until the media store is back under the cap. Never
-    removes the newest recording or the newest clip: a single oversized file
-    under a smaller cap would otherwise delete itself the moment it landed, and
-    then do it again on the next broadcast. Returns the items removed."""
+    """Bring the media store back under the size cap, oldest first.
+
+    Two things it will not do. It never removes the newest recording or the
+    newest clip, so a single file bigger than the cap cannot delete itself the
+    moment it lands. And if removing everything it is allowed to remove would
+    still leave the store over the cap, it removes nothing at all: the excess is
+    then something retention cannot reach (a recording still being written, or a
+    file no row points at), and deleting real recordings would not fix it."""
     used = media_usage()["total_bytes"]
     if not _over_cap(cap_gb, used):
         return []
+    limit = cap_gb * 1024 * 1024 * 1024
     candidates = db.retention_candidates()
     # The newest of each kind is off limits, whatever the cap says.
     protected = set()
     for kind in ("vod", "clip"):
-        newest = [c for c in candidates if c["kind"] == kind]
-        if newest:
-            protected.add((kind, newest[-1]["id"]))
-    removed = []
+        of_kind = [c for c in candidates if c["kind"] == kind]
+        if of_kind:
+            protected.add((kind, of_kind[-1]["id"]))
+    doomed = []
+    freed = 0
     for item in candidates:
-        if not _over_cap(cap_gb, used):
+        if used - freed <= limit:
             break
         if (item["kind"], item["id"]) in protected:
             continue
-        used -= _item_bytes(item)
-        removed.append(item)
-    if removed:
-        db.delete_media_rows(removed)
-        for item in removed:
-            _remove_item_files(item)
-    if _over_cap(cap_gb, used):
+        freed += _item_bytes(item)
+        doomed.append(item)
+    if used - freed > limit:
         logger.warning(
-            "media store is %s bytes, still over the %s GB cap after pruning; "
-            "the newest recording and clip are never removed",
-            used, cap_gb,
+            "the media store is %s bytes, over the %s GB cap, but only %s bytes "
+            "can be reclaimed; removing nothing, because deleting every "
+            "recording it is allowed to would still leave it over",
+            used, cap_gb, freed,
         )
-    return removed
+        return []
+    return _remove_batch(doomed, "the size cap")
+
+
+# One sweep at a time. It runs from three places (the hourly worker, the end of
+# a recording, and an admin saving the limits), and two overlapping sweeps would
+# each measure the store before the other's deletions and delete far past the
+# cap between them.
+_retention_lock = asyncio.Lock()
 
 
 async def enforce_retention():
     """Apply the channel's retention limits: the per-kind count and age limits
-    first, then the total size cap. Pinned items are never touched. Removes rows
-    and their files. Best effort and logged; never raises. Returns how many items
-    were removed."""
+    first, then the total size cap. Pinned items are never touched. Best effort
+    and logged; never raises. Returns how many items were removed."""
     try:
         limits = db.get_retention()
         if not any(limits.values()):
             return 0
-        removed = db.prune_media(limits, int(time.time()))
-        for item in removed:
-            _remove_item_files(item)
-            logger.info("%s pruned by retention: id=%s", item["kind"], item["id"])
-        capped = await asyncio.to_thread(_apply_size_cap, limits["media_cap_gb"])
-        for item in capped:
-            logger.info("%s pruned by the size cap: id=%s", item["kind"], item["id"])
+        async with _retention_lock:
+            doomed = db.prune_candidates(limits, int(time.time()))
+            removed = await asyncio.to_thread(_remove_batch, doomed, "retention")
+            capped = await asyncio.to_thread(
+                _apply_size_cap, limits["media_cap_gb"]
+            )
         return len(removed) + len(capped)
     except Exception:
         logger.warning("retention sweep failed", exc_info=True)
         return 0
+
+
+def sweep_orphan_media():
+    """Remove files in the media store that no row points at.
+
+    They come from a gate that stopped between writing a recording and marking
+    it finished, whose row is then dropped at the next start. Left alone they
+    are invisible bytes that count against the size cap, which could only pay
+    for them by deleting real recordings. Called at startup, when nothing is
+    recording or being clipped, for the same reason the scratch sweep is."""
+    try:
+        known = db.media_filenames()
+    except Exception:
+        logger.warning("could not list media files to sweep", exc_info=True)
+        return 0
+    swept = 0
+    for kind, folder in (("vod", VOD_DIR), ("clip", CLIP_DIR)):
+        try:
+            entries = os.listdir(folder)
+        except OSError:
+            continue
+        for name in entries:
+            if name in known[kind]:
+                continue
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                os.remove(path)
+                swept += 1
+                logger.info("removed orphaned media file: %s", path)
+            except OSError:
+                logger.warning("could not remove %s", path, exc_info=True)
+    return swept
 
 
 async def retention_worker():
