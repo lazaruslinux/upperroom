@@ -21,10 +21,10 @@ import httpx
 
 import db
 from config import (
-    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, POINTS_PER_MINUTE,
-    RECORD_BACKOFF, RECORD_STALL_POLLS, RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS,
-    RECORD_TMP, RTMP_SOURCE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP,
-    VOD_DIR, VOD_KEEP, VOD_KEEP_DAYS,
+    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
+    POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS, RECORD_STARTUP_GRACE,
+    RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL, RTMP_SOURCE, STREAM_PATH,
+    THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
 )
 from hub import hub
 from notify import notify_live
@@ -365,6 +365,134 @@ def cleanup_record_scratch():
             logger.warning("could not remove scratch file %s", path, exc_info=True)
 
 
+def _dir_bytes(folder):
+    """Bytes used by the regular files in one directory. Stat'ed rather than
+    tracked in the database, so it is the truth about the disk and it counts
+    orphans whose rows are already gone."""
+    total = 0
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_file():
+                        total += entry.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        logger.debug("media dir %s not listable", folder, exc_info=True)
+    return total
+
+
+def media_usage():
+    """Bytes used by the media store, split by kind, plus the free space on the
+    filesystem holding it. Never touches the database, never raises."""
+    vods_bytes = _dir_bytes(VOD_DIR)
+    clips_bytes = _dir_bytes(CLIP_DIR)
+    free_bytes = 0
+    fs_total_bytes = 0
+    try:
+        usage = shutil.disk_usage(MEDIA_DIR)
+        free_bytes = usage.free
+        fs_total_bytes = usage.total
+    except OSError:
+        logger.debug("could not stat the media filesystem", exc_info=True)
+    return {
+        "vods_bytes": vods_bytes,
+        "clips_bytes": clips_bytes,
+        "total_bytes": vods_bytes + clips_bytes,
+        "free_bytes": free_bytes,
+        "fs_total_bytes": fs_total_bytes,
+    }
+
+
+def _item_bytes(item):
+    folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
+    total = 0
+    for name in (item.get("filename"), f"{item['id']}.jpg"):
+        if not name:
+            continue
+        try:
+            total += os.path.getsize(os.path.join(folder, os.path.basename(name)))
+        except OSError:
+            continue
+    return total
+
+
+def _remove_item_files(item):
+    folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
+    _remove_media_files(folder, item.get("filename"), item["id"])
+
+
+def _over_cap(cap_gb, used_bytes):
+    return cap_gb > 0 and used_bytes > cap_gb * 1024 * 1024 * 1024
+
+
+def _apply_size_cap(cap_gb):
+    """Delete oldest first until the media store is back under the cap. Never
+    removes the newest recording or the newest clip: a single oversized file
+    under a smaller cap would otherwise delete itself the moment it landed, and
+    then do it again on the next broadcast. Returns the items removed."""
+    used = media_usage()["total_bytes"]
+    if not _over_cap(cap_gb, used):
+        return []
+    candidates = db.retention_candidates()
+    # The newest of each kind is off limits, whatever the cap says.
+    protected = set()
+    for kind in ("vod", "clip"):
+        newest = [c for c in candidates if c["kind"] == kind]
+        if newest:
+            protected.add((kind, newest[-1]["id"]))
+    removed = []
+    for item in candidates:
+        if not _over_cap(cap_gb, used):
+            break
+        if (item["kind"], item["id"]) in protected:
+            continue
+        used -= _item_bytes(item)
+        removed.append(item)
+    if removed:
+        db.delete_media_rows(removed)
+        for item in removed:
+            _remove_item_files(item)
+    if _over_cap(cap_gb, used):
+        logger.warning(
+            "media store is %s bytes, still over the %s GB cap after pruning; "
+            "the newest recording and clip are never removed",
+            used, cap_gb,
+        )
+    return removed
+
+
+async def enforce_retention():
+    """Apply the channel's retention limits: the per-kind count and age limits
+    first, then the total size cap. Pinned items are never touched. Removes rows
+    and their files. Best effort and logged; never raises. Returns how many items
+    were removed."""
+    try:
+        limits = db.get_retention()
+        if not any(limits.values()):
+            return 0
+        removed = db.prune_media(limits, int(time.time()))
+        for item in removed:
+            _remove_item_files(item)
+            logger.info("%s pruned by retention: id=%s", item["kind"], item["id"])
+        capped = await asyncio.to_thread(_apply_size_cap, limits["media_cap_gb"])
+        for item in capped:
+            logger.info("%s pruned by the size cap: id=%s", item["kind"], item["id"])
+        return len(removed) + len(capped)
+    except Exception:
+        logger.warning("retention sweep failed", exc_info=True)
+        return 0
+
+
+async def retention_worker():
+    """Apply the retention limits on a timer, so lowering a limit on the
+    dashboard takes effect without waiting for the next broadcast to end."""
+    while True:
+        await enforce_retention()
+        await asyncio.sleep(RETENTION_INTERVAL)
+
+
 async def start_recording():
     if _rec["active"]:
         return
@@ -632,13 +760,9 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         db.finalize_vod(vod_id, ended_at, duration, filename)
         db.snapshot_chat("vod", vod_id, started_at, ended_at)
         logger.info("recording finalized: %s (%ss)", dst, duration)
-        # Enforce retention, removing the oldest VODs (rows and files) over the cap.
-        try:
-            for doomed in db.prune_vods(VOD_KEEP, VOD_KEEP_DAYS, int(time.time())):
-                _remove_media_files(VOD_DIR, doomed.get("filename"), doomed["id"])
-                logger.info("VOD pruned by retention: id=%s", doomed["id"])
-        except Exception:
-            logger.warning("VOD retention pruning failed", exc_info=True)
+        # Finalizing is when the media store jumps in size, so reclaim here
+        # rather than waiting up to an hour for the sweep.
+        await enforce_retention()
     except Exception:
         logger.warning("recording finalize failed for vod_id=%s", vod_id,
                        exc_info=True)

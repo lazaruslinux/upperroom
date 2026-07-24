@@ -59,6 +59,7 @@ def _media_summary(row, kind):
         "duration": row.get("duration") or 0,
         "views": row.get("views") or 0,
         "poster": has_poster,
+        "keep": bool(row.get("keep")),
     }
     if kind == "vod":
         out.update(
@@ -176,6 +177,28 @@ def delete_clip(clip_id: int, request: Request):
         return JSONResponse({"error": "No such clip."}, status_code=404)
     _remove_media_files(CLIP_DIR, row.get("filename"), clip_id)
     return {"ok": True}
+
+
+async def _set_keep(kind, ref_id, request, missing):
+    # Pinning is an admin action on channel content, the same guard the deletes
+    # above use. A pinned item is exempt from every retention limit.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    keep = bool(body.get("keep"))
+    if not db.set_media_keep(kind, ref_id, keep):
+        return JSONResponse({"error": missing}, status_code=404)
+    return {"ok": True, "keep": keep}
+
+
+@router.post("/api/vods/{vod_id}/keep")
+async def set_vod_keep(vod_id: int, request: Request):
+    return await _set_keep("vod", vod_id, request, "No such VOD.")
+
+
+@router.post("/api/clips/{clip_id}/keep")
+async def set_clip_keep(clip_id: int, request: Request):
+    return await _set_keep("clip", clip_id, request, "No such clip.")
 
 
 @router.get("/api/status")

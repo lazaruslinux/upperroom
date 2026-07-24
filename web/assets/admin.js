@@ -110,14 +110,40 @@ async function loadContent() {
     left.querySelector(".muted").textContent =
       `${durationClock(item.duration)} · ${item.views} views · ${when}` +
       (kind === "clip" && item.creator ? ` · @${item.creator}` : "");
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "chip-btn" + (item.keep ? " pinned-chip" : "");
+    pin.textContent = item.keep ? "Pinned" : "Pin";
+    pin.title = item.keep
+      ? "Retention never removes this. Click to unpin."
+      : "Keep this no matter what retention says.";
+    pin.addEventListener("click", () => togglePin(kind, item.id, !item.keep, pin));
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "chip-btn danger-chip";
     btn.textContent = "Delete";
     btn.addEventListener("click", () => deleteContent(kind, item.id, title, btn));
-    row.append(left, btn);
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    actions.append(pin, btn);
+    row.append(left, actions);
     list.appendChild(row);
   });
+}
+
+async function togglePin(kind, id, keep, btn) {
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/${kind}s/${id}/keep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keep }),
+    });
+    if (reply.ok) { loadContent(); loadRetention(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not change the pin.");
+  } catch { alert("Could not change the pin."); }
+  btn.disabled = false;
 }
 
 async function deleteContent(kind, id, title, btn) {
@@ -766,6 +792,98 @@ async function saveNotify(test) {
 document.getElementById("notify-save").addEventListener("click", () => saveNotify(false));
 document.getElementById("notify-test").addEventListener("click", () => saveNotify(true));
 
+// ---- storage and retention ----
+
+const RETENTION_FIELDS = {
+  "ret-vod-count": "vod_keep_count",
+  "ret-vod-days": "vod_keep_days",
+  "ret-clip-count": "clip_keep_count",
+  "ret-clip-days": "clip_keep_days",
+  "ret-cap-gb": "media_cap_gb",
+};
+const retMsg = document.getElementById("ret-msg");
+
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Math.max(0, bytes || 0);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+function showRetMsg(text, ok) {
+  retMsg.textContent = text;
+  retMsg.classList.toggle("good", !!ok);
+  retMsg.classList.toggle("bad", !ok);
+  retMsg.hidden = false;
+}
+
+function renderRetention(data) {
+  Object.entries(RETENTION_FIELDS).forEach(([id, field]) => {
+    document.getElementById(id).value = data[field] ?? 0;
+  });
+  const usage = data.usage || {};
+  const counts = data.counts || {};
+  const parts = [
+    `${formatBytes(usage.total_bytes)} used`,
+    `${counts.vods || 0} recordings, ${counts.clips || 0} clips`,
+  ];
+  if (counts.pinned) parts.push(`${counts.pinned} pinned`);
+  if (usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);
+  document.getElementById("storage-usage").textContent = parts.join(" · ");
+  // The bar is the media store against the whole filesystem it sits on, so it
+  // answers "how close am I to trouble" rather than "how close to my own cap".
+  const fill = document.getElementById("usage-fill");
+  const capacity = usage.fs_total_bytes || 0;
+  const usedShare = capacity
+    ? Math.min(100, ((capacity - (usage.free_bytes || 0)) / capacity) * 100)
+    : 0;
+  fill.style.width = `${usedShare}%`;
+  fill.classList.toggle("is-tight", usedShare >= 90);
+  const off = Object.values(RETENTION_FIELDS).every((field) => !data[field]);
+  const state = document.getElementById("retention-state");
+  state.textContent = off
+    ? "Retention is off. Nothing is ever deleted automatically."
+    : "Retention is on. Unpinned items past these limits are deleted.";
+  state.classList.toggle("good", off);
+  state.classList.toggle("bad", !off);
+  state.hidden = false;
+}
+
+async function loadRetention() {
+  try { renderRetention(await (await fetch("/api/admin/retention")).json()); }
+  catch { /* leave the panel as it was */ }
+}
+
+async function saveRetention() {
+  retMsg.hidden = true;
+  const body = {};
+  Object.entries(RETENTION_FIELDS).forEach(([id, field]) => {
+    body[field] = Number(document.getElementById(id).value || 0);
+  });
+  let reply;
+  try {
+    reply = await fetch("/api/admin/retention", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch { showRetMsg("Could not reach the server.", false); return; }
+  const data = await reply.json().catch(() => ({}));
+  if (!reply.ok) { showRetMsg(data.error || "Could not save.", false); return; }
+  const removed = data.removed || 0;
+  showRetMsg(
+    removed
+      ? `Saved. Removed ${removed} ${removed === 1 ? "item" : "items"}.`
+      : "Saved. Nothing needed removing.",
+    true,
+  );
+  renderRetention(data);
+  loadContent();
+}
+
+document.getElementById("ret-save").addEventListener("click", saveRetention);
+
 // ---- overlay (OBS chat browser source) ----
 
 const overlayUrlInput = document.getElementById("overlay-url");
@@ -913,6 +1031,7 @@ async function boot() {
   loadStreamKey();
   loadOverlay();
   loadNotify();
+  loadRetention();
 }
 
 boot();

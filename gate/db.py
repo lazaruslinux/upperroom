@@ -107,7 +107,18 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- a plain viewer (0 = off; mods and admins are exempt). banned_words is a
     -- newline/comma separated list; a message containing any of them is dropped.
     slow_mode_seconds INTEGER NOT NULL DEFAULT 0,
-    banned_words TEXT NOT NULL DEFAULT ''
+    banned_words TEXT NOT NULL DEFAULT '',
+    -- Retention limits for the media store. Every one of these is 0 by default,
+    -- and 0 means "no limit on this axis", so a fresh install never deletes a
+    -- recording or a clip on its own. The operator opts in from the dashboard.
+    -- An item that is pinned (vods.keep / clips.keep) is exempt from all of them.
+    vod_keep_count INTEGER NOT NULL DEFAULT 0,
+    vod_keep_days INTEGER NOT NULL DEFAULT 0,
+    clip_keep_count INTEGER NOT NULL DEFAULT 0,
+    clip_keep_days INTEGER NOT NULL DEFAULT 0,
+    -- A ceiling on the whole media store in gigabytes. Enforced oldest first
+    -- across both kinds once the per-kind limits above have had their say.
+    media_cap_gb INTEGER NOT NULL DEFAULT 0
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -121,7 +132,11 @@ CREATE TABLE IF NOT EXISTS vods (
     ended_at INTEGER,
     duration INTEGER,
     views INTEGER NOT NULL DEFAULT 0,
-    ready INTEGER NOT NULL DEFAULT 0
+    ready INTEGER NOT NULL DEFAULT 0,
+    -- Pinned by the operator: retention never removes this recording, and it
+    -- does not use up a slot in the count limit either. Deleting it by hand
+    -- still works; an explicit action always beats the pin.
+    keep INTEGER NOT NULL DEFAULT 0
 );
 
 -- A viewer made clip: a short cut of the last 30 seconds of the live stream.
@@ -135,7 +150,9 @@ CREATE TABLE IF NOT EXISTS clips (
     end_ts INTEGER NOT NULL,
     duration INTEGER NOT NULL,
     views INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Same pin as on vods: retention never removes a pinned clip.
+    keep INTEGER NOT NULL DEFAULT 0
 );
 
 -- Chat snapshotted at the moment a VOD or clip is finalized, with each line's
@@ -259,6 +276,25 @@ def init_db():
         _ensure_column(
             conn, "channel_settings", "banned_words", "TEXT NOT NULL DEFAULT ''"
         )
+        # Retention moved out of the environment and into the dashboard. The
+        # first of these tells us whether this database predates that move.
+        upgraded = _ensure_column(
+            conn, "channel_settings", "vod_keep_count", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "vod_keep_days", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "clip_keep_count", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "clip_keep_days", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "media_cap_gb", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(conn, "vods", "keep", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "clips", "keep", "INTEGER NOT NULL DEFAULT 0")
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
         # same lightweight in-init migration as the column adds above.
@@ -268,6 +304,18 @@ def init_db():
             "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
             "VALUES (1, 'Live Stream')"
         )
+        # This database predates dashboard-managed retention, so until now it has
+        # been pruning by the old environment variables. Carry those values over
+        # once, so an update never silently changes how many recordings the
+        # operator keeps. From here the dashboard owns the limits and the
+        # environment is ignored. Read the environment directly for the same
+        # reason as PUBLISH_PASS below: db is imported without config.
+        if upgraded:
+            conn.execute(
+                "UPDATE channel_settings SET vod_keep_count = ?, vod_keep_days = ? "
+                "WHERE id = 1",
+                (_env_int("SELFSTREAM_VOD_KEEP", 20), _env_int("SELFSTREAM_VOD_KEEP_DAYS", 0)),
+            )
         # Seed the publish key from PUBLISH_PASS on an existing install so OBS and
         # the demo keep working across the switch to gate-delegated auth. Only
         # while it is still NULL: once a key exists (generated or already seeded),
@@ -289,10 +337,24 @@ def init_db():
         )
 
 
+def _env_int(name, fallback):
+    """An integer from the environment, falling back on anything unusable. Only
+    the one-time retention seeding needs this; everything else reads config."""
+    try:
+        return int(os.environ.get(name, "").strip() or fallback)
+    except ValueError:
+        return fallback
+
+
 def _ensure_column(conn, table, column, decl):
+    """Add a column if the table does not have it yet. Returns True when the
+    column was actually added, which is the one moment a caller can tell an
+    upgrade from a fresh install and run a one-time backfill."""
     existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        return True
+    return False
 
 
 def hash_password(password):
@@ -1024,7 +1086,7 @@ def list_vods():
     """Finished VODs for the landing page, most recent first."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, title, description, filename, started_at, duration, views "
+            "SELECT id, title, description, filename, started_at, duration, views, keep "
             "FROM vods WHERE ready = 1 ORDER BY started_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1073,8 +1135,8 @@ def clear_unfinished_vods():
 def list_clips():
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, name, filename, creator, start_ts, duration, views, created_at "
-            "FROM clips ORDER BY created_at DESC"
+            "SELECT id, name, filename, creator, start_ts, duration, views, created_at, "
+            "keep FROM clips ORDER BY created_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1159,29 +1221,146 @@ def get_replay(kind, ref_id):
         return [dict(r) for r in rows]
 
 
-def prune_vods(keep_count, keep_days, now):
-    """Drop VODs past the retention limits, newest kept. Returns the deleted rows
-    so the caller can remove the files (and posters) from disk."""
+# ---- Retention ------------------------------------------------------------
+# Every limit is 0 by default and 0 means "no limit on this axis", so all five
+# at zero is retention switched off: nothing is ever deleted on its own. There
+# is deliberately no separate on/off flag, which would be a second source of
+# truth able to disagree with the numbers.
+
+RETENTION_FIELDS = (
+    "vod_keep_count",
+    "vod_keep_days",
+    "clip_keep_count",
+    "clip_keep_days",
+    "media_cap_gb",
+)
+
+# The two kinds, and the column each one is ordered and aged by.
+_MEDIA_KINDS = {"vod": ("vods", "started_at"), "clip": ("clips", "created_at")}
+
+
+def get_retention():
+    """The channel's retention limits. All zero means retention is off."""
     with connect() as conn:
-        ready = conn.execute(
-            "SELECT id, filename, started_at FROM vods WHERE ready = 1 "
-            "ORDER BY started_at DESC"
-        ).fetchall()
-        doomed = []
-        for idx, row in enumerate(ready):
-            too_many = keep_count > 0 and idx >= keep_count
-            too_old = keep_days > 0 and row["started_at"] < now - keep_days * 86400
-            if too_many or too_old:
-                doomed.append(dict(row))
-        for d in doomed:
-            conn.execute(
-                "DELETE FROM replay_chat WHERE kind = 'vod' AND ref_id = ?", (d["id"],)
-            )
-            conn.execute(
-                "DELETE FROM media_views WHERE kind = 'vod' AND ref_id = ?", (d["id"],)
-            )
-            conn.execute("DELETE FROM vods WHERE id = ?", (d["id"],))
-        return doomed
+        row = conn.execute(
+            f"SELECT {', '.join(RETENTION_FIELDS)} FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {field: 0 for field in RETENTION_FIELDS}
+        return {field: int(row[field]) for field in RETENTION_FIELDS}
+
+
+def set_retention(**limits):
+    """Update whichever retention limits were passed, leaving the rest alone.
+    Unknown names are a programming error, not silently ignored."""
+    sets = []
+    values = []
+    for field, value in limits.items():
+        if field not in RETENTION_FIELDS:
+            raise ValueError(f"unknown retention limit: {field!r}")
+        if value is None:
+            continue
+        sets.append(f"{field} = ?")
+        values.append(max(0, int(value)))
+    if not sets:
+        return
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE channel_settings SET {', '.join(sets)} WHERE id = 1", values
+        )
+
+
+def set_media_keep(kind, ref_id, keep):
+    """Pin or unpin one VOD or clip. A pinned item is never removed by
+    retention. Returns True when a row changed."""
+    table = _media_table(kind)
+    with connect() as conn:
+        cur = conn.execute(
+            f"UPDATE {table} SET keep = ? WHERE id = ?", (1 if keep else 0, ref_id)
+        )
+        return cur.rowcount > 0
+
+
+def _rows_for_retention(conn, kind):
+    """Every unpinned, finished item of one kind, newest first. Pinned rows are
+    left out entirely, so a pin does not use up a slot in the count limit."""
+    table, ts_column = _MEDIA_KINDS[kind]
+    ready = " AND ready = 1" if kind == "vod" else ""
+    return conn.execute(
+        f"SELECT id, filename, {ts_column} AS ts FROM {table} "
+        f"WHERE keep = 0{ready} ORDER BY ts DESC, id DESC"
+    ).fetchall()
+
+
+def _delete_media_row(conn, kind, ref_id):
+    table = _media_table(kind)
+    conn.execute("DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    conn.execute("DELETE FROM media_views WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    conn.execute(f"DELETE FROM {table} WHERE id = ?", (ref_id,))
+
+
+def prune_media(limits, now):
+    """Drop VODs and clips past the count and age limits, newest kept and pinned
+    items always kept. Returns the deleted rows as {kind, id, filename} so the
+    caller can remove the files (and posters) from disk."""
+    doomed = []
+    with connect() as conn:
+        for kind in _MEDIA_KINDS:
+            keep_count = int(limits.get(f"{kind}_keep_count", 0) or 0)
+            keep_days = int(limits.get(f"{kind}_keep_days", 0) or 0)
+            if keep_count <= 0 and keep_days <= 0:
+                continue
+            for index, row in enumerate(_rows_for_retention(conn, kind)):
+                too_many = keep_count > 0 and index >= keep_count
+                too_old = keep_days > 0 and row["ts"] < now - keep_days * 86400
+                if too_many or too_old:
+                    doomed.append(
+                        {"kind": kind, "id": row["id"], "filename": row["filename"]}
+                    )
+        for item in doomed:
+            _delete_media_row(conn, item["kind"], item["id"])
+    return doomed
+
+
+def retention_candidates():
+    """Every unpinned, finished VOD and clip, oldest first, as
+    {kind, id, filename, ts}. The size cap walks this from the oldest until the
+    media store is back under its limit."""
+    rows = []
+    with connect() as conn:
+        for kind in _MEDIA_KINDS:
+            for row in _rows_for_retention(conn, kind):
+                rows.append(
+                    {
+                        "kind": kind,
+                        "id": row["id"],
+                        "filename": row["filename"],
+                        "ts": row["ts"],
+                    }
+                )
+    rows.sort(key=lambda r: (r["ts"], r["kind"], r["id"]))
+    return rows
+
+
+def delete_media_rows(items):
+    """Delete a batch of {kind, id} rows and everything tied to them. Used by the
+    size cap, which decides what goes by looking at the files on disk."""
+    with connect() as conn:
+        for item in items:
+            _delete_media_row(conn, item["kind"], item["id"])
+
+
+def count_media():
+    """How many recordings and clips there are, and how many are pinned. For the
+    storage panel, which reports counts next to the bytes."""
+    with connect() as conn:
+        vods = conn.execute("SELECT COUNT(*) AS n FROM vods WHERE ready = 1").fetchone()
+        clips = conn.execute("SELECT COUNT(*) AS n FROM clips").fetchone()
+        pinned = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM vods WHERE keep = 1 AND ready = 1) + "
+            "(SELECT COUNT(*) FROM clips WHERE keep = 1) AS n"
+        ).fetchone()
+        return {"vods": vods["n"], "clips": clips["n"], "pinned": pinned["n"]}
 
 
 # ---- Admin views ----------------------------------------------------------

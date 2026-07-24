@@ -135,10 +135,14 @@ RECORD_TMP = os.environ.get("SELFSTREAM_RECORD_TMP", "/data/rec")
 MEDIA_DIR = os.environ.get("SELFSTREAM_MEDIA_DIR", "/data/media")
 VOD_DIR = os.path.join(MEDIA_DIR, "vods")
 CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
-# Retention: keep at most this many VODs, and/or only this many days. 0 disables
-# that limit. The oldest beyond the limit are pruned (files and rows) on stop.
-VOD_KEEP = int(os.environ.get("SELFSTREAM_VOD_KEEP", "20"))
-VOD_KEEP_DAYS = int(os.environ.get("SELFSTREAM_VOD_KEEP_DAYS", "0"))
+# Retention lives in the dashboard now (channel_settings), not here: the limits
+# are per-channel state the operator changes without a restart, and they ship at
+# zero so a fresh install never deletes a recording on its own. The old
+# SELFSTREAM_VOD_KEEP / _DAYS variables are read exactly once, by db.init_db, to
+# seed the dashboard values on an install that predates the move.
+# How often the retention sweep runs, so lowering a limit takes effect without
+# waiting for the next broadcast to end.
+RETENTION_INTERVAL = 3600
 CLIP_SECONDS = 30                  # how much of the live edge a clip captures
 CLIP_LAG = 2                       # stay this far back from the very live edge
 

@@ -30,7 +30,9 @@ import auth
 import config
 import db
 from hub import chat_purge_worker, hub
-from media import cleanup_record_scratch, stream_watcher, thumbnail_worker
+from media import (
+    cleanup_record_scratch, retention_worker, stream_watcher, thumbnail_worker,
+)
 from routes import admin as admin_routes
 from routes import auth as auth_routes
 from routes import media as media_routes
@@ -51,9 +53,12 @@ def _log_startup_summary():
         ",".join(sorted(config.ALLOWED_COUNTRIES)) or "(none)",
         "on" if auth._geo_reader else "off",
     )
+    limits = db.get_retention()
     logger.info(
-        "media dir=%s, record scratch=%s, VOD keep=%s/keep-days=%s",
-        config.MEDIA_DIR, config.RECORD_TMP, config.VOD_KEEP, config.VOD_KEEP_DAYS,
+        "media dir=%s, record scratch=%s, retention=%s",
+        config.MEDIA_DIR,
+        config.RECORD_TMP,
+        ", ".join(f"{k}={v}" for k, v in limits.items() if v) or "off",
     )
     logger.info(
         "notifications: smtp=%s, site url=%s, cooldown=%ss",
@@ -80,6 +85,7 @@ async def lifespan(_app):
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
         asyncio.create_task(chat_purge_worker()),
+        asyncio.create_task(retention_worker()),
     ]
     try:
         yield

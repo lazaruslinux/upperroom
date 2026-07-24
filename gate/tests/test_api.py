@@ -264,6 +264,10 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("POST", "/api/admin/overlay/regenerate", None),
         ("GET", "/api/admin/stream-key", None),
         ("POST", "/api/admin/stream-key/regenerate", None),
+        ("GET", "/api/admin/retention", None),
+        ("POST", "/api/admin/retention", {"vod_keep_count": 1}),
+        ("POST", "/api/vods/1/keep", {"keep": True}),
+        ("POST", "/api/clips/1/keep", {"keep": True}),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -869,3 +873,80 @@ def test_watch_points_accrue_once_per_user_and_only_when_live(client):
     finally:
         hub._live = False
         hub._sockets.clear()
+
+
+# ---- 10. Retention and storage --------------------------------------------
+
+def _finished_vod(started_at, title="Show"):
+    vod_id = db.create_vod(title, "", started_at)
+    db.finalize_vod(vod_id, started_at + 60, 60, f"{vod_id}.mp4")
+    return vod_id
+
+
+def test_retention_reports_zero_limits_and_real_usage(client):
+    # What a fresh install must look like on the dashboard: every limit off, and
+    # the storage numbers present so the operator can see usage before deciding.
+    setup_admin(client)
+    body = client.get("/api/admin/retention").json()
+    assert all(body[field] == 0 for field in db.RETENTION_FIELDS)
+    assert body["counts"] == {"vods": 0, "clips": 0, "pinned": 0}
+    assert set(body["usage"]) == {
+        "vods_bytes", "clips_bytes", "total_bytes", "free_bytes", "fs_total_bytes",
+    }
+
+
+@pytest.mark.parametrize("value", [-1, "lots", None, 1.5])
+def test_retention_rejects_a_value_that_is_not_a_whole_count(client, value):
+    setup_admin(client)
+    resp = client.post("/api/admin/retention", json={"vod_keep_count": value})
+    assert resp.status_code == 400
+    assert db.get_retention()["vod_keep_count"] == 0      # nothing was written
+
+
+def test_retention_saves_partially_and_clamps_absurd_values(client):
+    setup_admin(client)
+    client.post("/api/admin/retention", json={"vod_keep_count": 5})
+    client.post("/api/admin/retention", json={"vod_keep_days": 99999})
+    limits = db.get_retention()
+    assert limits["vod_keep_count"] == 5                  # untouched by the second save
+    assert limits["vod_keep_days"] == 3650                # clamped, not rejected
+
+
+def test_saving_a_lower_limit_prunes_at_once_and_reports_the_cost(client):
+    # Retention has to bite on save; waiting an hour for the sweep would leave
+    # the operator unsure whether the setting did anything.
+    setup_admin(client)
+    now = int(time.time())
+    ids = [_finished_vod(now - (4 - i) * 100) for i in range(4)]
+    body = client.post("/api/admin/retention", json={"vod_keep_count": 2}).json()
+    assert body["removed"] == 2
+    assert body["counts"]["vods"] == 2
+    assert {v["id"] for v in db.list_vods()} == {ids[-1], ids[-2]}
+
+
+def test_a_pinned_vod_survives_a_lowered_limit(client):
+    # The headline safety promise, end to end through the API.
+    setup_admin(client)
+    now = int(time.time())
+    ids = [_finished_vod(now - (3 - i) * 100) for i in range(3)]
+    assert client.post(f"/api/vods/{ids[0]}/keep", json={"keep": True}).json()["keep"]
+    client.post("/api/admin/retention", json={"vod_keep_count": 1})
+    remaining = {v["id"] for v in db.list_vods()}
+    assert ids[0] in remaining and ids[-1] in remaining
+    assert len(remaining) == 2
+
+
+def test_pin_state_rides_the_content_listing(client):
+    setup_admin(client)
+    vod_id = _finished_vod(int(time.time()))
+    assert client.get("/api/vods").json()["vods"][0]["keep"] is False
+    client.post(f"/api/vods/{vod_id}/keep", json={"keep": True})
+    assert client.get("/api/vods").json()["vods"][0]["keep"] is True
+    client.post(f"/api/vods/{vod_id}/keep", json={"keep": False})
+    assert client.get("/api/vods").json()["vods"][0]["keep"] is False
+
+
+def test_pinning_something_that_does_not_exist_is_a_404(client):
+    setup_admin(client)
+    assert client.post("/api/vods/999/keep", json={"keep": True}).status_code == 404
+    assert client.post("/api/clips/999/keep", json={"keep": True}).status_code == 404

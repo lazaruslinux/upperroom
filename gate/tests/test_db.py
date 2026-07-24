@@ -215,18 +215,135 @@ def test_media_kind_is_guarded(fresh_db):
         db._media_table("robert'); DROP TABLE users;--")
 
 
-def test_prune_vods_keeps_newest(fresh_db):
-    now = int(time.time())
+# ---- Retention ------------------------------------------------------------
+
+def _aged_vods(count, now, spacing=100):
+    """`count` finished VODs, oldest first, spaced apart in time."""
     ids = []
-    for i in range(5):
-        vid = db.create_vod(f"V{i}", "", now - (5 - i) * 100)
+    for i in range(count):
+        vid = db.create_vod(f"V{i}", "", now - (count - i) * spacing)
         db.finalize_vod(vid, now, 60, f"{vid}.mp4")
         ids.append(vid)
-    doomed = db.prune_vods(keep_count=2, keep_days=0, now=now)
+    return ids
+
+
+def test_retention_is_off_on_a_fresh_install(fresh_db):
+    # Every limit zero, and a sweep with those limits removes nothing. This is
+    # the promise that a new install never deletes a recording on its own.
+    limits = db.get_retention()
+    assert limits == {field: 0 for field in db.RETENTION_FIELDS}
+    now = int(time.time())
+    _aged_vods(5, now)
+    assert db.prune_media(limits, now) == []
+    assert len(db.list_vods()) == 5
+
+
+def test_prune_media_keeps_the_newest_by_count(fresh_db):
+    now = int(time.time())
+    ids = _aged_vods(5, now)
+    doomed = db.prune_media({"vod_keep_count": 2}, now)
     remaining = {v["id"] for v in db.list_vods()}
-    assert len(remaining) == 2
-    assert ids[-1] in remaining and ids[-2] in remaining   # two newest kept
+    assert remaining == {ids[-1], ids[-2]}                 # two newest kept
     assert {d["id"] for d in doomed} == set(ids[:3])
+    assert all(d["kind"] == "vod" for d in doomed)
+
+
+def test_a_pinned_vod_survives_and_does_not_use_up_a_slot(fresh_db):
+    # The pin is the whole safety story: an operator who pins a recording keeps
+    # it no matter how low the limit goes, and pinning it does not push another
+    # recording out to make room.
+    now = int(time.time())
+    ids = _aged_vods(4, now)
+    db.set_media_keep("vod", ids[0], True)
+    db.prune_media({"vod_keep_count": 2}, now)
+    remaining = {v["id"] for v in db.list_vods()}
+    assert remaining == {ids[0], ids[-1], ids[-2]}         # pinned plus two newest
+
+
+def test_prune_media_age_limit_ignores_the_count(fresh_db):
+    now = int(time.time())
+    ids = _aged_vods(3, now, spacing=86400 * 3)            # 9, 6 and 3 days old
+    db.prune_media({"vod_keep_days": 5}, now)
+    assert {v["id"] for v in db.list_vods()} == {ids[-1]}
+
+
+def test_prune_media_prunes_clips_too(fresh_db):
+    # Clips were never pruned before retention v2; they are now a first-class
+    # kind with their own limits.
+    now = int(time.time())
+    for i in range(4):
+        db.create_clip(f"c{i}", f"{i}.mp4", "alice", None, now, now, 30, now - (4 - i) * 10)
+    doomed = db.prune_media({"clip_keep_count": 1}, now)
+    assert len(doomed) == 3 and all(d["kind"] == "clip" for d in doomed)
+    assert len(db.list_clips()) == 1
+
+
+def test_prune_media_leaves_the_other_kind_alone(fresh_db):
+    now = int(time.time())
+    _aged_vods(3, now)
+    db.create_clip("c", "c.mp4", "alice", None, now, now, 30, now)
+    db.prune_media({"vod_keep_count": 1}, now)
+    assert len(db.list_clips()) == 1
+
+
+def test_retention_settings_update_only_what_was_passed(fresh_db):
+    db.set_retention(vod_keep_count=5, media_cap_gb=100)
+    db.set_retention(vod_keep_days=30)
+    limits = db.get_retention()
+    assert limits["vod_keep_count"] == 5                   # untouched by the second call
+    assert limits["media_cap_gb"] == 100
+    assert limits["vod_keep_days"] == 30
+    with pytest.raises(ValueError):
+        db.set_retention(nonsense=1)
+
+
+def test_set_media_keep_reports_a_missing_row(fresh_db):
+    vod_id = _ready_vod()
+    assert db.set_media_keep("vod", vod_id, True) is True
+    assert db.set_media_keep("vod", vod_id + 999, True) is False
+    with pytest.raises(ValueError):
+        db.set_media_keep("nope", 1, True)
+
+
+def test_retention_candidates_are_oldest_first_and_skip_pins(fresh_db):
+    now = int(time.time())
+    ids = _aged_vods(3, now)
+    db.create_clip("c", "c.mp4", "alice", None, now, now, 30, now - 1000)
+    db.set_media_keep("vod", ids[0], True)
+    candidates = db.retention_candidates()
+    assert [c["ts"] for c in candidates] == sorted(c["ts"] for c in candidates)
+    assert ("vod", ids[0]) not in {(c["kind"], c["id"]) for c in candidates}
+    assert any(c["kind"] == "clip" for c in candidates)
+
+
+def test_count_media_counts_pins_across_both_kinds(fresh_db):
+    now = int(time.time())
+    ids = _aged_vods(2, now)
+    db.create_clip("c", "c.mp4", "alice", None, now, now, 30, now)
+    db.set_media_keep("vod", ids[0], True)
+    assert db.count_media() == {"vods": 2, "clips": 1, "pinned": 1}
+
+
+def test_retention_seeds_from_the_environment_only_on_an_upgrade(fresh_db, monkeypatch):
+    # An install that predates dashboard retention has been pruning by the old
+    # environment variables. The upgrade must carry those over exactly once, so
+    # nobody's disk usage changes silently; a genuinely fresh database ignores
+    # them and starts with retention off.
+    monkeypatch.setenv("SELFSTREAM_VOD_KEEP", "7")
+    monkeypatch.setenv("SELFSTREAM_VOD_KEEP_DAYS", "3")
+    with db.connect() as conn:
+        conn.execute("ALTER TABLE channel_settings DROP COLUMN vod_keep_count")
+    db.init_db()
+    assert db.get_retention()["vod_keep_count"] == 7
+    assert db.get_retention()["vod_keep_days"] == 3
+    # Re-running init on the now-current database must not re-seed or reset.
+    db.set_retention(vod_keep_count=2)
+    db.init_db()
+    assert db.get_retention()["vod_keep_count"] == 2
+    # A genuinely new database ignores the same environment and starts off.
+    monkeypatch.setattr(db, "DB_PATH", db.DB_PATH + ".new")
+    db.init_db()
+    assert db.get_retention() == {field: 0 for field in db.RETENTION_FIELDS}
 
 
 def test_last_clip_at(fresh_db):

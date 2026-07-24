@@ -41,7 +41,8 @@ services:
       # Where the gate pulls a frame for the home card preview thumbnail.
       - SELFSTREAM_RTMP_SOURCE=rtmp://mediamtx:1935/live
       # Recordings are written to local scratch while live, then archived to the
-      # media store. The retention caps keep the media store from filling up.
+      # media store. Retention lives in the admin dashboard; these two are read
+      # only once, to seed it when updating an install that predates it.
       - SELFSTREAM_RECORD_TMP=/rec
       - SELFSTREAM_MEDIA_DIR=/media
       - SELFSTREAM_VOD_KEEP=${SELFSTREAM_VOD_KEEP:-20}

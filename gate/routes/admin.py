@@ -19,6 +19,7 @@ from config import (
     MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
+from media import enforce_retention, media_usage
 from notify import notify_live
 
 router = APIRouter()
@@ -104,6 +105,69 @@ async def set_moderation(request: Request):
         words = str(body.get("banned_words") or "")[:MAX_BANNED_WORDS_LEN]
     db.set_chat_moderation(slow_mode_seconds=slow, banned_words=words)
     return {"ok": True}
+
+
+# Ceilings on the retention limits, so a typo cannot ask for something absurd.
+# 0 always means "no limit on this axis", which is how retention stays off.
+_RETENTION_MAX = {
+    "vod_keep_count": 10000,
+    "vod_keep_days": 3650,
+    "clip_keep_count": 10000,
+    "clip_keep_days": 3650,
+    "media_cap_gb": 1000000,
+}
+
+
+def _retention_payload():
+    return {
+        **db.get_retention(),
+        "usage": media_usage(),
+        "counts": db.count_media(),
+    }
+
+
+@router.get("/api/admin/retention")
+def get_retention(request: Request):
+    # The retention limits plus what the media store is actually using, so the
+    # dashboard can show the numbers and their effect in one place.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return _retention_payload()
+
+
+@router.post("/api/admin/retention")
+async def set_retention(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    limits = {}
+    for field, ceiling in _RETENTION_MAX.items():
+        if field not in body:
+            continue
+        raw = body[field]
+        # Strict about what counts as a whole number: rounding 1.5 down to 1
+        # would quietly keep less than the operator asked for, and this setting
+        # deletes recordings.
+        if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()):
+            return JSONResponse(
+                {"error": "Retention limits must be whole numbers."}, status_code=400
+            )
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "Retention limits must be whole numbers."}, status_code=400
+            )
+        if value < 0:
+            return JSONResponse(
+                {"error": "Retention limits cannot be negative."}, status_code=400
+            )
+        limits[field] = min(ceiling, value)
+    db.set_retention(**limits)
+    # Apply the new limits at once, so lowering one takes effect on save rather
+    # than at the next sweep, and the response can report what that cost.
+    removed = await enforce_retention()
+    return {"ok": True, "removed": removed, **_retention_payload()}
 
 
 @router.get("/api/admin/users")

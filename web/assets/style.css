@@ -1176,6 +1176,31 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .notify-msg.good { color: var(--accent); }
 .notify-msg.bad { color: var(--error); }
 
+/* ---- storage and retention (admin) ----
+   A flat usage bar over the media store's filesystem, and a grid of number
+   fields where 0 means "no limit". The pin chip marks content retention will
+   never touch. */
+.usage-bar {
+  height: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.usage-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 160ms;
+}
+.usage-fill.is-tight { background: var(--error); }
+.retention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.retention-grid input { width: 100%; }
+.row-actions { display: inline-flex; gap: 6px; flex: none; }
+.chip-btn.pinned-chip { color: var(--accent); border-color: var(--accent); }
+
 .clip-limit-edit { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .clip-limit-edit label {
   display: flex;
