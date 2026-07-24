@@ -337,6 +337,32 @@ def init_db():
         )
 
 
+def backup_to(path):
+    """Write a consistent, compacted copy of the database to `path`.
+
+    VACUUM INTO rather than copying the file: the gate runs in WAL mode, so a
+    plain copy can catch a page mid-write or miss the write-ahead log entirely,
+    and the result would restore as a corrupt or stale database. This is safe to
+    run while the service is live and writing. SQLite refuses to overwrite an
+    existing destination, which is the check we want anyway."""
+    conn = sqlite3.connect(DB_PATH, isolation_level=None)
+    try:
+        conn.execute("VACUUM INTO ?", (str(path),))
+    finally:
+        conn.close()
+
+
+def table_names():
+    """Every table in the database, for the backup manifest and for checking a
+    restored file is not from something else entirely."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        return [row["name"] for row in rows]
+
+
 def _env_int(name, fallback):
     """An integer from the environment, falling back on anything unusable. Only
     the one-time retention seeding needs this; everything else reads config."""
