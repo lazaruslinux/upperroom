@@ -1,15 +1,54 @@
-# Secrets and local config
-.env
+# This repo is CODE ONLY. Nothing personal, private, or instance-specific ever
+# gets committed. When in doubt, add it here.
 
-# Local-only storage / deployment overrides (e.g. pointing recordings at your
-# own disk or NAS). Keep your own paths out of the repo.
+# --- Secrets and local environment ---
+.env
+.env.*
+!.env.example
+
+# --- Local session / AI-assistant context (personal, never shared) ---
+CLAUDE.md
+.claude/settings.local.json
+.claude/*.local.json
+
+# --- Local-only deployment overrides (your own paths, disks, NAS, domains) ---
 docker-compose.override.yml
 Caddyfile.local
+*.local
 
-# Python
-__pycache__/
-*.pyc
-
-# Certificates or keys that might land here by accident
+# --- Certificates, keys, credentials that might land here by accident ---
 *.pem
 *.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# --- Runtime data (belongs in Docker volumes, never the working tree) ---
+# Databases, recordings, clips, avatars, thumbnails, the downloaded geo DB.
+*.db
+*.sqlite
+*.sqlite3
+*.mmdb
+/data/
+/media/
+/rec/
+avatars/
+thumb.jpg
+*.log
+
+# --- Python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
