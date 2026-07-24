@@ -1176,6 +1176,23 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .notify-msg.good { color: var(--accent); }
 .notify-msg.bad { color: var(--error); }
 
+/* ---- the next scheduled stream ----
+   A quiet line under the status badge on the login card, and under the greeting
+   on the home page. The countdown leads in the accent, the absolute time and
+   the operator's note sit beneath it in muted text. */
+.next-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+.next-stream .next-when, .next-stream .next-note { color: var(--muted); }
+.next-stream .next-note { font-family: var(--sans); font-size: 13px; }
+.home-main .next-stream { margin-bottom: 12px; }
+
 /* ---- storage and retention (admin) ----
    A flat usage bar over the media store's filesystem, and a grid of number
    fields where 0 means "no limit". The pin chip marks content retention will

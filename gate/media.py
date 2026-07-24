@@ -23,8 +23,8 @@ import db
 from config import (
     CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
     POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS, RECORD_STARTUP_GRACE,
-    RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL, RTMP_SOURCE, STREAM_PATH,
-    THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
+    RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL, RTMP_SOURCE,
+    SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
 )
 from hub import hub
 from notify import notify_live
@@ -100,6 +100,13 @@ async def stream_watcher():
                 # Announce in the background so a slow webhook or mail relay never
                 # delays the status poll. notify_live enforces its own cooldown.
                 asyncio.create_task(notify_live())
+                # This is the broadcast people were waiting for, so retire the
+                # announcement. Only one that is due around now: a schedule for
+                # next week survives an unannounced stream today.
+                try:
+                    db.clear_schedule_if_past(int(time.time()) + SCHEDULE_GRACE)
+                except Exception:
+                    logger.warning("could not clear the schedule", exc_info=True)
             elif online:
                 # Supervise the in-progress recording: restart it if the recorder
                 # died or its scratch file stalled while the stream is still live.

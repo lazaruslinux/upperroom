@@ -8,13 +8,14 @@ through this Python service; only metadata and view counting live here.
 """
 
 import os
+import time
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
 import db
 from auth import admin_user, read_session
-from config import CLIP_DIR, COOKIE_NAME, THUMB_PATH, VOD_DIR
+from config import CLIP_DIR, COOKIE_NAME, SCHEDULE_GRACE, THUMB_PATH, VOD_DIR
 from hub import hub
 from media import fetch_path, make_clip, ready_epoch, _remove_media_files
 
@@ -223,4 +224,18 @@ async def status():
             "accent": accent,
             "site_name": site_name,
         }
-    return {"online": False, "watching": watching, "accent": accent, "site_name": site_name}
+    body = {
+        "online": False,
+        "watching": watching,
+        "accent": accent,
+        "site_name": site_name,
+    }
+    # The time of the next announced broadcast is public, so the login page can
+    # count down to it. The note that goes with it is not: it says what the
+    # gathering is, and that stays behind the sign in. Only sent while the
+    # schedule is still worth showing.
+    schedule = db.get_schedule()
+    when = schedule["next_stream_at"]
+    if when and time.time() < when + SCHEDULE_GRACE:
+        body["next_stream_at"] = when
+    return body

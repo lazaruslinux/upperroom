@@ -15,8 +15,8 @@ import db
 from auth import _clean_username, admin_user
 from config import (
     MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL,
-    MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE,
-    MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
+    MAX_SCHEDULE_NOTE, MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
+    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from media import enforce_retention, media_usage
@@ -105,6 +105,41 @@ async def set_moderation(request: Request):
         words = str(body.get("banned_words") or "")[:MAX_BANNED_WORDS_LEN]
     db.set_chat_moderation(slow_mode_seconds=slow, banned_words=words)
     return {"ok": True}
+
+
+@router.get("/api/admin/schedule")
+def get_schedule(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return db.get_schedule()
+
+
+@router.post("/api/admin/schedule")
+async def set_schedule(request: Request):
+    # The next broadcast: a time (epoch seconds, sent by the browser from a
+    # local date field) and a short note. 0 clears it.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    try:
+        when = int(body.get("next_stream_at") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "That is not a valid time."}, status_code=400)
+    now = int(time.time())
+    if when:
+        # A little slack backwards, so setting "in five minutes" cannot fail on
+        # a clock skew, but not so much that a mistyped year sticks around.
+        if when < now - 3600:
+            return JSONResponse(
+                {"error": "That time has already passed."}, status_code=400
+            )
+        if when > now + 365 * 86400:
+            return JSONResponse(
+                {"error": "Schedule something within the next year."}, status_code=400
+            )
+    note = str(body.get("next_stream_note") or "").strip()[:MAX_SCHEDULE_NOTE]
+    db.set_schedule(when, note)
+    return {"ok": True, **db.get_schedule()}
 
 
 # Ceilings on the retention limits, so a typo cannot ask for something absurd.

@@ -476,3 +476,48 @@ def test_clip_count_since(fresh_db):
     assert db.count_user_clips_since("alice", now - 86400) == 2
     assert db.count_user_clips_since("bob", now - 86400) == 1
     assert db.count_user_clips_since("alice", now + 100) == 0   # window excludes
+
+
+# ---- The next scheduled stream --------------------------------------------
+
+def test_schedule_round_trips_and_clears(fresh_db):
+    assert db.get_schedule()["next_stream_at"] == 0
+    when = int(time.time()) + 3600
+    db.set_schedule(when, "  Week four  ")
+    schedule = db.get_schedule()
+    assert schedule["next_stream_at"] == when
+    assert schedule["next_stream_note"] == "Week four"     # trimmed
+    db.set_schedule(0, "leftover")
+    assert db.get_schedule() == {
+        "next_stream_at": 0, "next_stream_note": "", "next_reminded_for": 0,
+    }
+
+
+def test_the_reminder_is_claimed_exactly_once_per_scheduled_time(fresh_db):
+    # The claim is what makes the reminder exactly-once across restarts: the
+    # worker runs every minute for the whole hour before the stream.
+    when = int(time.time()) + 3600
+    db.set_schedule(when, "")
+    assert db.claim_schedule_reminder(when) is True
+    assert db.claim_schedule_reminder(when) is False
+    # Moving the stream re-arms it, so the new time gets its own reminder.
+    later = when + 86400
+    db.set_schedule(later, "")
+    assert db.claim_schedule_reminder(later) is True
+
+
+def test_a_reminder_cannot_be_claimed_for_a_time_that_is_not_scheduled(fresh_db):
+    when = int(time.time()) + 3600
+    db.set_schedule(when, "")
+    assert db.claim_schedule_reminder(when + 60) is False
+
+
+def test_clear_schedule_if_past_leaves_a_future_one_alone(fresh_db):
+    now = int(time.time())
+    db.set_schedule(now + 86400, "next week")
+    assert db.clear_schedule_if_past(now) is False
+    assert db.get_schedule()["next_stream_at"] == now + 86400
+    db.set_schedule(now - 100, "over already")
+    assert db.clear_schedule_if_past(now) is True
+    schedule = db.get_schedule()
+    assert schedule["next_stream_at"] == 0 and schedule["next_stream_note"] == ""

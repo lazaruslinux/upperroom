@@ -30,6 +30,7 @@ import auth
 import config
 import db
 from hub import chat_purge_worker, hub
+from notify import schedule_worker
 from media import (
     cleanup_record_scratch, retention_worker, stream_watcher, thumbnail_worker,
 )
@@ -86,6 +87,7 @@ async def lifespan(_app):
         asyncio.create_task(thumbnail_worker()),
         asyncio.create_task(chat_purge_worker()),
         asyncio.create_task(retention_worker()),
+        asyncio.create_task(schedule_worker()),
     ]
     try:
         yield

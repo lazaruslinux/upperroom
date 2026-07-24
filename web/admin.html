@@ -82,6 +82,26 @@
       <p id="ch-msg" class="notify-msg" hidden></p>
     </div>
 
+    <h2 class="section-title" style="margin-top:1.75rem;">Next stream</h2>
+    <div class="notify-panel">
+      <p id="sched-status" class="muted">Nothing scheduled.</p>
+      <label>Date and time <span class="muted">(your local time)</span>
+        <input id="sched-when" type="datetime-local">
+      </label>
+      <label>Note <span class="muted">(optional, max 120 characters)</span>
+        <input id="sched-note" type="text" maxlength="120" autocomplete="off"
+               placeholder="What this one is about">
+      </label>
+      <p class="muted">The countdown is public, so anyone who opens the sign-in
+        page sees it. The note is not: only signed-in viewers see that. Everyone
+        with go-live email on gets one reminder an hour before.</p>
+      <div class="edit-actions">
+        <button type="button" id="sched-clear" class="ghost-btn">Clear</button>
+        <button type="button" id="sched-save" class="solid-btn">Save</button>
+      </div>
+      <p id="sched-msg" class="notify-msg" hidden></p>
+    </div>
+
     <h2 class="section-title" style="margin-top:1.75rem;">Chat moderation</h2>
     <div class="notify-panel">
       <label>Slow mode: seconds between messages per viewer (0 = off)
@@ -269,6 +289,6 @@
     </div>
   </div>
 
-  <script src="/assets/admin.js?v=15"></script>
+  <script src="/assets/admin.js?v=16"></script>
 </body>
 </html>

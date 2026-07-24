@@ -143,6 +143,19 @@ CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
 # How often the retention sweep runs, so lowering a limit takes effect without
 # waiting for the next broadcast to end.
 RETENTION_INTERVAL = 3600
+
+# ---- The next scheduled stream --------------------------------------------
+# The operator announces one upcoming broadcast; the login page counts down to
+# it and everyone with go-live email on gets one reminder beforehand. Fixed
+# rather than configurable for the same reason as the points rate below: the
+# lead time is part of the feature's shape, not a per-install knob.
+SCHEDULE_REMIND_LEAD = 3600        # remind this long before the start time
+# How long past the start time a schedule keeps showing before it clears itself.
+# Two hours, so a broadcast that starts late still reads "starting soon" rather
+# than vanishing exactly when viewers are looking for it.
+SCHEDULE_GRACE = 7200
+SCHEDULE_CHECK_INTERVAL = 60       # how often the reminder worker looks
+MAX_SCHEDULE_NOTE = 120
 CLIP_SECONDS = 30                  # how much of the live edge a clip captures
 CLIP_LAG = 2                       # stay this far back from the very live edge
 

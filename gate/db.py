@@ -118,7 +118,16 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     clip_keep_days INTEGER NOT NULL DEFAULT 0,
     -- A ceiling on the whole media store in gigabytes. Enforced oldest first
     -- across both kinds once the per-kind limits above have had their say.
-    media_cap_gb INTEGER NOT NULL DEFAULT 0
+    media_cap_gb INTEGER NOT NULL DEFAULT 0,
+    -- The next announced broadcast: when it starts (epoch UTC, 0 = nothing
+    -- scheduled) and a short note about it. The time is public so the login
+    -- page can count down to it; the note is not, so what the gathering is
+    -- stays behind the sign in. next_reminded_for holds the scheduled time a
+    -- reminder has already gone out for, which makes the reminder exactly-once
+    -- without another table, and re-arms it when the time is changed.
+    next_stream_at INTEGER NOT NULL DEFAULT 0,
+    next_stream_note TEXT NOT NULL DEFAULT '',
+    next_reminded_for INTEGER NOT NULL DEFAULT 0
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -295,6 +304,15 @@ def init_db():
         )
         _ensure_column(conn, "vods", "keep", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "clips", "keep", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(
+            conn, "channel_settings", "next_stream_at", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "next_stream_note", "TEXT NOT NULL DEFAULT ''"
+        )
+        _ensure_column(
+            conn, "channel_settings", "next_reminded_for", "INTEGER NOT NULL DEFAULT 0"
+        )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
         # same lightweight in-init migration as the column adds above.
@@ -1245,6 +1263,62 @@ def get_replay(kind, ref_id):
             (kind, ref_id),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ---- The next scheduled stream --------------------------------------------
+
+def get_schedule():
+    """The upcoming broadcast the operator announced: when it starts (0 when
+    nothing is scheduled), the short note, and the scheduled time a reminder has
+    already been sent for."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT next_stream_at, next_stream_note, next_reminded_for "
+            "FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        if not row:
+            return {"next_stream_at": 0, "next_stream_note": "", "next_reminded_for": 0}
+        return dict(row)
+
+
+def set_schedule(when, note):
+    """Set or clear (when = 0) the next broadcast. A new time clears the
+    reminder stamp, so the new time gets its own reminder."""
+    when = max(0, int(when or 0))
+    note = (note or "").strip() if when else ""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET next_stream_at = ?, next_stream_note = ?, "
+            "next_reminded_for = 0 WHERE id = 1",
+            (when, note),
+        )
+
+
+def claim_schedule_reminder(when):
+    """Claim the single reminder for a scheduled time. Returns True exactly once
+    per scheduled time, even across a restart, because the claim is one guarded
+    UPDATE against the time still stored."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE channel_settings SET next_reminded_for = ? "
+            "WHERE id = 1 AND next_stream_at = ? AND next_reminded_for != ?",
+            (when, when, when),
+        )
+        return cur.rowcount > 0
+
+
+def clear_schedule_if_past(cutoff):
+    """Clear a schedule whose time is older than cutoff. The caller subtracts
+    the grace window, so this stays free of configuration. Returns True if a
+    schedule was cleared."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE channel_settings SET next_stream_at = 0, next_stream_note = '', "
+            "next_reminded_for = 0 WHERE id = 1 AND next_stream_at != 0 "
+            "AND next_stream_at < ?",
+            (cutoff,),
+        )
+        return cur.rowcount > 0
 
 
 # ---- Retention ------------------------------------------------------------

@@ -792,6 +792,72 @@ async function saveNotify(test) {
 document.getElementById("notify-save").addEventListener("click", () => saveNotify(false));
 document.getElementById("notify-test").addEventListener("click", () => saveNotify(true));
 
+// ---- the next scheduled stream ----
+
+const schedWhen = document.getElementById("sched-when");
+const schedNote = document.getElementById("sched-note");
+const schedMsg = document.getElementById("sched-msg");
+
+function showSchedMsg(text, ok) {
+  schedMsg.textContent = text;
+  schedMsg.classList.toggle("good", !!ok);
+  schedMsg.classList.toggle("bad", !ok);
+  schedMsg.hidden = false;
+}
+
+function localInputValue(epoch) {
+  // <input type="datetime-local"> wants local wall-clock with no zone, so shift
+  // the epoch by the browser's offset before trimming the ISO string.
+  const at = new Date((epoch - new Date().getTimezoneOffset() * 60) * 1000);
+  return at.toISOString().slice(0, 16);
+}
+
+function renderSchedule(data) {
+  const when = data.next_stream_at || 0;
+  schedWhen.value = when ? localInputValue(when) : "";
+  schedNote.value = data.next_stream_note || "";
+  // Echo the stored time back in words, so there is no doubt what was saved.
+  document.getElementById("sched-status").textContent = when
+    ? `Announced for ${new Date(when * 1000).toLocaleString()}, your time.`
+    : "Nothing scheduled.";
+}
+
+async function loadSchedule() {
+  try { renderSchedule(await (await fetch("/api/admin/schedule")).json()); }
+  catch { /* leave the panel as it was */ }
+}
+
+async function saveSchedule(clear) {
+  schedMsg.hidden = true;
+  // A datetime-local value has no timezone, so the browser reads it as local
+  // time; the server only ever stores the epoch.
+  const when = clear || !schedWhen.value
+    ? 0
+    : Math.floor(new Date(schedWhen.value).getTime() / 1000);
+  if (!clear && schedWhen.value && !when) {
+    showSchedMsg("That is not a valid date and time.", false);
+    return;
+  }
+  let reply;
+  try {
+    reply = await fetch("/api/admin/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        next_stream_at: when,
+        next_stream_note: clear ? "" : schedNote.value,
+      }),
+    });
+  } catch { showSchedMsg("Could not reach the server.", false); return; }
+  const data = await reply.json().catch(() => ({}));
+  if (!reply.ok) { showSchedMsg(data.error || "Could not save.", false); return; }
+  renderSchedule(data);
+  showSchedMsg(when ? "Saved. Viewers can see the countdown." : "Cleared.", true);
+}
+
+document.getElementById("sched-save").addEventListener("click", () => saveSchedule(false));
+document.getElementById("sched-clear").addEventListener("click", () => saveSchedule(true));
+
 // ---- storage and retention ----
 
 const RETENTION_FIELDS = {
@@ -1032,6 +1098,7 @@ async function boot() {
   loadOverlay();
   loadNotify();
   loadRetention();
+  loadSchedule();
 }
 
 boot();
