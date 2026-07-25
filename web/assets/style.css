@@ -1337,6 +1337,28 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
+  /* The bar carries the same five items on every page now, which is more than
+     fits beside the brand on a phone. Let it take a second line rather than
+     pushing the whole document sideways: a body that scrolls horizontally is
+     far worse than a header two rows tall. */
+  .home-bar {
+    height: auto;
+    min-height: 48px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 8px 12px;
+    gap: 6px 12px;
+  }
+  .home-bar .home-actions { flex-wrap: wrap; gap: 6px 14px; }
+}
+
+/* A long site name must never be what pushes the page sideways either. */
+.brand-column { min-width: 0; }
+.brand-column #site-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* =========================================================================
