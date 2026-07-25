@@ -1,5 +1,5 @@
 """
-Account storage for selfstream.
+Account storage for upperroom.
 
 Accounts live in a small SQLite file on a docker volume. There are no public
 sign ups. The admin creates every account with manage.py. Passwords are never

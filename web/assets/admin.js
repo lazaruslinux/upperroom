@@ -890,9 +890,10 @@ function renderRetention(data) {
   });
   const usage = data.usage || {};
   const counts = data.counts || {};
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const parts = [
     `${formatBytes(usage.total_bytes)} used`,
-    `${counts.vods || 0} recordings, ${counts.clips || 0} clips`,
+    `${plural(counts.vods || 0, "recording")}, ${plural(counts.clips || 0, "clip")}`,
   ];
   if (counts.pinned) parts.push(`${counts.pinned} pinned`);
   if (usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);

@@ -27,7 +27,7 @@ def main():
         try:
             # DB-IP rejects the default urllib user-agent, so set a normal one.
             request = urllib.request.Request(
-                url_for(day), headers={"User-Agent": "Mozilla/5.0 (selfstream)"}
+                url_for(day), headers={"User-Agent": "Mozilla/5.0 (upperroom)"}
             )
             raw = urllib.request.urlopen(request, timeout=30).read()
             with open(OUT, "wb") as out:

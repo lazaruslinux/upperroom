@@ -1,5 +1,5 @@
 """
-Tests for the selfstream data layer.
+Tests for the upperroom data layer.
 
 db.py is deliberately pure standard library (sqlite3 + hashlib), so these run
 without installing FastAPI, geoip, or any of the service dependencies:

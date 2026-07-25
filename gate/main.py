@@ -100,7 +100,7 @@ async def lifespan(_app):
             task.cancel()
 
 
-app = FastAPI(title="selfstream", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="upperroom", docs_url=None, redoc_url=None, lifespan=lifespan)
 db.init_db()
 for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR):
     os.makedirs(_dir, exist_ok=True)

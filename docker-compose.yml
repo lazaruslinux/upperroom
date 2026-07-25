@@ -1,4 +1,4 @@
-# selfstream runs as three small containers:
+# upperroom runs as three small containers:
 #
 #   mediamtx  receives the stream from OBS and republishes it as HLS
 #   gate      handles login, the session cookie, chat, and presence

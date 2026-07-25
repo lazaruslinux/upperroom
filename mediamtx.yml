@@ -1,5 +1,5 @@
 ###############################################################################
-# selfstream MediaMTX configuration
+# upperroom MediaMTX configuration
 #
 # MediaMTX receives the stream from OBS over RTMP and republishes it as low
 # latency HLS for the browser player. It does not transcode, it only
