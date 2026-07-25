@@ -121,8 +121,16 @@ CHAT_RETENTION_SECONDS = int(
 THUMB_PATH = os.environ.get("SELFSTREAM_THUMB", "/data/thumb.jpg")
 THUMB_TMP = THUMB_PATH + ".tmp"
 THUMB_INTERVAL = int(os.environ.get("SELFSTREAM_THUMB_INTERVAL", "15"))
-RTMP_SOURCE = os.environ.get(
-    "SELFSTREAM_RTMP_SOURCE", f"rtmp://mediamtx:1935/{STREAM_PATH}"
+# Where the gate reads the live stream back from MediaMTX, for the recorder and
+# the preview thumbnail. RTSP rather than RTMP: pulling these back over RTMP
+# opens a second RTMP client session against our own server, and on a loaded
+# machine that read dies mid-demux and leaves recording stalled at zero bytes
+# while HLS keeps serving viewers normally. The RTSP read path does not. The port
+# is internal to the compose network and never published.
+# SELFSTREAM_RTMP_SOURCE is the old name for this setting, still honoured so an
+# operator who overrode it does not silently lose the override on update.
+MEDIA_SOURCE = os.environ.get("SELFSTREAM_MEDIA_SOURCE") or os.environ.get(
+    "SELFSTREAM_RTMP_SOURCE", f"rtsp://mediamtx:8554/{STREAM_PATH}"
 )
 
 # Recordings (VODs) and viewer clips. Broadcasts are recorded to a node local

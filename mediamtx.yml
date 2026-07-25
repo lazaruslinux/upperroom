@@ -11,10 +11,24 @@
 api: yes
 apiAddress: :9997
 
-# Protocols we do not use.
-rtsp: no
+# RTSP, used only inside the docker network as the read path for the recorder and
+# the preview thumbnail. It is NOT published to the host (see docker-compose.yml),
+# so nothing outside the compose network can reach it, and reads still go through
+# the same gate auth callback as everything else. Reading those two internal
+# consumers back over RTMP means opening a second RTMP client session against our
+# own server, which dies mid-demux on a loaded machine and leaves recording
+# stalled at zero bytes while HLS carries on fine. TCP only, so no UDP/RTP or
+# multicast listeners are bound.
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+# Protocols we do not use. MoQ defaults to on and binds a TCP and a UDP listener
+# even though nothing here speaks it, so it is turned off rather than left to
+# listen for the life of the server.
 webrtc: no
 srt: no
+moq: no
 
 # RTMP ingest from OBS.
 rtmp: yes

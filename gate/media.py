@@ -22,8 +22,8 @@ import httpx
 import db
 from config import (
     CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
-    POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS, RECORD_STARTUP_GRACE,
-    RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL, RTMP_SOURCE,
+    MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
+    RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
     SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
 )
 from hub import hub
@@ -121,11 +121,36 @@ async def stream_watcher():
         await asyncio.sleep(5)
 
 
-# RTMP input tuning. A long-running, messy RTMP session can defeat ffmpeg's
-# default codec probing ("could not find codec parameters"); giving it a larger
-# analyze window and probe budget makes joining such a session far more reliable.
-# These go before -i on any path that reads the live RTMP source.
-_RTMP_PROBE_ARGS = ["-analyzeduration", "10000000", "-probesize", "10000000"]
+# Live input tuning. A long-running, messy session can defeat ffmpeg's default
+# codec probing ("could not find codec parameters"); giving it a larger analyze
+# window and probe budget makes joining one mid-flight far more reliable.
+_PROBE_ARGS = ["-analyzeduration", "10000000", "-probesize", "10000000"]
+
+
+def source_input_args(source, io_timeout=None):
+    """ffmpeg input args for reading the live stream back from MediaMTX.
+
+    Scheme aware, because MEDIA_SOURCE is an operator setting and can be pointed
+    anywhere ffmpeg can open. For the RTSP default we force TCP: the UDP
+    transport drops packets under load and ffmpeg surfaces the loss as a demux
+    error, which is the failure this read path exists to avoid.
+
+    io_timeout (microseconds) makes a read give up rather than hang. It is set
+    for the thumbnail grab, which must stay responsive, and deliberately left off
+    the recorder, whose stalls are the watchdog's job to detect and restart. The
+    option spelling differs by demuxer: RTSP calls it -timeout, everything else
+    takes the generic -rw_timeout. Passing the wrong one is not ignored, ffmpeg
+    exits with "Option not found" and the read never happens at all.
+    """
+    args = [*_PROBE_ARGS]
+    if source.startswith("rtsp://"):
+        args += ["-rtsp_transport", "tcp"]
+        if io_timeout:
+            args += ["-timeout", str(io_timeout)]
+    elif io_timeout:
+        args += ["-rw_timeout", str(io_timeout)]
+    return [*args, "-i", source]
+
 
 # Thumbnail capture is best effort and runs every THUMB_INTERVAL seconds, so a
 # persistent failure (e.g. a dead scratch file) would otherwise spam the log. We
@@ -165,11 +190,11 @@ async def capture_thumbnail():
 
     While a broadcast is recording, the stream is already being written to local
     disk, so we grab the freshest frame from that file instead of opening a
-    second full RTMP pull just for a thumbnail. If that scratch file is dead or
-    stalled the grab fails, so we immediately retry once via a live RTMP read.
-    When no recording is in progress (a brief window right at go-live), we go
-    straight to the RTMP read."""
-    rtmp_args = [*_RTMP_PROBE_ARGS, "-rw_timeout", "5000000", "-i", RTMP_SOURCE]
+    second full pull just for a thumbnail. If that scratch file is dead or
+    stalled the grab fails, so we immediately retry once via a live read. When no
+    recording is in progress (a brief window right at go-live), we go straight to
+    the live read."""
+    live_args = source_input_args(MEDIA_SOURCE, io_timeout=5000000)
     rec_path = _rec["tmp_path"] if _rec["active"] else None
     if rec_path and os.path.exists(rec_path):
         # -sseof -1 seeks to one second before the end of the file, reading the
@@ -178,9 +203,9 @@ async def capture_thumbnail():
         if rc != 0:
             # The scratch file may be dead or stalled; fall back to a live read
             # within the same call so one bad recording never stalls previews.
-            rc, stderr = await _grab_frame(rtmp_args)
+            rc, stderr = await _grab_frame(live_args)
     else:
-        rc, stderr = await _grab_frame(rtmp_args)
+        rc, stderr = await _grab_frame(live_args)
 
     # Swap in atomically so a half-written file is never served.
     if rc == 0 and os.path.exists(THUMB_TMP):
@@ -587,10 +612,10 @@ async def start_recording():
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y", "-loglevel", "error",
             # Give codec probing a wide window and budget so joining a messy,
-            # long-running RTMP session does not fail with "could not find codec
-            # parameters" and die instantly.
-            *_RTMP_PROBE_ARGS,
-            "-i", RTMP_SOURCE,
+            # long-running session does not fail with "could not find codec
+            # parameters" and die instantly. No read timeout here on purpose: a
+            # stalled recorder is the watchdog's to detect and restart.
+            *source_input_args(MEDIA_SOURCE),
             "-c", "copy",
             "-f", "mp4",
             # A fragmented MP4 is web playable and survives an abrupt stop, which

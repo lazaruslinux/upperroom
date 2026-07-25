@@ -17,8 +17,10 @@ the exact server and stream key to paste here; the key looks like
 stream key carries the publish credentials, which is how the server knows the
 stream is allowed. Treat it like a password, and regenerate it on the dashboard
 if it ever leaks (a live broadcast keeps running; the next connection needs the
-new key). The word `live` at the start is the channel name and must stay as is,
-because the rest of the app expects a channel called `live`.
+new key). The word `live` at the start is the stream path and must stay as is,
+because the rest of the app expects a path called `live`. It is not the site
+name you set in the dashboard: that one is your branding and you can change it
+whenever you like, whereas this one is a fixed part of the publish URL.
 
 ## 3.2 Video and output settings
 

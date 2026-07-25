@@ -38,8 +38,11 @@ services:
       - SELFSTREAM_DB=/data/selfstream.db
       - SELFSTREAM_CHAT_RETENTION_DAYS=${SELFSTREAM_CHAT_RETENTION_DAYS:-7}
       - SELFSTREAM_THUMB_INTERVAL=${SELFSTREAM_THUMB_INTERVAL:-15}
-      # Where the gate pulls a frame for the home card preview thumbnail.
-      - SELFSTREAM_RTMP_SOURCE=rtmp://mediamtx:1935/live
+      # Where the gate reads the live stream back for the recorder and the home
+      # card preview thumbnail. RTSP, not RTMP: reading our own RTMP server as a
+      # second client dies mid-demux on a loaded machine and stalls recording.
+      # The port is internal to this network and is never published.
+      - SELFSTREAM_MEDIA_SOURCE=rtsp://mediamtx:8554/live
       # Recordings are written to local scratch while live, then archived to the
       # media store. Retention lives in the admin dashboard; these two are read
       # only once, to seed it when updating an install that predates it.

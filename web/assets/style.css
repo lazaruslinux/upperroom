@@ -48,6 +48,11 @@
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --accent-tint: rgba(106, 180, 138, 0.08);
   --error-tint: rgba(255, 107, 107, 0.08);
+  /* Tells the browser to draw its own widgets dark. One declaration covers
+     checkboxes, radios, the datetime and number pickers, spinners, and
+     scrollbars: without it they render in the default light chrome (a blue
+     checkbox, a white date field) against our dark panels. */
+  color-scheme: dark;
 }
 
 [data-theme="light"] {
@@ -64,6 +69,7 @@
   /* --op / --mod / --avatar-default deliberately not overridden: constant.
      --accent-glow is not overridden either: the glow is always the dark accent
      at 0.4 in both themes. */
+  color-scheme: light;
 }
 
 /* ---- accent flavors (channel-wide brand color) ----
