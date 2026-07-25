@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom - admin</title>
+  <title>upperroom - dashboard</title>
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
     // Apply the saved accent flavor too, so the brand color never flashes.
@@ -16,11 +16,11 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=29">
+  <link rel="stylesheet" href="/assets/style.css?v=30">
 </head>
 <body class="admin">
   <header class="home-bar">
-    <div class="brand"><span class="wordmark">upper<span class="wm-accent">room</span></span> <span class="admin-tag">admin</span></div>
+    <div class="brand"><span class="wordmark">upper<span class="wm-accent">room</span></span> <span class="admin-tag">dashboard</span></div>
     <nav class="home-actions">
       <a href="/home" class="ghost-btn">home</a>
       <a href="/accounts" class="solid-btn">accounts</a>
@@ -77,8 +77,9 @@
                placeholder="What this one is about">
       </label>
       <p class="muted">The countdown is public, so anyone who opens the sign-in
-        page sees it. The note is not: only signed-in viewers see that. Everyone
-        with go-live email on gets one reminder an hour before.</p>
+        page sees it. The note is not: only signed-in viewers see that. Viewers
+        with go-live email on get one reminder an hour before, unless you have
+        switched channel email off below. Admins are never emailed.</p>
       <div class="edit-actions">
         <button type="button" id="sched-clear" class="ghost-btn">Clear</button>
         <button type="button" id="sched-save" class="solid-btn">Save</button>
@@ -134,6 +135,12 @@
     <h2 class="section-title" style="margin-top:1.75rem;">Go-live notifications</h2>
     <div class="notify-panel">
       <p id="notify-status" class="muted">Loading…</p>
+      <label class="checkrow">
+        <input id="notify-email-on" type="checkbox"> Send emails when going live
+      </label>
+      <p class="settings-note muted">Turn this off to go live quietly. Viewers keep
+        their own preference, and Discord still posts either way. You are never
+        emailed about your own stream.</p>
       <label>Discord webhook URL <span class="muted">(optional)</span>
         <input id="notify-webhook" type="text" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
       </label>
@@ -184,6 +191,6 @@
     <p id="content-empty" class="muted" hidden>Nothing here yet.</p>
   </main>
 
-  <script src="/assets/admin.js?v=18"></script>
+  <script src="/assets/admin.js?v=19"></script>
 </body>
 </html>

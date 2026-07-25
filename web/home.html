@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=29">
+  <link rel="stylesheet" href="/assets/style.css?v=30">
 </head>
 <body class="home">
   <header class="home-bar">
@@ -28,7 +28,7 @@
     <nav class="home-actions">
       <button id="settings-btn" type="button" class="ghost-btn">settings</button>
       <a id="mod-link" href="/mod" class="ghost-btn" hidden>mod</a>
-      <a id="admin-link" href="/admin" class="ghost-btn" hidden>admin</a>
+      <a id="admin-link" href="/admin" class="ghost-btn" hidden>dashboard</a>
       <button id="logout" type="button" class="ghost-btn">sign out</button>
     </nav>
   </header>
@@ -86,48 +86,55 @@
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
       <h3>Your settings</h3>
 
-      <div class="setting">
-        <span>Theme</span>
-        <button id="theme-toggle" type="button" class="pill">Dark</button>
-      </div>
-      <div class="setting setting-name">
-        <span>Go-live email</span>
-        <div class="name-edit">
-          <input id="email-input" type="email" placeholder="name@example.com" autocomplete="email">
-          <button id="email-save" type="button" class="pill">Save</button>
+      <div class="settings-rows">
+        <div class="setting">
+          <span>Theme</span>
+          <button id="theme-toggle" type="button" class="pill">Dark</button>
         </div>
-      </div>
-      <div class="setting setting-check">
-        <label class="switch">
-          <input id="notify-toggle" type="checkbox">
-          Receive an email when streams start
-        </label>
-      </div>
-      <div class="setting setting-name">
-        <span>Display name</span>
-        <div class="name-edit">
-          <input id="name-input" type="text" maxlength="40" placeholder="Shown in chat" autocomplete="off">
-          <button id="name-save" type="button" class="pill">Save</button>
+        <!-- Go-live email is a viewer setting. The server never emails admins
+             that their own stream is live, so home.js hides this whole block for
+             them rather than offering a control that cannot do anything. -->
+        <div id="notify-settings" class="setting-group">
+          <div class="setting setting-field">
+            <span>Go-live email</span>
+            <div class="field-edit">
+              <input id="email-input" type="email" placeholder="name@example.com" autocomplete="email">
+              <button id="email-save" type="button" class="pill">Save</button>
+            </div>
+          </div>
+          <div class="setting setting-check">
+            <label class="switch">
+              <input id="notify-toggle" type="checkbox">
+              Receive an email when streams start
+            </label>
+          </div>
         </div>
-      </div>
-      <div class="setting">
-        <span>Avatar</span>
-        <span class="avatar-edit">
-          <span id="my-avatar"></span>
-          <button id="avatar-button" type="button" class="pill">Change</button>
-          <input id="avatar-input" type="file" accept="image/*" hidden>
-        </span>
-      </div>
-      <div class="setting setting-bio">
-        <span>Bio</span>
-        <div class="bio-edit">
-          <textarea id="bio-input" maxlength="200" rows="2" placeholder="A short bio others see when they tap your avatar"></textarea>
-          <button id="bio-save" type="button" class="pill">Save</button>
+        <div class="setting setting-field">
+          <span>Display name</span>
+          <div class="field-edit">
+            <input id="name-input" type="text" maxlength="40" placeholder="Shown in chat" autocomplete="off">
+            <button id="name-save" type="button" class="pill">Save</button>
+          </div>
         </div>
-      </div>
-      <div class="setting">
-        <span>Password</span>
-        <button id="pw-open" type="button" class="pill">Change password</button>
+        <div class="setting">
+          <span>Avatar</span>
+          <span class="avatar-edit">
+            <span id="my-avatar"></span>
+            <button id="avatar-button" type="button" class="pill">Change</button>
+            <input id="avatar-input" type="file" accept="image/*" hidden>
+          </span>
+        </div>
+        <div class="setting setting-field">
+          <span>Bio</span>
+          <div class="field-edit">
+            <textarea id="bio-input" maxlength="200" rows="2" placeholder="A short bio others see when they tap your avatar"></textarea>
+            <button id="bio-save" type="button" class="pill">Save</button>
+          </div>
+        </div>
+        <div class="setting">
+          <span>Password</span>
+          <button id="pw-open" type="button" class="pill">Change password</button>
+        </div>
       </div>
     </div>
   </div>
@@ -178,6 +185,6 @@
     </div>
   </div>
 
-  <script src="/assets/home.js?v=14"></script>
+  <script src="/assets/home.js?v=15"></script>
 </body>
 </html>

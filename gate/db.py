@@ -88,9 +88,13 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     clip_cooldown_admin INTEGER NOT NULL DEFAULT 1,
     -- Go-live notifications. discord_webhook is an optional Discord incoming
     -- webhook URL; last_notified_at guards against re-announcing on a brief
-    -- stream blip or a gate restart mid-broadcast.
+    -- stream blip or a gate restart mid-broadcast. email_on_live is the
+    -- channel's master switch for the go-live email: viewers each have their own
+    -- opt-in, this decides whether the channel sends any at all. It does not
+    -- affect Discord.
     discord_webhook TEXT NOT NULL DEFAULT '',
     last_notified_at INTEGER NOT NULL DEFAULT 0,
+    email_on_live INTEGER NOT NULL DEFAULT 1,
     -- The channel-wide accent flavor every visitor sees (the brand color). One
     -- of the presets in ACCENTS; the per-user dark/light toggle is separate.
     accent TEXT NOT NULL DEFAULT 'green',
@@ -283,6 +287,12 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        # 1, matching a new install: before this switch existed the channel sent
+        # go-live email whenever SMTP was configured, so defaulting it on is what
+        # keeps an existing channel behaving exactly as it did yesterday.
+        _ensure_column(
+            conn, "channel_settings", "email_on_live", "INTEGER NOT NULL DEFAULT 1"
+        )
         # 0, not the 2 a new install gets: this branch runs on a channel that
         # already exists, and its chat should carry on behaving exactly as it
         # did yesterday until the operator says otherwise.
@@ -627,15 +637,16 @@ def set_chat_moderation(slow_mode_seconds=None, banned_words=None):
 
 
 def get_notify_settings():
-    """The channel's go-live notification settings: the Discord webhook URL and
-    the epoch of the last announcement (used for the cooldown)."""
+    """The channel's go-live notification settings: the Discord webhook URL, the
+    epoch of the last announcement (used for the cooldown), and whether the
+    channel sends go-live email at all."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT discord_webhook, last_notified_at FROM channel_settings "
-            "WHERE id = 1"
+            "SELECT discord_webhook, last_notified_at, email_on_live "
+            "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
-            return {"discord_webhook": "", "last_notified_at": 0}
+            return {"discord_webhook": "", "last_notified_at": 0, "email_on_live": 1}
         return dict(row)
 
 
@@ -644,6 +655,16 @@ def set_discord_webhook(url):
         conn.execute(
             "UPDATE channel_settings SET discord_webhook = ? WHERE id = 1",
             (url or "",),
+        )
+
+
+def set_email_on_live(on):
+    """Turn the channel's go-live email on or off. Viewers keep their own
+    per-account opt-in; this is the switch above all of them."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET email_on_live = ? WHERE id = 1",
+            (1 if on else 0,),
         )
 
 

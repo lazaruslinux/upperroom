@@ -20,6 +20,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import auth
 import db
+import notify
 from config import (
     COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH, MAX_SCHEDULE_NOTE,
 )
@@ -765,6 +766,39 @@ def test_admin_is_excluded_from_go_live_email_recipients(client):
     emails = [email for _, email in db.list_live_recipients()]
     assert "viewer@example.com" in emails
     assert "owner@example.com" not in emails
+
+
+def test_channel_email_defaults_on(client):
+    # A fresh channel, and an upgraded one, both send email: the switch only
+    # matters once an operator turns it off.
+    setup_admin(client, username="owner")
+    assert db.get_notify_settings()["email_on_live"] == 1
+
+
+def test_channel_email_switch_gates_go_live_email(client, monkeypatch):
+    # With a relay configured, the switch alone decides whether email goes out.
+    setup_admin(client, username="owner")
+    monkeypatch.setattr(notify, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(notify, "SMTP_FROM", "bot@example.com")
+    assert notify.email_enabled() is True
+    db.set_email_on_live(False)
+    assert notify.email_enabled() is False
+    db.set_email_on_live(True)
+    assert notify.email_enabled() is True
+
+
+def test_channel_email_switch_cannot_send_without_a_relay(client):
+    # No SMTP configured, so the switch being on changes nothing.
+    setup_admin(client, username="owner")
+    db.set_email_on_live(True)
+    assert notify.email_enabled() is False
+
+
+def test_admin_notify_endpoint_round_trips_the_email_switch(client):
+    setup_admin(client, username="owner")
+    assert client.get("/api/admin/notify").json()["email_on_live"] is True
+    assert client.post("/api/admin/notify", json={"email_on_live": False}).status_code == 200
+    assert client.get("/api/admin/notify").json()["email_on_live"] is False
 
 
 # ---- 8. Session-gated media endpoints -------------------------------------

@@ -444,6 +444,7 @@ def admin_notify_get(request: Request):
     return {
         "discord_webhook": settings["discord_webhook"],
         "last_notified_at": settings["last_notified_at"],
+        "email_on_live": bool(settings["email_on_live"]),
         "smtp_configured": bool(SMTP_HOST and SMTP_FROM),
         "site_url": SITE_URL,
         "recipients": len(db.list_live_recipients()),
@@ -462,6 +463,8 @@ async def admin_notify_set(request: Request):
                 {"error": "A webhook URL must start with https://."}, status_code=400
             )
         db.set_discord_webhook(url)
+    if "email_on_live" in body:
+        db.set_email_on_live(bool(body.get("email_on_live")))
     if body.get("test"):
         # Fire a one-off announcement now, ignoring the cooldown, so the operator
         # can confirm Discord and email are actually wired up.

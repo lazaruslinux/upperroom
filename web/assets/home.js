@@ -357,8 +357,16 @@ bioSave.addEventListener("click", async () => {
 // ---- go-live email opt-in ----
 
 const notifyToggle = document.getElementById("notify-toggle");
+const notifySettings = document.getElementById("notify-settings");
 
 function renderNotifySetting() {
+  // The server never emails an admin that their own stream is live: the
+  // recipient query filters them out. Showing them the address field and the
+  // opt-in would be offering a control that cannot change anything, so hide the
+  // pair. The same reasoning already governs maybePromptEmail() below. Their
+  // stored address is left untouched, so demoting them restores it intact.
+  notifySettings.hidden = !!me.admin;
+  if (me.admin) return;
   notifyToggle.checked = me.notify_live !== false;
   emailInput.value = me.email || "";
 }

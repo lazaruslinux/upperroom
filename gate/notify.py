@@ -61,10 +61,20 @@ def _send_emails_blocking(recipients, subject, body):
         logger.warning("go-live email relay failed: %r", exc)
 
 
-async def send_live_emails(title, site_name="upperroom"):
-    """Email everyone who opted in that the channel is live. No-op unless an SMTP
-    relay is configured and at least one account has an address."""
+def email_enabled():
+    """Whether the channel sends go-live email at all: a relay has to be
+    configured on the server AND the operator has to have left the dashboard
+    switch on. Discord is deliberately not covered by this; the two are
+    independent."""
     if not (SMTP_HOST and SMTP_FROM):
+        return False
+    return bool(db.get_notify_settings()["email_on_live"])
+
+
+async def send_live_emails(title, site_name="upperroom"):
+    """Email everyone who opted in that the channel is live. No-op unless email
+    is enabled for the channel and at least one account has an address."""
+    if not email_enabled():
         return
     recipients = db.list_live_recipients()
     if not recipients:
@@ -143,7 +153,7 @@ async def notify_scheduled(when, note, now=None):
     if SITE_URL:
         discord_text += f"\n{SITE_URL}/home"
     await send_discord(settings["discord_webhook"], discord_text)
-    if not (SMTP_HOST and SMTP_FROM):
+    if not email_enabled():
         return
     recipients = db.list_live_recipients()
     if not recipients:

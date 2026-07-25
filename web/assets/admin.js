@@ -238,6 +238,7 @@ document.getElementById("mod-save").addEventListener("click", async () => {
 // ---- go-live notifications ----
 
 const notifyWebhook = document.getElementById("notify-webhook");
+const notifyEmailOn = document.getElementById("notify-email-on");
 const notifyStatus = document.getElementById("notify-status");
 const notifyMsg = document.getElementById("notify-msg");
 
@@ -252,10 +253,17 @@ async function loadNotify() {
   let data = {};
   try { data = await (await fetch("/api/admin/notify")).json(); } catch { return; }
   notifyWebhook.value = data.discord_webhook || "";
+  notifyEmailOn.checked = data.email_on_live !== false;
   const bits = [];
-  bits.push(data.smtp_configured
-    ? `Email is set up. ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`
-    : "Email is not configured on the server (set the SMTP variables to enable it).");
+  // Three states, not two: the relay can be missing, or present but switched
+  // off here. Saying "email is set up" while nothing sends would be a lie.
+  if (!data.smtp_configured) {
+    bits.push("Email is not configured on the server (set the SMTP variables to enable it).");
+  } else if (data.email_on_live === false) {
+    bits.push("Email is set up but switched off, so nobody is emailed when you go live.");
+  } else {
+    bits.push(`Email is set up. ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`);
+  }
   if (!data.site_url) bits.push("Set SELFSTREAM_SITE_URL so messages include a watch link.");
   if (data.last_notified_at) bits.push(`Last announced ${relativeTime(data.last_notified_at)}.`);
   notifyStatus.textContent = bits.join(" ");
@@ -263,7 +271,10 @@ async function loadNotify() {
 
 async function saveNotify(test) {
   notifyMsg.hidden = true;
-  const body = { discord_webhook: notifyWebhook.value };
+  const body = {
+    discord_webhook: notifyWebhook.value,
+    email_on_live: notifyEmailOn.checked,
+  };
   if (test) body.test = true;
   let reply;
   try {
