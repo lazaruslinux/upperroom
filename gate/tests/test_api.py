@@ -289,9 +289,50 @@ def test_only_admin_cannot_be_deleted_or_demoted(client):
     demote = client.patch("/api/admin/users/owner", json={"is_admin": False})
     assert demote.status_code == 400
     assert db.get_user("owner")["is_admin"] == 1
-    delete = client.request("DELETE", "/api/admin/users/owner")
+    # Confirmed properly, so the 400 is about being the last admin and not
+    # about the confirmation step.
+    delete = client.request("DELETE", "/api/admin/users/owner?confirm=owner")
     assert delete.status_code == 400
+    assert "only admin" in delete.json()["error"].lower()
     assert db.get_user("owner") is not None
+
+
+def test_delete_needs_the_username_typed_back(client):
+    setup_admin(client, username="owner")
+    add_user("leaving")
+    bare = client.request("DELETE", "/api/admin/users/leaving")
+    assert bare.status_code == 400
+    assert db.get_user("leaving") is not None
+    wrong = client.request("DELETE", "/api/admin/users/leaving?confirm=leavin")
+    assert wrong.status_code == 400
+    assert db.get_user("leaving") is not None
+    ok = client.request("DELETE", "/api/admin/users/leaving?confirm=LEAVING")
+    assert ok.status_code == 200          # same normalising as a username field
+    assert db.get_user("leaving") is None
+
+
+def test_admin_cannot_rename_someone(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")                       # display name defaults to "Viewer"
+    resp = client.patch(
+        "/api/admin/users/viewer",
+        json={"display_name": "Renamed By Admin", "is_moderator": True},
+    )
+    assert resp.status_code == 403
+    after = db.get_user("viewer")
+    assert after["display_name"] == "Viewer"
+    # The refusal is total: nothing else in the same request took effect.
+    assert after["is_moderator"] == 0
+
+
+def test_admin_still_names_an_account_when_creating_it(client):
+    setup_admin(client, username="owner")
+    resp = client.post(
+        "/api/admin/users",
+        json={"username": "newbie", "password": "longenough", "display_name": "Newbie"},
+    )
+    assert resp.status_code == 200
+    assert db.get_user("newbie")["display_name"] == "Newbie"
 
 
 def test_mod_dashboard_hides_admin_accounts(client):

@@ -66,7 +66,7 @@ like `ember-quiet-harbor`. Find it two ways:
   ```
   docker compose --profile demo logs demo-seed
   ```
-- or signed in as the demo admin, under **Invites** on the `/admin` dashboard.
+- or signed in as the demo admin, under **Invites** on the `/accounts` page.
 
 Redeem it from the login page: click **have an invite?**, then enter the code
 with a new username, display name, and password to make a fresh viewer account.

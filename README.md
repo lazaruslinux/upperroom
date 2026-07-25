@@ -29,9 +29,9 @@ only repackages the video and stays light.
 - The first time you open the site it hands you a short setup page that creates
   your admin account and names your site. The page seals itself afterwards.
 - Invite codes let you hand out accounts without making them yourself. Generate
-  a code in the dashboard, label it, and it works once. Whoever redeems it picks
-  their own username and password and arrives as a viewer.
-- You can also create accounts directly from the dashboard, for anyone who would
+  a code on the accounts page, label it, and it works once. Whoever redeems it
+  picks their own username and password and arrives as a viewer.
+- You can also create accounts directly from that page, for anyone who would
   rather not deal with a code.
 - No account needs an email address. A viewer supplies one only if they want
   mail when you go live.
@@ -41,6 +41,9 @@ only repackages the video and stays light.
 ### Chat and moderation
 
 - An admin role and a separate moderator role, each with its own dashboard.
+  Accounts, bans and invites have a page of their own, separate from the channel
+  settings. Only the account holder can change their own display name, and
+  deleting an account makes you type its username first.
 - Chat commands: `/timeout`, `/untimeout`, `/del`, `/purge`, `/ban`, `/unban`
   for moderators, plus `/mod` and `/unmod` for the admin. `/help` lists whatever
   the person typing it is allowed to use.

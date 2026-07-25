@@ -260,13 +260,15 @@ async def admin_update(username: str, request: Request):
         return JSONResponse({"error": "No such user."}, status_code=404)
     body = await request.json()
 
-    display_name = None
+    # An admin picks the starting display name when creating an account, and
+    # that is the end of it: from then on the name belongs to the person, who
+    # changes it from their own settings. Refused rather than ignored, so a
+    # caller is never told a rename succeeded when it did not.
     if "display_name" in body:
-        display_name = (body.get("display_name") or "").strip()[:MAX_DISPLAY_NAME]
-        if not display_name:
-            return JSONResponse(
-                {"error": "Display name cannot be empty."}, status_code=400
-            )
+        return JSONResponse(
+            {"error": "Only the account holder can change their display name."},
+            status_code=403,
+        )
 
     is_admin = None
     if "is_admin" in body:
@@ -283,10 +285,10 @@ async def admin_update(username: str, request: Request):
     if "is_moderator" in body:
         is_moderator = bool(body.get("is_moderator"))
 
-    if display_name is not None or is_admin is not None or is_moderator is not None:
+    if is_admin is not None or is_moderator is not None:
         db.update_user(
             username,
-            display_name=display_name,
+            display_name=None,
             is_admin=is_admin,
             is_moderator=is_moderator,
         )
@@ -317,7 +319,11 @@ async def admin_update(username: str, request: Request):
 
 
 @router.delete("/api/admin/users/{username}")
-def admin_delete(username: str, request: Request):
+def admin_delete(username: str, request: Request, confirm: str = ""):
+    # Deleting takes the account, its watch history and its chat, and there is
+    # no undo. The caller has to echo the username back in ?confirm=, so the
+    # dashboard's "type the username" step is enforced here and not only in the
+    # browser, and a stray DELETE can never land on anyone.
     actor = admin_user(request)
     if not actor:
         return JSONResponse({"error": "Admins only."}, status_code=403)
@@ -325,6 +331,10 @@ def admin_delete(username: str, request: Request):
     target = db.get_user(username) if username else None
     if not target:
         return JSONResponse({"error": "No such user."}, status_code=404)
+    if _clean_username(confirm) != username:
+        return JSONResponse(
+            {"error": "Type the username to confirm the deletion."}, status_code=400
+        )
     if target["is_admin"] and db.count_admins() <= 1:
         return JSONResponse(
             {"error": "You cannot delete the only admin account."}, status_code=400

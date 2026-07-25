@@ -41,11 +41,16 @@ username, a display name, a password, and a site name (your own brand, shown
 above "powered by upperroom" on every page), then create the account. That first account is the admin, you are signed in at once, and the
 wizard closes for good the moment it exists.
 
-From then on you let other people in with invite codes: open the admin dashboard
-at `/admin`, generate a single-use code under **Invites**, and share it. They
+From then on you let other people in with invite codes: open the accounts page
+at `/accounts`, generate a single-use code under **Invites**, and share it. They
 redeem it from the login page ("have an invite?") to make their own viewer
 account. No terminal, and no email is involved. See
 `docs/06-accounts-and-chat.md` for the details.
+
+There are two admin pages, and it is worth knowing which is which. `/accounts`
+is the people: accounts, bans and invites. `/admin` is the channel: branding,
+the schedule, chat rules, the stream key, the overlay, notifications, storage
+and the recorded library.
 
 If you ever need to bootstrap or recover an account from the command line (for
 example if you are locked out), `manage.py` still works; it is described in

@@ -261,15 +261,31 @@ button[type="submit"]:hover, .solid-btn:hover, .pill.primary:hover,
   background: var(--accent-tint);
 }
 
-/* danger variant */
-.danger-btn, .chip-btn.danger-chip {
+/* danger variant. button[type="submit"] above is 0-1-1 and would otherwise
+   outrank a bare .danger-btn class, painting a destructive submit in the accent
+   color, so the submit case is named explicitly here. */
+.danger-btn, .chip-btn.danger-chip, button[type="submit"].danger-btn {
   color: var(--error);
   border-color: var(--error);
 }
-.danger-btn:hover, .chip-btn.danger-chip:hover {
+.danger-btn:hover, .chip-btn.danger-chip:hover,
+button[type="submit"].danger-btn:hover {
   color: var(--error);
   border-color: var(--error);
   background: var(--error-tint);
+}
+
+/* A button that is off. Used most visibly by the delete confirmation, which
+   stays dead until the username is typed correctly. */
+button:disabled, button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* The compound danger selector above is 0-2-1, so a bare :disabled:hover would
+   lose to it and a dead delete button would still light up red on hover. */
+button:disabled:hover, button[disabled]:hover,
+button[type="submit"].danger-btn:disabled:hover {
+  background: none;
 }
 
 /* md size: form submits + modal primaries + paired form actions */

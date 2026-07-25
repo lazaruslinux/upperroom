@@ -4,15 +4,15 @@
 
 On a brand new install no account exists yet, so the login page sends you to a
 one-time setup wizard at `/setup`. Enter a username, a display name, a password,
-and a name for the channel, then create the account. This first account is the
+and a site name, then create the account. This first account is the
 admin, you are signed in immediately, and the wizard disappears for good the
 instant the account exists (the server refuses it from then on, not just the
 page). There is nothing to run in a terminal.
 
 ## Letting people in with invites
 
-After setup you add everyone else with single-use invite codes, from the admin
-dashboard's **Invites** section:
+After setup you add everyone else with single-use invite codes, from the
+**Invites** section of the accounts page:
 
 - **Generate a code** with the **Generate code** button. You can add an optional
   label ("who it's for") to help you keep track. Each code is a short, readable
@@ -22,31 +22,53 @@ dashboard's **Invites** section:
   invite?" link that reveals a short join form (code, username, display name,
   password). Redeeming makes them a **viewer** account and signs them in. A code
   can never create an admin or a moderator.
-- Each code works **once**. After it is redeemed the dashboard shows who used it
-  and when. You can **Revoke** a code that has not been redeemed yet, which keeps
-  the row for the record but stops it from ever being used.
+- Each code works **once**. After it is redeemed the page shows who used it and
+  when. You can **Revoke** a code that has not been redeemed yet, which keeps the
+  row for the record but stops it from ever being used.
 
-## The admin dashboard
+## The accounts page
 
-If your account has the admin flag, sign in and open `/admin` (there is also an
-**Admin** link on the home page). From the dashboard you can, with no terminal:
+If your account has the admin flag, sign in and open `/accounts` (the
+**Accounts** button on the dashboard gets you there, and the home page has an
+**Admin** link to the dashboard). This page is everything about who can get in.
+With no terminal you can:
 
-- **Create an account** with the **+ New user** button. Enter a username and a
+- **Create an account** with the **+ account** button. Enter a username and a
   password, optionally a display name, tick admin if you want, and it is made.
-- **Edit any account**: rename it, reset its password, or grant/remove the admin
-  or moderator role (the two are independent).
+- **Edit any account**: reset its password, set the email for go-live alerts, or
+  grant and remove the admin or moderator role (the two are independent).
 - **Delete an account**, which also clears its watch history and chat log.
 - See each person's **watch activity** (when they watched and for how long) and
   their **chat history** from the last 7 days, under the **Activity** button.
-- Review and lift **bans** under the **Bans** section.
-- Review, pin and delete recordings and clips under the **Content** section,
-  and set how much of them to keep under **Storage**.
-- Announce the **Next stream**, so viewers see a countdown to it.
-- Set **Chat moderation**: slow mode, and a list of banned words.
+- Review and lift **bans**.
+- Generate, copy and revoke **invites**.
 
-The dashboard is gated server side, so only a signed in admin can reach any of
-it. The last remaining admin cannot be deleted or demoted, so you can never lock
+Two things you deliberately cannot do here.
+
+You cannot change somebody's **display name**. You choose the starting one when
+you create the account, and after that the name is theirs: they change it in
+**Settings** on their own home page. The server refuses a rename from here, so
+nobody's name moves by accident or by habit. It is not a guarantee against a
+determined admin, who can always reset a password and sign in as the account; it
+is a rule about how the software expects you to behave. If a name is a genuine
+problem, that is what timeouts and bans are for.
+
+**Deleting** asks you to type the username before it will go through, because it
+takes the account, its watch history and its chat with it and there is no undo.
+The server checks the typed name too, so nothing can delete an account with a
+single stray request.
+
+The page is gated server side, so only a signed in admin can reach any of it.
+The last remaining admin cannot be deleted or demoted, so you can never lock
 yourself out.
+
+## The admin dashboard
+
+`/admin` is the channel itself rather than the people in it: your site name and
+accent color, the **Next stream** announcement, **Chat moderation** (slow mode
+and banned words), the **Stream key**, the **Overlay** URL, **Go-live
+notifications**, **Storage** limits, and the **Content** library where you
+review, pin and delete recordings and clips.
 
 ## Moderators
 
@@ -68,17 +90,17 @@ this area entirely.
 Moderators and admins moderate by typing commands into chat. The command is
 handled privately and never shown to other viewers:
 
-- `/timeout <user> [seconds]` — mute a viewer for a while (default 300 seconds).
-- `/untimeout <user>` — lift a timeout early.
-- `/del <user>` — delete that viewer's most recent message for everyone. It is
+- `/timeout <user> [seconds]`: mute a viewer for a while (default 300 seconds).
+- `/untimeout <user>`: lift a timeout early.
+- `/del <user>`: delete that viewer's most recent message for everyone. It is
   replaced with "deleted by a moderator" and kept in the admin log as deleted.
-- `/purge <user>` — delete every message that viewer has sent, the same way.
-- `/ban <user> [reason]` — ban a viewer from chat. A ban is persistent.
-- `/unban <user>` — lift a ban. A moderator can only lift bans they set; an
+- `/purge <user>`: delete every message that viewer has sent, the same way.
+- `/ban <user> [reason]`: ban a viewer from chat. A ban is persistent.
+- `/unban <user>`: lift a ban. A moderator can only lift bans they set; an
   admin can lift any.
-- `/mod <user>` and `/unmod <user>` — grant or remove the moderator role
+- `/mod <user>` and `/unmod <user>`: grant or remove the moderator role
   (admins only).
-- `/help` — list the commands available to your account.
+- `/help`: list the commands available to your account.
 
 A moderator cannot act on an admin's messages, and cannot grant moderators.
 
