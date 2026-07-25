@@ -1,5 +1,7 @@
 // Playback page for a saved VOD or a clip, with chat replayed in sync. Driven by
 // the query string, e.g. /media?type=vod&id=12 or /media?type=clip&id=5.
+let me = null;               // this browser's identity, for the shared nav
+
 
 const params = new URLSearchParams(location.search);
 const TYPE = params.get("type") === "clip" ? "clip" : "vod";
@@ -225,6 +227,7 @@ async function requireAuth() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
+  me = data;
   return true;
 }
 
@@ -274,20 +277,14 @@ function applyAccent(value) {
 
 // The operator's site name leads the top bar and names the browser tab, so the
 // platform brand ("powered by upperroom") stays a credit rather than the title.
-function applySiteName(value) {
-  if (!value) return;
-  const el = document.getElementById("site-title");
-  if (el) el.textContent = value;
-  document.title = value;
-}
-
 async function boot() {
   if (!(await requireAuth())) return;
-  try {
-    const status = await (await fetch("/api/status")).json();
-    applyAccent(status.accent);
-    applySiteName(status.site_name);
-  } catch (e) {}
+  // This page already asks for status, so hand the site name to the nav rather
+  // than making it fetch the same thing again.
+  let status = {};
+  try { status = await (await fetch("/api/status")).json(); } catch (e) {}
+  applyAccent(status.accent);
+  mountNav(me, { current: "media", siteName: status.site_name });
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
 }

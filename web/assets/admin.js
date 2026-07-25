@@ -2,6 +2,8 @@
 // stream key, the overlay, notifications, storage and the recorded library.
 // Accounts, bans and invites live on their own page, /accounts.
 // Every action is gated server side too; this page just drives those endpoints.
+let me = null;               // this browser's identity, for the shared nav
+
 
 // ---- small helpers ----
 
@@ -25,6 +27,7 @@ async function requireAdmin() {
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
   if (!data.admin) { window.location.href = "/home"; return false; }
+  me = data;
   return true;
 }
 
@@ -582,6 +585,7 @@ document.getElementById("stream-key-regen").addEventListener("click", async (e) 
 
 async function boot() {
   if (!(await requireAdmin())) return;
+  mountNav(me, { current: "dashboard" });
   loadContent();
   loadChannel();
   loadModeration();

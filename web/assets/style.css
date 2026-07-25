@@ -488,6 +488,9 @@ form { display: flex; flex-direction: column; gap: 12px; }
   white-space: nowrap;
 }
 .home-bar .home-actions .ghost-btn:hover { border: none; color: var(--accent); }
+/* The nav is the same on every page, so the page you are on is marked rather
+   than dropped from the bar. */
+.home-bar .home-actions .ghost-btn.is-current { color: var(--text); }
 
 /* =========================================================================
    Home (card landing) + library

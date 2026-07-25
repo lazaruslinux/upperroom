@@ -3,6 +3,8 @@
 // Admins may open this page too, but their own dashboard at /admin is fuller.
 // Every action is gated server side as well; this page just drives the
 // /api/mod/* endpoints.
+let me = null;               // this browser's identity, for the shared nav
+
 
 let users = [];
 let bans = [];
@@ -89,6 +91,7 @@ async function requireMod() {
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
   if (!data.admin && !data.mod) { window.location.href = "/home"; return false; }
+  me = data;
   return true;
 }
 
@@ -313,6 +316,7 @@ async function openChat() {
 
 async function boot() {
   if (!(await requireMod())) return;
+  mountNav(me, { current: "mod" });
   loadAll();
 }
 
