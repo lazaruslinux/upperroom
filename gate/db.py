@@ -106,7 +106,11 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- Chat moderation. slow_mode_seconds is the minimum gap between messages for
     -- a plain viewer (0 = off; mods and admins are exempt). banned_words is a
     -- newline/comma separated list; a message containing any of them is dropped.
-    slow_mode_seconds INTEGER NOT NULL DEFAULT 0,
+    -- A new install starts at 2 seconds, which is slow enough to take the edge
+    -- off a flood and short enough that nobody having a conversation notices.
+    -- The migration below deliberately keeps 0, so an existing channel never
+    -- has a delay appear under it: raising it there is the operator's choice.
+    slow_mode_seconds INTEGER NOT NULL DEFAULT 2,
     banned_words TEXT NOT NULL DEFAULT '',
     -- Retention limits for the media store. Every one of these is 0 by default,
     -- and 0 means "no limit on this axis", so a fresh install never deletes a
@@ -279,6 +283,9 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        # 0, not the 2 a new install gets: this branch runs on a channel that
+        # already exists, and its chat should carry on behaving exactly as it
+        # did yesterday until the operator says otherwise.
         _ensure_column(
             conn, "channel_settings", "slow_mode_seconds", "INTEGER NOT NULL DEFAULT 0"
         )

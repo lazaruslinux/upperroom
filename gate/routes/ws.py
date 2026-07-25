@@ -363,7 +363,7 @@ async def chat_socket(websocket: WebSocket):
                 if wait:
                     await system_reply(
                         websocket,
-                        f"Slow mode is on. Wait {wait}s before posting again.",
+                        f"Wait {wait}s before posting again.",
                     )
                     continue
             # Flood guard: drop anything past five messages in three seconds.

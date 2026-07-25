@@ -333,6 +333,24 @@ def test_count_media_counts_pins_across_both_kinds(fresh_db):
     assert db.count_media() == {"vods": 2, "clips": 1, "pinned": 1}
 
 
+def test_slow_mode_starts_at_two_seconds_on_a_new_install(fresh_db):
+    assert db.get_chat_moderation()["slow_mode_seconds"] == 2
+
+
+def test_slow_mode_stays_off_for_a_channel_that_predates_it(fresh_db, monkeypatch):
+    # A new install starts at 2 seconds, but an existing channel must not have a
+    # delay appear under it on an update. Dropping the column reproduces a
+    # database from before chat moderation shipped.
+    with db.connect() as conn:
+        conn.execute("ALTER TABLE channel_settings DROP COLUMN slow_mode_seconds")
+    db.init_db()
+    assert db.get_chat_moderation()["slow_mode_seconds"] == 0
+    # And an operator's own choice survives a re-init either way.
+    db.set_chat_moderation(slow_mode_seconds=15)
+    db.init_db()
+    assert db.get_chat_moderation()["slow_mode_seconds"] == 15
+
+
 def test_retention_seeds_from_the_environment_only_on_an_upgrade(fresh_db, monkeypatch):
     # An install that predates dashboard retention has been pruning by the old
     # environment variables. The upgrade must carry those over exactly once, so

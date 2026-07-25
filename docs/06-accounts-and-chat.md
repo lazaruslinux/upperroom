@@ -89,9 +89,16 @@ chat and a small delete control appears.
 
 Two settings under **Chat moderation** in the admin dashboard apply to everyone
 at once. Slow mode sets a minimum number of seconds between one viewer's
-messages; moderators and admins are exempt. The banned words list is one word or
-phrase per line, and a message containing any of them is dropped, with only the
-sender told why. The list is admin-only and never leaves the dashboard.
+messages; moderators and admins are exempt. A new install starts at 2 seconds,
+which is short enough that a conversation never notices it and long enough to
+take the edge off someone hammering the enter key. Set it to 0 to turn it off,
+or raise it when chat gets away from you. An install that was already running
+before this default arrived keeps whatever it had, so nothing changes under you
+on an update.
+
+The banned words list is one word or phrase per line, and a message containing
+any of them is dropped, with only the sender told why. The list is admin-only
+and never leaves the dashboard.
 
 ## Changing your own password
 

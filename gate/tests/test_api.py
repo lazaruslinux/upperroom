@@ -623,6 +623,8 @@ def test_chat_color_rides_on_the_message_payload(client):
 def test_ws_purge_deletes_all_of_a_users_messages(client):
     setup_admin(client, username="owner")
     add_user("chatty")
+    # This is about purge, not pacing, so take the default slow mode out of it.
+    db.set_chat_moderation(slow_mode_seconds=0)
     chatty = make_client()
     login(chatty, "chatty")
     with ws_connect(chatty) as cw:
@@ -689,7 +691,7 @@ def test_slow_mode_blocks_fast_repeats_but_exempts_admin(client):
         vw.send_json({"type": "chat", "text": "too soon"})
         blocked = vw.receive_json()
     assert blocked["type"] == "system"
-    assert "slow mode" in blocked["text"].lower()
+    assert "wait" in blocked["text"].lower()
     # The admin is exempt: two quick messages both broadcast as chat.
     with ws_connect(client) as ow:
         drain_join(ow)

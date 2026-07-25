@@ -46,8 +46,9 @@ only repackages the video and stays light.
   the person typing it is allowed to use.
 - Almost anything a command does, a click does too. Select a name in chat for
   timeouts, bans and promotions, or hover a line to delete just that one.
-- Slow mode and a banned word list, both set in the dashboard. Moderators are
-  exempt from slow mode.
+- Slow mode and a banned word list, both set in the dashboard. Chat starts at a
+  2 second minimum between a viewer's messages, which you can raise or turn off.
+  Moderators are exempt.
 - Viewers pick their own name and message colors. The server rejects anything
   too dark to read, or close enough to the red reserved for the LIVE badge to be
   confusing.
