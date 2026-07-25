@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom - watch</title>
+  <title>upperroom - analytics</title>
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
     // Apply the saved accent flavor too, so the brand color never flashes.
@@ -18,31 +18,29 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/assets/style.css?v=34">
 </head>
-<body class="media">
+<body class="admin">
   <div id="site-nav"></div>
 
-  <main class="media-main">
-    <section class="media-stage">
-      <video id="video" controls playsinline></video>
-      <div id="heatmap" class="heatmap" aria-label="Chat activity. Click to seek." hidden></div>
-      <div class="media-info">
-        <h1 id="media-title" class="media-page-title">Loading…</h1>
-        <div id="media-sub" class="media-sub muted"></div>
-        <p id="media-desc" class="media-desc"></p>
-      </div>
-    </section>
+  <main class="admin-main">
+    <h2 class="section-title">At a glance</h2>
+    <section class="stat-strip" id="stat-strip"></section>
 
-    <aside class="media-replay">
-      <header class="replay-head">
-        <span>Chat replay</span>
-        <button id="replay-toggle" type="button" class="pill">On</button>
-      </header>
-      <div id="replay-messages" class="messages"></div>
-      <p id="replay-empty" class="muted replay-empty" hidden>No chat was recorded for this.</p>
-    </aside>
+    <h2 class="section-title" style="margin-top:1.75rem;">Most watch time</h2>
+    <div id="watch-board" class="activity-list"></div>
+    <p id="watch-empty" class="muted" hidden>Nobody has watched a live stream yet.</p>
+
+    <h2 class="section-title" style="margin-top:1.75rem;">Broadcasts</h2>
+    <div id="broadcasts" class="activity-list"></div>
+    <p id="broadcast-empty" class="muted" hidden>No recorded broadcasts yet.</p>
+
+    <h2 class="section-title" style="margin-top:1.75rem;">Library</h2>
+    <section class="stat-strip" id="library-strip"></section>
+
+    <h2 class="section-title" style="margin-top:1.75rem;">Invites</h2>
+    <section class="stat-strip" id="invite-strip"></section>
   </main>
 
   <script src="/assets/nav.js?v=2"></script>
-  <script src="/assets/media.js?v=7"></script>
+  <script src="/assets/analytics.js?v=1"></script>
 </body>
 </html>

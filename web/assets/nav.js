@@ -25,6 +25,7 @@
   const ITEMS = [
     { key: "home", label: "home", href: "/home" },
     { key: "dashboard", label: "dashboard", href: "/admin", show: (me) => me.admin },
+    { key: "analytics", label: "analytics", href: "/analytics", show: (me) => me.admin },
     // An admin already has every moderator power and the dashboard is a
     // superset, so only a plain moderator needs this.
     { key: "mod", label: "mod", href: "/mod", show: (me) => me.mod && !me.admin },

@@ -1099,6 +1099,10 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   transition: border-color 0.15s ease;
 }
 .stat-card:hover { border-color: var(--accent); }
+/* Analytics tiles are readouts, not buttons: no pointer, no hover promise of
+   something to click. */
+.stat-card.is-static { cursor: default; }
+.stat-card.is-static:hover { border-color: var(--border); }
 .stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; }
 .stat-label { font-family: var(--mono); color: var(--muted); font-size: 11px; }
 
