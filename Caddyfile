@@ -63,6 +63,10 @@
 			file_server
 		}
 
+		# Accounts, bans and invites moved onto the dashboard. Kept so an old
+		# bookmark lands somewhere useful instead of the sign-in page.
+		redir /accounts /admin permanent
+
 		# Everything else is the static site: the login page, the watch page,
 		# and the CSS and JavaScript.
 		handle {

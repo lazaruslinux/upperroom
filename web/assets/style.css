@@ -1112,24 +1112,44 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   margin: 0 0 12px;
 }
 
-.user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.user-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  padding: 14px;
+/* People live in a scrollable list inside a modal rather than a page of cards:
+   the point is to find someone and act on them, which a dense list does better
+   than a grid that shows a handful at a time. */
+.user-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  position: relative;
-  overflow: hidden;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
 }
-/* an admin account is marked by an accent top rule (no gradient) */
-.user-card.is-admin { border-top: 2px solid var(--accent); }
-
-.user-head { display: flex; align-items: center; gap: 12px; }
-.user-ident { min-width: 0; }
-.user-name { font-family: var(--mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.user-row:last-child { border-bottom: 0; }
+/* an admin account is marked by an accent edge (no gradient) */
+.user-row.is-admin { box-shadow: inset 2px 0 0 var(--accent); }
+.user-ident { min-width: 0; flex: 1; }
+.user-name { font-family: var(--mono); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .user-handle { font-family: var(--mono); font-size: 12px; }
+.user-seen { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.user-row .row-actions { display: flex; gap: 6px; flex: none; }
+.user-row .chip-btn { flex: none; }
+
+/* The people modal swaps its body between list, create, edit, delete and
+   activity instead of stacking modals on top of each other, which would fight
+   over Escape and z-index once opened from inside another modal. */
+.users-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.users-head h3 { margin: 0; }
+.users-back { margin-bottom: 12px; }
+/* Wider than the other modals, and an id so it beats .modal-card's 320px cap
+   (same specificity as .admin-modal, and it wins on order). A person's row has
+   a name, a handle, a meta line and two buttons; at 320px the meta wraps to
+   three lines and the "list" stops being a list. */
+#users-modal .modal-card { max-width: 520px; }
 
 .ban-row { justify-content: space-between; align-items: center; gap: 12px; }
 .ban-row .chip-btn { flex: none; }
@@ -1137,19 +1157,6 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .ban-row a { color: var(--accent); text-decoration: none; }
 .ban-row a:hover { text-decoration: underline; }
 
-.user-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-.user-stats span { display: flex; flex-direction: column; gap: 2px; }
-.user-stats b { font-family: var(--mono); font-size: 12px; font-weight: 600; }
-.user-stats i { font-family: var(--mono); font-style: normal; color: var(--muted); font-size: 11px; }
-
-.user-actions { display: flex; gap: 8px; }
 .chip-btn { flex: 1; color: var(--muted); }
 .chip-btn.danger-chip { flex: none; }
 
@@ -1326,7 +1333,6 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
-  .user-grid { grid-template-columns: 1fr; }
 }
 
 /* =========================================================================
