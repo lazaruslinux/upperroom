@@ -12,7 +12,7 @@ page). There is nothing to run in a terminal.
 ## Letting people in with invites
 
 After setup you add everyone else with single-use invite codes, from the
-**Invites** section of the accounts page:
+**Invites** section of the dashboard:
 
 - **Generate a code** with the **Generate code** button. You can add an optional
   label ("who it's for") to help you keep track. Each code is a short, readable
@@ -26,14 +26,13 @@ After setup you add everyone else with single-use invite codes, from the
   when. You can **Revoke** a code that has not been redeemed yet, which keeps the
   row for the record but stops it from ever being used.
 
-## The accounts page
+## Managing people
 
-If your account has the admin flag, sign in and open `/accounts` (the
-**Accounts** button on the dashboard gets you there, and the home page has an
-**Admin** link to the dashboard). This page is everything about who can get in.
-With no terminal you can:
+If your account has the admin flag, sign in and open the dashboard at `/admin`
+(there is a **dashboard** link in the site nav on every page). Under **People**,
+the **Manage users** button opens the list. With no terminal you can:
 
-- **Create an account** with the **+ account** button. Enter a username and a
+- **Create an account** with the small **+** above the list. Enter a username and a
   password, optionally a display name, tick admin if you want, and it is made.
 - **Edit any account**: reset its password, set the email for go-live alerts, or
   grant and remove the admin or moderator role (the two are independent).

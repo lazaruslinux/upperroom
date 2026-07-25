@@ -29,7 +29,7 @@ only repackages the video and stays light.
 - The first time you open the site it hands you a short setup page that creates
   your admin account and names your site. The page seals itself afterwards.
 - Invite codes let you hand out accounts without making them yourself. Generate
-  a code on the accounts page, label it, and it works once. Whoever redeems it
+  a code on the dashboard, label it, and it works once. Whoever redeems it
   picks their own username and password and arrives as a viewer.
 - You can also create accounts directly from that page, for anyone who would
   rather not deal with a code.
