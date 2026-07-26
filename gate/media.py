@@ -152,6 +152,39 @@ def source_input_args(source, io_timeout=None):
     return [*args, "-i", source]
 
 
+# Which streams to copy out of the live source. ffmpeg's default selection picks
+# one stream per type, which was fine over RTMP where a single muxed FLV carried
+# both tracks, but over RTSP the tracks arrive as separate RTP streams and audio
+# was being dropped silently: every recording made after the RTSP switch had a
+# video track and nothing else. Map explicitly instead of trusting the default.
+# The "?" on the audio map makes it optional, so a genuinely video-only source
+# still records rather than failing outright.
+COPY_MAPS = ["-map", "0:v:0", "-map", "0:a:0?"]
+
+
+def recorder_args(source, tmp_path):
+    """The full ffmpeg argv for the broadcast recorder.
+
+    Kept as a pure function so the stream mapping can be asserted in a test. It
+    has to be: dropping the audio track produces a file that is the right size,
+    plays fine, and passes every check except listening to it."""
+    return [
+        "ffmpeg", "-y", "-loglevel", "error",
+        # Give codec probing a wide window and budget so joining a messy,
+        # long-running session does not fail with "could not find codec
+        # parameters" and die instantly. No read timeout here on purpose: a
+        # stalled recorder is the watchdog's to detect and restart.
+        *source_input_args(source),
+        *COPY_MAPS,
+        "-c", "copy",
+        "-f", "mp4",
+        # A fragmented MP4 is web playable and survives an abrupt stop, which
+        # matters because we cut clips from it while it is still being written.
+        "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+        tmp_path,
+    ]
+
+
 # Thumbnail capture is best effort and runs every THUMB_INTERVAL seconds, so a
 # persistent failure (e.g. a dead scratch file) would otherwise spam the log. We
 # warn once, stay quiet (debug) while it keeps failing, and log a single INFO when
@@ -610,18 +643,7 @@ async def start_recording():
     tmp_path = os.path.join(RECORD_TMP, f"{vod_id}.mp4")
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-loglevel", "error",
-            # Give codec probing a wide window and budget so joining a messy,
-            # long-running session does not fail with "could not find codec
-            # parameters" and die instantly. No read timeout here on purpose: a
-            # stalled recorder is the watchdog's to detect and restart.
-            *source_input_args(MEDIA_SOURCE),
-            "-c", "copy",
-            "-f", "mp4",
-            # A fragmented MP4 is web playable and survives an abrupt stop, which
-            # matters because we cut clips from it while it is still being written.
-            "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
-            tmp_path,
+            *recorder_args(MEDIA_SOURCE, tmp_path),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             # Keep stderr so a recorder that dies can be diagnosed. A drain task
@@ -930,6 +952,7 @@ async def make_clip(user, name):
     code, _, err = await _run_ffmpeg(
         ["ffmpeg", "-y", "-loglevel", "error",
          "-ss", str(start - started_at), "-i", src, "-t", str(duration),
+         *COPY_MAPS,
          "-c", "copy", "-movflags", "+faststart", dst],
         timeout=40,
     )
