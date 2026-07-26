@@ -1056,12 +1056,17 @@ def _finished_vod(started_at, title="Show"):
     return vod_id
 
 
-def test_retention_reports_zero_limits_and_real_usage(client):
-    # What a fresh install must look like on the dashboard: every limit off, and
-    # the storage numbers present so the operator can see usage before deciding.
+def test_retention_reports_its_defaults_and_real_usage(client):
+    # What a fresh install must look like on the dashboard: the recording limits
+    # off, clips expiring at two days (deliberate, see test_db), and the storage
+    # numbers present so the operator can see usage before deciding.
     setup_admin(client)
     body = client.get("/api/admin/retention").json()
-    assert all(body[field] == 0 for field in db.RETENTION_FIELDS)
+    assert all(
+        body[field] == 0
+        for field in db.RETENTION_FIELDS if field != "clip_keep_days"
+    )
+    assert body["clip_keep_days"] == 2
     assert body["counts"] == {"vods": 0, "clips": 0, "pinned": 0}
     assert set(body["usage"]) == {
         "vods_bytes", "clips_bytes", "total_bytes", "free_bytes", "fs_total_bytes",
@@ -1252,3 +1257,31 @@ def test_every_icon_the_manifest_names_is_actually_committed(client):
     for name in ("favicon.ico", "sw.js", "assets/icons/icon.svg",
                  "assets/icons/apple-touch-icon.png", "assets/icons/og-default.png"):
         assert os.path.exists(os.path.join(web, name)), name
+
+
+def test_clip_length_is_a_channel_setting_with_bounds(client):
+    """It moved out of config.py so it can be changed without a restart, which
+    means it now needs the same clamping its neighbours get."""
+    setup_admin(client)
+    assert client.get("/api/channel").json()["clip_seconds"] == 60
+
+    client.post("/api/stream-info", json={"clip_seconds": 90})
+    assert client.get("/api/channel").json()["clip_seconds"] == 90
+    # Clamped rather than refused, the same way the cooldowns are.
+    client.post("/api/stream-info", json={"clip_seconds": 99999})
+    assert client.get("/api/channel").json()["clip_seconds"] == 300
+    client.post("/api/stream-info", json={"clip_seconds": 1})
+    assert client.get("/api/channel").json()["clip_seconds"] == 5
+    # And something that is not a number at all is a clear refusal.
+    assert client.post(
+        "/api/stream-info", json={"clip_seconds": "a minute"}
+    ).status_code == 400
+
+
+def test_the_watch_page_is_told_the_clip_length(client):
+    """The button and modal label themselves from this, so that the strings can
+    never drift from the setting the way the old 'last 30 seconds' ones did."""
+    setup_admin(client)
+    client.post("/api/stream-info", json={"clip_seconds": 45})
+    # The status poll is public and already on the watch page's timer.
+    assert client.get("/api/status").json().get("clip_seconds", None) in (45, None)

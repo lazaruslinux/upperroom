@@ -107,6 +107,9 @@ def channel(request: Request):
         "clip_cooldown_user": info["clip_cooldown_user"],
         "clip_cooldown_mod": info["clip_cooldown_mod"],
         "clip_cooldown_admin": info["clip_cooldown_admin"],
+        # How much stream a clip captures. The dashboard edits it from here, and
+        # the watch page labels its clip button from the copy on /api/status.
+        "clip_seconds": info["clip_seconds"],
         "accent": info["accent"],
         # The schedule note only goes to signed-in viewers; the public status
         # endpoint carries the time alone.

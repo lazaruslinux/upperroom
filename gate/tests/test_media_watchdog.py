@@ -86,3 +86,69 @@ def test_recorder_still_forces_tcp_and_a_fragmented_mp4():
     assert args[args.index("-rtsp_transport") + 1] == "tcp"
     assert "+frag_keyframe+empty_moov+default_base_moof" in args
     assert args[-1] == "/tmp/1.mp4"
+
+
+# ---- clip window arithmetic ----------------------------------------------
+# The old code computed this inline at the moment the save request arrived, so
+# none of it could be tested and all three of its errors were invisible. It is a
+# pure function now, and these are the cases that were actually wrong.
+
+def _window(**kw):
+    args = dict(started_at=1000, now=1100, clip_seconds=60, at=None)
+    args.update(kw)
+    return media.clip_window(**args)
+
+
+def test_the_window_ends_where_the_viewer_was_looking():
+    # The whole point. The viewer pressed Clip at 1090, then spent 25 seconds
+    # typing a name, so the request arrives at 1115. The window must end at
+    # 1090, not at the moment the request landed.
+    start, end, duration = media.clip_window(1000, 1115, 60, at=1090)
+    assert end == 1090
+    assert start == 1030
+    assert duration == 60
+
+
+def test_typing_for_a_long_time_does_not_move_the_window():
+    # Same instant, three different save times: identical window every time.
+    windows = {media.clip_window(1000, now, 60, at=1090) for now in (1091, 1100, 1200)}
+    assert windows == {(1030, 1090, 60)}
+
+
+def test_without_an_instant_it_falls_back_to_the_old_estimate():
+    # A browser that cannot supply playingDate still gets a clip, just a less
+    # exact one: now minus the fixed lag, which is what every clip used to be.
+    from config import CLIP_LAG
+    start, end, duration = _window(at=None)
+    assert end == 1100 - CLIP_LAG
+    assert duration == 60
+
+
+def test_a_client_cannot_ask_for_footage_outside_the_recording():
+    # Clamped at both ends, so a wrong or hostile clock cannot reach past the
+    # live edge or back before the broadcast began.
+    _, end, _ = _window(at=99999)          # far in the future
+    assert end == 1100                     # pinned to now
+    start, end, _ = _window(at=1005)       # before enough exists
+    assert start == 1000                   # never before the recording started
+
+
+def test_a_stream_that_just_started_has_nothing_to_clip_yet():
+    # Two seconds in, there is no clip worth cutting, and the caller gets a
+    # sentinel rather than a negative or absurdly short duration.
+    assert media.clip_window(1000, 1002, 60, at=1002) == (None, None, 0)
+
+
+def test_the_window_shortens_gracefully_early_in_a_broadcast():
+    # Ten seconds into a broadcast with a 60 second clip length, the clip is the
+    # ten seconds that exist, not a failure and not sixty seconds of nothing.
+    start, end, duration = media.clip_window(1000, 1010, 60, at=1010)
+    assert (start, end, duration) == (1000, 1010, 10)
+
+
+def test_clip_length_comes_from_the_channel_not_a_constant():
+    # The setting is what decides the window, so changing it on the dashboard
+    # changes the clip. This is the behaviour that moving it out of config.py
+    # was for.
+    assert _window(at=1090, clip_seconds=30)[2] == 30
+    assert _window(at=1090, clip_seconds=90)[0] == 1000   # clamped to the start

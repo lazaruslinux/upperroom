@@ -164,8 +164,22 @@ SCHEDULE_REMIND_LEAD = 3600        # remind this long before the start time
 SCHEDULE_GRACE = 7200
 SCHEDULE_CHECK_INTERVAL = 60       # how often the reminder worker looks
 MAX_SCHEDULE_NOTE = 120
-CLIP_SECONDS = 30                  # how much of the live edge a clip captures
-CLIP_LAG = 2                       # stay this far back from the very live edge
+# How much of the live edge a clip captures now lives on the channel
+# (channel_settings.clip_seconds), next to the clip cooldowns it belongs with,
+# so it can be changed from the dashboard without a restart.
+#
+# CLIP_LAG is only a fallback. The player normally sends the exact instant it
+# was showing when Clip was pressed (MediaMTX stamps the HLS playlist with
+# EXT-X-PROGRAM-DATE-TIME, hls.js exposes it as playingDate), and then no guess
+# is needed at all. This is what a browser that cannot supply that falls back
+# to, and it is a guess: the real delivery delay is 2 to 5 seconds and varies.
+CLIP_LAG = 2
+# A stream copy can only cut on a keyframe, so a clip starts up to one keyframe
+# interval before the requested point and would otherwise end that much early,
+# losing the moment that was being clipped. The cut asks for this much extra so
+# it runs long rather than short. Two seconds matches a typical OBS keyframe
+# interval; a source with longer keyframes just gets a slightly softer edge.
+CLIP_KEYFRAME_SLACK = 2
 
 # ---- Guest passes ---------------------------------------------------------
 # A guest pass is a single-use code that lets someone watch and chat without an

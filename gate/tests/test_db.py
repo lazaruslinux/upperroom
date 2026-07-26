@@ -227,15 +227,31 @@ def _aged_vods(count, now, spacing=100):
     return ids
 
 
-def test_retention_is_off_on_a_fresh_install(fresh_db):
-    # Every limit zero, and a sweep with those limits removes nothing. This is
-    # the promise that a new install never deletes a recording on its own.
+def test_a_fresh_install_never_deletes_a_recording_on_its_own(fresh_db):
+    # Every limit that touches recordings is zero, and a sweep removes nothing.
+    # A new install must not start throwing away broadcasts.
     limits = db.get_retention()
-    assert limits == {field: 0 for field in db.RETENTION_FIELDS}
+    for field in ("vod_keep_count", "vod_keep_days", "clip_keep_count",
+                  "media_cap_gb"):
+        assert limits[field] == 0, field
     now = int(time.time())
     _aged_vods(5, now)
     assert db.prune_candidates(limits, now) == []
     assert len(db.list_vods()) == 5
+
+
+def test_clips_expire_by_default_and_that_is_deliberate(fresh_db):
+    """The one exception to the rule above, and the only limit a fresh install
+    ships switched on.
+
+    Clips are the shareable unit. Once something can be handed to a person
+    outside the channel, a short life stops being a limitation and becomes a
+    safety property: a mistake ages out instead of standing forever. Two days is
+    long enough to watch a thing and short enough to bound the mistake.
+
+    If this test ever fails because the default went back to 0, that is a real
+    product decision being reversed, not a stale test."""
+    assert db.get_retention()["clip_keep_days"] == 2
 
 
 def _prune(limits, now):
@@ -368,9 +384,14 @@ def test_retention_seeds_from_the_environment_only_on_an_upgrade(fresh_db, monke
     db.init_db()
     assert db.get_retention()["vod_keep_count"] == 2
     # A genuinely new database ignores the same environment and starts off.
+    # clip_keep_days is excluded: it ships at 2 on purpose (see the test above),
+    # and the old environment variables never covered clips anyway.
     monkeypatch.setattr(db, "DB_PATH", db.DB_PATH + ".new")
     db.init_db()
-    assert db.get_retention() == {field: 0 for field in db.RETENTION_FIELDS}
+    fresh = db.get_retention()
+    assert {f: v for f, v in fresh.items() if f != "clip_keep_days"} == {
+        field: 0 for field in db.RETENTION_FIELDS if field != "clip_keep_days"
+    }
 
 
 def test_last_clip_at(fresh_db):

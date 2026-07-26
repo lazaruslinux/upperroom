@@ -353,7 +353,7 @@ async function renderLibrary() {
     } else if (mineOnly) {
       libEmpty.textContent = "You haven't made any clips yet.";
     } else {
-      libEmpty.textContent = "No clips yet. Viewers can clip the last 30 seconds while live.";
+      libEmpty.textContent = "No clips yet. Viewers can clip the recent stream while live.";
     }
     return;
   }

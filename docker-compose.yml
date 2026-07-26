@@ -151,6 +151,12 @@ services:
             -f lavfi -i "sine=frequency=220:sample_rate=48000" \
             -filter:a "volume=0.08" \
             -map 0:v -map 1:a \
+            # A frame counter burned into the picture. Clip accuracy is
+            # otherwise unverifiable: you cannot tell by looking whether a clip
+            # captured the moment that was asked for, and the errors are a
+            # couple of seconds. With this, the frames at each end of a clip say
+            # exactly which moment they are.
+            -filter:v "drawtext=text='%{frame_num}':start_number=0:fontsize=72:fontcolor=white:box=1:boxcolor=black@0.7:x=40:y=40" \
             -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p \
             -b:v 1500k -maxrate 1500k -bufsize 3000k \
             -g 60 -keyint_min 60 -sc_threshold 0 -bf 0 \

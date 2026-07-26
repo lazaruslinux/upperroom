@@ -85,7 +85,7 @@
     <div id="messages" class="messages"></div>
     <form id="chat-form" class="chat-form">
       <button id="points-chip" type="button" class="points-chip" aria-label="Your points, highlight a message" title="Your points, highlight a message" hidden>pts 0</button>
-      <button id="clip-btn" type="button" class="icon-btn" aria-label="Clip the last 30 seconds" title="Clip the last 30 seconds" hidden>
+      <button id="clip-btn" type="button" class="icon-btn" aria-label="Clip the recent stream" title="Clip the recent stream" hidden>
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle>
           <line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line>
@@ -96,11 +96,12 @@
     </form>
   </aside>
 
-  <!-- Name and save a clip of the last 30 seconds -->
+  <!-- Name and save a clip of the last stretch of stream. The length is a
+       channel setting, so the heading is filled in from it at runtime. -->
   <div id="clip-modal" class="modal" hidden>
     <div class="modal-card">
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3 class="clip-h3">Clip the last 30 seconds</h3>
+      <h3 class="clip-h3" id="clip-heading">Clip the recent stream</h3>
       <input id="clip-name" type="text" maxlength="80" placeholder="Name your clip" autocomplete="off">
       <p id="clip-msg" class="pw-msg"></p>
       <div class="crop-actions">
@@ -138,6 +139,6 @@
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=22"></script>
+  <script src="/assets/watch.js?v=23"></script>
 </body>
 </html>

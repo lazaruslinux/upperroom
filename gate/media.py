@@ -21,7 +21,7 @@ import httpx
 
 import db
 from config import (
-    CLIP_DIR, CLIP_LAG, CLIP_SECONDS, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
+    CLIP_DIR, CLIP_KEYFRAME_SLACK, CLIP_LAG, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
     SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
@@ -916,9 +916,54 @@ def format_remaining(seconds):
     return f"{secs}s"
 
 
-async def make_clip(user, name):
-    """Cut the last CLIP_SECONDS of the live stream into a named clip. Returns
-    (clip_id, None) on success or (None, error_message)."""
+def clip_window(started_at, now, clip_seconds, at=None):
+    """Work out which slice of the recording a clip should contain.
+
+    `at` is the wall-clock instant of the frame the viewer was actually looking
+    at when they pressed Clip, sent by the player. Everything about clip accuracy
+    lives or dies on that number, so it is worth saying why.
+
+    Without it the server can only use "now", which is wrong three times over:
+    the request arrives after the viewer has finished typing a name, the stream
+    the viewer sees is some seconds behind the server, and how far behind varies
+    per viewer and per moment. The old code answered that with `now - 2`, a fixed
+    guess at a delay the docs themselves put at 2 to 5 seconds.
+
+    With it, none of that estimation is needed: the player knows exactly which
+    instant is on screen, because MediaMTX stamps the playlist with
+    EXT-X-PROGRAM-DATE-TIME and hls.js exposes it as playingDate.
+
+    `at` is clamped into the recording, so a bad or hostile client cannot ask for
+    footage from outside it. Returns (start, end, duration) as epoch seconds, or
+    (None, None, 0) if there is not enough recorded yet.
+
+    Kept pure so the arithmetic can be tested without a stream, a recorder or a
+    subprocess; the reason this drifted in the first place is that none of it was
+    reachable from a test.
+    """
+    if at is None:
+        # No usable instant from the client. Fall back to the old behaviour
+        # rather than refusing: a browser without playingDate still gets a clip,
+        # just a less exact one.
+        end = now - CLIP_LAG
+    else:
+        end = at
+    # Never past the live edge (a clock that is ahead would ask for footage that
+    # does not exist yet) and never before the recording began.
+    end = max(started_at, min(int(end), now))
+    start = max(started_at, end - clip_seconds)
+    duration = end - start
+    if duration < 3:
+        return None, None, 0
+    return start, end, duration
+
+
+async def make_clip(user, name, at=None):
+    """Cut the last stretch of the live stream into a named clip. Returns
+    (clip_id, None) on success or (None, error_message).
+
+    `at` is the wall-clock instant the viewer pressed Clip, in epoch seconds.
+    See clip_window() for why that matters."""
     if not _rec["active"]:
         return None, "The stream is not live."
     username = user["username"]
@@ -931,10 +976,9 @@ async def make_clip(user, name):
                 f"{format_remaining(cooldown - elapsed)}."
             )
     started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
-    end = int(time.time()) - CLIP_LAG
-    start = max(started_at, end - CLIP_SECONDS)
-    duration = end - start
-    if duration < 3:
+    clip_seconds = db.get_stream_info()["clip_seconds"]
+    start, end, duration = clip_window(started_at, int(time.time()), clip_seconds, at)
+    if start is None:
         return None, "The stream just started; nothing to clip yet."
     # The clip is cut from the in-progress scratch file. If the recorder died or
     # stalled that file may be gone; say so in the log, not just to the client.
@@ -949,9 +993,21 @@ async def make_clip(user, name):
     )
     filename = f"{clip_id}.mp4"
     dst = os.path.join(CLIP_DIR, filename)
+    # Seeking with -ss on a stream copy lands on the keyframe at or before the
+    # requested point, because a copy cannot cut mid-GOP; only re-encoding could,
+    # and this box has one core. So the clip starts up to one keyframe interval
+    # early, and since the duration is measured from where it actually started,
+    # the far end would fall short by the same amount and cut off the very moment
+    # the viewer pressed Clip.
+    #
+    # Ask for that slack back. The clip then runs slightly long instead of
+    # slightly short, which is the right direction to be wrong in: an extra
+    # second of lead-out is a shrug, and losing the thing you clipped is the
+    # whole failure.
     code, _, err = await _run_ffmpeg(
         ["ffmpeg", "-y", "-loglevel", "error",
-         "-ss", str(start - started_at), "-i", src, "-t", str(duration),
+         "-ss", str(start - started_at), "-i", src,
+         "-t", str(duration + CLIP_KEYFRAME_SLACK),
          *COPY_MAPS,
          "-c", "copy", "-movflags", "+faststart", dst],
         timeout=40,

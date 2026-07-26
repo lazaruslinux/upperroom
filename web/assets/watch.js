@@ -117,6 +117,7 @@ async function checkStream() {
   applyAccent(data.accent);
   // Name the browser tab after the operator's site, not the platform.
   if (data.site_name && document.title !== data.site_name) document.title = data.site_name;
+  applyClipLength(data.clip_seconds);
   if (data.online && !hls) {
     startVideo();
   } else if (!data.online) {
@@ -661,7 +662,7 @@ chatInput.addEventListener("blur", () => {
   setTimeout(() => document.body.classList.remove("kb-anim"), 320);
 });
 
-// ---- clip the last 30 seconds ----
+// ---- clipping the recent stream ----
 
 const clipModal = document.getElementById("clip-modal");
 const clipName = document.getElementById("clip-name");
@@ -681,7 +682,55 @@ function showClipMsg(text, ok, link) {
   }
 }
 
+// The instant the viewer was actually looking at when they pressed Clip.
+//
+// This is the whole of clip accuracy. The old code let the server use its own
+// clock at the moment the SAVE request arrived, which is wrong by however long
+// the viewer spent typing a name, plus however far behind the live edge their
+// player happens to be. Both of those are seconds, and the second one varies per
+// viewer, so no fixed correction can fix it.
+//
+// MediaMTX stamps its playlist with EXT-X-PROGRAM-DATE-TIME, so hls.js can tell
+// us the exact wall-clock time of the frame on screen via playingDate. When that
+// is unavailable (Safari playing HLS natively, or a source without the stamp) we
+// fall back to now minus the measured latency, and failing that send nothing at
+// all and let the server use its own estimate.
+// The clip length is a channel setting, so the button and the modal heading are
+// labelled from what the server reports rather than from a number written into
+// the markup. Called by the status poll.
+function applyClipLength(seconds) {
+  if (!seconds || seconds === clipLength) return;
+  clipLength = seconds;
+  const label = seconds % 60 === 0 && seconds >= 60
+    ? `Clip the last ${seconds / 60} minute${seconds === 60 ? "" : "s"}`
+    : `Clip the last ${seconds} seconds`;
+  if (clipBtn) {
+    clipBtn.setAttribute("aria-label", label);
+    clipBtn.setAttribute("title", label);
+  }
+  const heading = document.getElementById("clip-heading");
+  if (heading) heading.textContent = label;
+}
+
+let clipLength = 0;
+
+function currentFrameInstant() {
+  try {
+    if (hls && hls.playingDate) return hls.playingDate.getTime() / 1000;
+    if (hls && typeof hls.latency === "number" && hls.latency > 0) {
+      return Date.now() / 1000 - hls.latency;
+    }
+  } catch (e) {
+    /* fall through and let the server estimate */
+  }
+  return null;
+}
+
+// Captured on Clip, sent on Save, so typing a name cannot move the window.
+let clipInstant = null;
+
 clipBtn.addEventListener("click", () => {
+  clipInstant = currentFrameInstant();
   clipName.value = "";
   clipMsg.textContent = "";
   clipMsg.className = "pw-msg";
@@ -697,7 +746,7 @@ clipSave.addEventListener("click", async () => {
     const reply = await fetch("/api/clip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: clipName.value.trim() }),
+      body: JSON.stringify({ name: clipName.value.trim(), at: clipInstant }),
     });
     const data = await reply.json().catch(() => ({}));
     if (reply.ok) {

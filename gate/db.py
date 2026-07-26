@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     clip_cooldown_user INTEGER NOT NULL DEFAULT 15,
     clip_cooldown_mod INTEGER NOT NULL DEFAULT 5,
     clip_cooldown_admin INTEGER NOT NULL DEFAULT 1,
+    -- How much of the live edge a clip captures, in seconds. A dashboard
+    -- setting rather than a constant, because its neighbours (the cooldowns
+    -- above, retention below) already are and there was no reason for this one
+    -- to be different.
+    clip_seconds INTEGER NOT NULL DEFAULT 60,
     -- Go-live notifications. discord_webhook is an optional Discord incoming
     -- webhook URL; last_notified_at guards against re-announcing on a brief
     -- stream blip or a gate restart mid-broadcast. email_on_live is the
@@ -116,14 +121,19 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- has a delay appear under it: raising it there is the operator's choice.
     slow_mode_seconds INTEGER NOT NULL DEFAULT 2,
     banned_words TEXT NOT NULL DEFAULT '',
-    -- Retention limits for the media store. Every one of these is 0 by default,
-    -- and 0 means "no limit on this axis", so a fresh install never deletes a
-    -- recording or a clip on its own. The operator opts in from the dashboard.
+    -- Retention limits for the media store. 0 means "no limit on this axis".
     -- An item that is pinned (vods.keep / clips.keep) is exempt from all of them.
+    --
+    -- clip_keep_days is the one deliberate exception to "a fresh install never
+    -- deletes anything on its own". Clips are the shareable unit, and once a
+    -- thing can be handed to someone outside the channel, a short life stops
+    -- being a limitation and starts being a safety property: a mistake expires
+    -- instead of standing forever. Two days is long enough to watch something
+    -- and short enough to bound the mistake. Pin a clip to keep it.
     vod_keep_count INTEGER NOT NULL DEFAULT 0,
     vod_keep_days INTEGER NOT NULL DEFAULT 0,
     clip_keep_count INTEGER NOT NULL DEFAULT 0,
-    clip_keep_days INTEGER NOT NULL DEFAULT 0,
+    clip_keep_days INTEGER NOT NULL DEFAULT 2,
     -- A ceiling on the whole media store in gigabytes. Enforced oldest first
     -- across both kinds once the per-kind limits above have had their say.
     media_cap_gb INTEGER NOT NULL DEFAULT 0,
@@ -156,7 +166,8 @@ CREATE TABLE IF NOT EXISTS vods (
     keep INTEGER NOT NULL DEFAULT 0
 );
 
--- A viewer made clip: a short cut of the last 30 seconds of the live stream.
+-- A viewer made clip: a short cut of the recent live stream. How much is a
+-- channel setting (channel_settings.clip_seconds).
 CREATE TABLE IF NOT EXISTS clips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -344,6 +355,16 @@ def init_db():
         )
         _ensure_column(conn, "vods", "keep", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "clips", "keep", "INTEGER NOT NULL DEFAULT 0")
+        # Clip length moved out of config.py and onto the channel. An existing
+        # channel picks up 60 here, which is the change this shipped for.
+        _ensure_column(
+            conn, "channel_settings", "clip_seconds", "INTEGER NOT NULL DEFAULT 60"
+        )
+        # NOTE: clip_keep_days now defaults to 2 in the schema above, but that
+        # only reaches a FRESH install. An existing channel keeps whatever it
+        # has, deliberately, and the same way slow_mode_seconds does: an update
+        # must never start deleting somebody's clips out from under them. An
+        # operator who wants the two day life turns it on in the dashboard.
         _ensure_column(
             conn, "channel_settings", "next_stream_at", "INTEGER NOT NULL DEFAULT 0"
         )
@@ -575,7 +596,7 @@ def get_stream_info():
     with connect() as conn:
         row = conn.execute(
             "SELECT site_name, stream_title, stream_description, clip_cooldown_user, "
-            "clip_cooldown_mod, clip_cooldown_admin, accent "
+            "clip_cooldown_mod, clip_cooldown_admin, clip_seconds, accent "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
@@ -586,6 +607,7 @@ def get_stream_info():
                 "clip_cooldown_user": 15,
                 "clip_cooldown_mod": 5,
                 "clip_cooldown_admin": 1,
+                "clip_seconds": 60,
                 "accent": "green",
             }
         return dict(row)
@@ -593,7 +615,7 @@ def get_stream_info():
 
 def set_stream_info(site_name=None, title=None, description=None,
                     clip_cooldown_user=None, clip_cooldown_mod=None,
-                    clip_cooldown_admin=None, accent=None):
+                    clip_cooldown_admin=None, clip_seconds=None, accent=None):
     sets = []
     values = []
     if site_name is not None:
@@ -611,6 +633,9 @@ def set_stream_info(site_name=None, title=None, description=None,
     if clip_cooldown_mod is not None:
         sets.append("clip_cooldown_mod = ?")
         values.append(int(clip_cooldown_mod))
+    if clip_seconds is not None:
+        sets.append("clip_seconds = ?")
+        values.append(int(clip_seconds))
     if clip_cooldown_admin is not None:
         sets.append("clip_cooldown_admin = ?")
         values.append(int(clip_cooldown_admin))

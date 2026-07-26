@@ -160,7 +160,17 @@ async def create_clip_endpoint(request: Request):
     if not user:
         return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
     body = await request.json()
-    clip_id, error = await make_clip(user, body.get("name"))
+    # The instant the viewer pressed Clip, as epoch seconds, taken from what the
+    # player was actually showing. Optional: a browser that cannot work it out
+    # sends nothing and the server falls back to its own clock. Anything
+    # unparseable is treated as absent rather than rejected, since a bad clock
+    # should cost accuracy, not the clip. make_clip clamps it to the recording,
+    # so this value can never reach outside the current broadcast.
+    try:
+        at = float(body["at"]) if body.get("at") is not None else None
+    except (TypeError, ValueError):
+        at = None
+    clip_id, error = await make_clip(user, body.get("name"), at=at)
     if error:
         return JSONResponse({"error": error}, status_code=400)
     return {"ok": True, "id": clip_id}
@@ -277,6 +287,10 @@ async def status():
             "watching": watching,
             "accent": accent,
             "site_name": site_name,
+            # So the watch page can label the clip button with the real length
+            # rather than a number baked into the markup, which is how the old
+            # "last 30 seconds" strings outlived the setting they described.
+            "clip_seconds": info["clip_seconds"],
         }
     body = {
         "online": False,
