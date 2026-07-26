@@ -8,6 +8,7 @@ coded here; identities come from the account database, keyed by the signed
 session cookie.
 """
 
+import ipaddress
 import logging
 import time
 from collections import defaultdict, deque
@@ -98,11 +99,54 @@ def can_moderate(user):
     return bool(user and (user["is_admin"] or user["is_moderator"]))
 
 
+# ---- Caller address -------------------------------------------------------
+# X-Forwarded-For is a list the caller gets to start writing, and Caddy appends
+# the address it actually saw rather than replacing what arrived. A request sent
+# with "X-Forwarded-For: 1.2.3.4" therefore reaches the gate as
+# "1.2.3.4, <the real caller>". Reading the left-most entry reads the value the
+# caller chose, which let anyone pick their own address and walk past both the
+# login rate limiter and the country gate. That was the bug.
+#
+# The right-most entry is the one Caddy wrote itself, so it is the only entry
+# nobody upstream could have forged. Take exactly that, and never look further
+# left: everything to the left arrived from outside and is decoration.
+#
+# This trusts one hop, which is the topology this ships with (caller -> Caddy ->
+# gate) and the one the Caddyfile's "trusted_proxies static private_ranges"
+# describes. Note the alternative of walking left past addresses that look like
+# infrastructure would be actively wrong here: on a LAN-only install every real
+# viewer has a private address, and skipping those would collapse the whole
+# house into a single rate-limit key. If you put another proxy in front of
+# Caddy, this needs to skip that many extra entries, and the Caddyfile needs to
+# trust it too.
+
+
+def resolve_client_ip(forwarded, peer):
+    """The caller's address, given the X-Forwarded-For header and the socket peer.
+
+    Returns the right-most X-Forwarded-For entry, which is the address our own
+    proxy observed. Falls back to the socket peer when the header is absent or
+    unusable, which on the compose network means the request reached the gate
+    without crossing Caddy at all."""
+    for entry in reversed([e.strip() for e in (forwarded or "").split(",")]):
+        if not entry:
+            continue
+        try:
+            ipaddress.ip_address(entry)
+        except ValueError:
+            # Caddy writes a bare address here. Anything else did not come from
+            # Caddy, so stop rather than reading further left into whatever the
+            # caller supplied.
+            break
+        return entry
+    return peer or "unknown"
+
+
 def client_ip(request):
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return resolve_client_ip(
+        request.headers.get("X-Forwarded-For", ""),
+        request.client.host if request.client else "",
+    )
 
 
 def _clean_username(raw):

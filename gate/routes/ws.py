@@ -14,7 +14,7 @@ from collections import deque
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import db
-from auth import country_allowed, read_session
+from auth import country_allowed, read_session, resolve_client_ip
 from config import COOKIE_NAME, MAX_MESSAGE_LENGTH
 from hub import hub
 
@@ -285,9 +285,11 @@ async def chat_socket(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
-    forwarded = websocket.headers.get("x-forwarded-for", "")
-    ws_ip = forwarded.split(",")[0].strip() if forwarded else (
-        websocket.client.host if websocket.client else ""
+    # Same rule as the HTTP side, and deliberately the same function: this used
+    # to read the left-most X-Forwarded-For entry, which the caller controls.
+    ws_ip = resolve_client_ip(
+        websocket.headers.get("x-forwarded-for", ""),
+        websocket.client.host if websocket.client else "",
     )
     if not country_allowed(ws_ip):
         await websocket.close(code=4403)

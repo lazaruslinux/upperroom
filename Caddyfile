@@ -5,6 +5,18 @@
 
 {
 	email {$TLS_EMAIL}
+
+	# Only our own network may claim to be a proxy. Without this Caddy believes
+	# any X-Forwarded-For it is handed, so a caller can name their own address.
+	# The gate then reads the right-most entry, the one Caddy wrote itself
+	# (resolve_client_ip in gate/auth.py), which is the only entry a caller
+	# cannot forge. Both halves are needed: this one decides who Caddy believes,
+	# that one decides which entry the gate reads. Put another proxy in front of
+	# Caddy and both have to learn about it, or the login rate limiter and the
+	# country gate go back to reading a caller-supplied value.
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
 {$SELFSTREAM_DOMAIN} {

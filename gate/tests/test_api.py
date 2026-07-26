@@ -130,6 +130,88 @@ def test_rate_limiter_is_shared_across_auth_setup_and_register(client):
     assert other.status_code == 400
 
 
+def test_forged_forwarded_for_cannot_move_the_rate_limit_key(client):
+    """X-Forwarded-For is caller-writable and Caddy appends to it rather than
+    replacing it, so the right-most entry is the only trustworthy one. Burning
+    an allowance and then prepending a different address must not buy a fresh
+    one, or the limiter is decorative."""
+    real = "203.0.113.20"
+    for _ in range(5):
+        r = client.post(
+            "/api/auth",
+            json={"username": "ghost", "password": "wrong"},
+            headers={"X-Forwarded-For": real},
+        )
+        assert r.status_code == 401
+    assert client.post(
+        "/api/auth",
+        json={"username": "ghost", "password": "wrong"},
+        headers={"X-Forwarded-For": real},
+    ).status_code == 429
+
+    # The forgery: claim to be someone else by prepending. Caddy would still
+    # have appended the real address on the right, so this must stay blocked.
+    for forged in ("198.51.100.1", "10.0.0.5", "not-an-ip"):
+        blocked = client.post(
+            "/api/auth",
+            json={"username": "ghost", "password": "wrong"},
+            headers={"X-Forwarded-For": f"{forged}, {real}"},
+        )
+        assert blocked.status_code == 429, f"prepending {forged} bought a new allowance"
+
+
+def test_forwarded_for_resolution_rules():
+    """The header parsing on its own, including the cases the geo gate depends
+    on. country_allowed() is only as good as the address handed to it."""
+    from auth import resolve_client_ip
+
+    # Right-most wins, however much is prepended.
+    assert resolve_client_ip("198.51.100.1, 203.0.113.20", "peer") == "203.0.113.20"
+    assert resolve_client_ip("1.2.3.4, 5.6.7.8, 203.0.113.20", "peer") == "203.0.113.20"
+    # A single entry is Caddy's own, so it is the caller.
+    assert resolve_client_ip("203.0.113.20", "peer") == "203.0.113.20"
+    # A private right-most entry is a real LAN viewer, not infrastructure to be
+    # skipped. Skipping it would key every viewer in the house together.
+    assert resolve_client_ip("192.168.1.50", "peer") == "192.168.1.50"
+    assert resolve_client_ip("8.8.8.8, 192.168.1.50", "peer") == "192.168.1.50"
+    # No header, or nothing usable in it, falls back to the socket peer.
+    assert resolve_client_ip("", "peer") == "peer"
+    assert resolve_client_ip(None, "peer") == "peer"
+    assert resolve_client_ip("garbage", "peer") == "peer"
+    # A malformed right-most entry means it did not come from Caddy, so the
+    # entries to its left are not trusted either.
+    assert resolve_client_ip("203.0.113.20, garbage", "peer") == "peer"
+    assert resolve_client_ip("", "") == "unknown"
+
+
+def test_forged_forwarded_for_cannot_bypass_the_country_gate(client, monkeypatch):
+    """The geo gate reads the same address as the rate limiter, so the same
+    forgery must not move it either."""
+    import auth
+
+    blocked_country = {"203.0.113.30"}
+    monkeypatch.setattr(
+        auth, "country_allowed", lambda ip: ip not in blocked_country
+    )
+    import routes.auth as auth_routes
+    monkeypatch.setattr(auth_routes, "country_allowed", lambda ip: ip not in blocked_country)
+
+    # Straight through: the real address is refused.
+    assert client.get(
+        "/api/geo", headers={"X-Forwarded-For": "203.0.113.30"}
+    ).status_code == 403
+    # Prepending an allowed address must not rescue it, because the right-most
+    # entry is still the real one.
+    assert client.get(
+        "/api/geo", headers={"X-Forwarded-For": "8.8.8.8, 203.0.113.30"}
+    ).status_code == 403
+    # And a genuinely allowed address still gets through, so the gate is not
+    # simply refusing everything.
+    assert client.get(
+        "/api/geo", headers={"X-Forwarded-For": "8.8.8.8"}
+    ).status_code == 200
+
+
 # ---- 2. First-run setup gate ----------------------------------------------
 
 def test_setup_status_flips_once_an_account_exists(client):
