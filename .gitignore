@@ -52,3 +52,6 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Access logs are runtime state, not code.
+logs/

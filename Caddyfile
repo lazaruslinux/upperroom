@@ -22,6 +22,21 @@
 {$SELFSTREAM_DOMAIN} {
 	encode zstd gzip
 
+	# An access log, in JSON, so the host can watch for abuse and block it at the
+	# firewall instead of in the application. Everything the app does to defend
+	# itself still costs it a worker and a database read; a kernel-level block
+	# costs nothing. See docs/05-security.md for the fail2ban side.
+	#
+	# Rolled and capped, because this is a small disk and an access log is
+	# exactly the kind of file that quietly fills one.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+		format json
+	}
+
 	# Caching policy. Versioned assets (their URLs carry ?v=N) can be cached hard
 	# and forever. Everything else, above all the HTML documents, must always be
 	# revalidated so a new deploy is picked up without anyone clearing their cache.

@@ -81,6 +81,10 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/web:ro
+      # The access log lands on the host so fail2ban can read it and ban
+      # abusive addresses at the firewall, where they cost nothing, rather than
+      # leaving every request to be refused by the application.
+      - ./logs/caddy:/var/log/caddy
       # Read-only view of the same media store the gate writes to, so Caddy can
       # serve the recording and clip files directly.
       - media_data:/srv/media:ro

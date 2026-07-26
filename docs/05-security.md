@@ -91,14 +91,67 @@ That invalidates every existing cookie at once.
 - It is built for one operator and a small audience. It is not trying to be a
   public platform with thousands of strangers.
 
+## What the app does about abuse on its own
+
+You do not have to configure any of this; it is on by default.
+
+- **Request bodies are capped** at 64 KB for the API and 3 MB for the avatar
+  upload. Nothing here needs more, and without a cap a stranger can make the
+  server buffer and parse megabytes before it can say no.
+- **Sign-in attempts are rate limited per address**, five a minute. Redeeming a
+  guest pass draws on the same allowance, so guessing codes and guessing
+  passwords cannot be alternated for two budgets.
+- **Issuing a guest challenge question has its own, larger allowance**, since a
+  visitor legitimately asks for several while filling the form in.
+- **Only the address your own proxy observed is trusted.** `X-Forwarded-For` is
+  something a caller can write, so the rate limiter and the country gate read
+  the entry Caddy added, never one that arrived from outside.
+
 ## Optional extra hardening
 
-If you want another layer on the server itself, install fail2ban to ban
-addresses that fail SSH repeatedly:
+If you want another layer on the server itself, install fail2ban:
 
 ```
 apt install -y fail2ban
 ```
 
-The defaults already watch SSH. This is about protecting the server, separate
-from the stream's own login.
+The defaults already watch SSH, which is worth having on any box with a public
+address.
+
+### Banning web abuse at the firewall
+
+The limits above are enforced by the application, which means an abusive caller
+still costs it a worker and a database read every time. fail2ban can block a
+repeat offender in the kernel instead, where they cost nothing. Caddy writes a
+JSON access log to `logs/caddy/access.log` for exactly this.
+
+Create `/etc/fail2ban/filter.d/upperroom-abuse.conf`:
+
+```
+[Definition]
+failregex = ^\{.*"client_ip":"<HOST>".*"status":(?:429|413).*\}$
+ignoreregex =
+datepattern = "ts":{EPOCH}
+```
+
+And `/etc/fail2ban/jail.d/upperroom.conf`, with `logpath` pointing at wherever
+you checked the project out:
+
+```
+[upperroom-abuse]
+enabled  = true
+logpath  = /path/to/upperroom/logs/caddy/access.log
+filter   = upperroom-abuse
+port     = http,https
+maxretry = 10
+findtime = 600
+bantime  = 1800
+```
+
+Then `systemctl restart fail2ban` and check it with
+`fail2ban-client status upperroom-abuse`.
+
+This deliberately matches only 429 (a rate limit the app already enforced) and
+413 (a body larger than anything here accepts). It never matches a plain failed
+login, so somebody fumbling their password is not banned; they would have to
+exhaust the rate limiter ten times over to qualify.
