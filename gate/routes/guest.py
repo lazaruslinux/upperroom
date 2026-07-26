@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 import db
 from auth import (
     GUEST_USERNAME_PREFIX, client_ip, country_allowed, too_many_attempts,
+    too_many_challenges,
 )
 from challenge import check_challenge, new_challenge
 from config import GUEST_MINUTES, MAX_GUEST_NAME
@@ -50,10 +51,19 @@ def guest_challenge(request: Request):
     creates no server-side state, so hammering it costs a signature and nothing
     else. The country gate still applies, so somewhere we do not serve cannot
     even collect a question."""
-    if not country_allowed(client_ip(request)):
+    ip = client_ip(request)
+    if not country_allowed(ip):
         return JSONResponse(
             {"error": "This channel is not available in your area."},
             status_code=403,
+        )
+    # Cheap, but not free: every call signs a token, and this box has one core.
+    # Its own budget rather than the login one, so asking for a fresh question
+    # never spends the allowance that protects code guessing.
+    if too_many_challenges(ip):
+        return JSONResponse(
+            {"error": "Too many requests. Wait a moment and try again."},
+            status_code=429,
         )
     question, token = new_challenge()
     return {"question": question, "token": token}

@@ -47,8 +47,30 @@
 			uri /api/geo
 		}
 
+		# Avatar upload is the one endpoint that legitimately carries a file, so
+		# it gets its own ceiling. The gate enforces its own limit too (2 MB,
+		# MAX_AVATAR_BYTES); this one is deliberately a little looser so a
+		# slightly-too-big upload gets the app's clear error rather than a bare
+		# 413 from the proxy.
+		handle /api/avatar {
+			request_body {
+				max_size 3MB
+			}
+			reverse_proxy gate:8000
+		}
+
 		# Login, session, chat config, and stream status.
+		#
+		# Everything here takes a small JSON body, so cap it hard. Without a cap
+		# a single unauthenticated caller can post megabytes to /api/guest or
+		# /api/auth and the gate will buffer and parse all of it before it can
+		# reject it, which on a small box is a cheap way to exhaust memory. 64 KB
+		# is far more than any request here needs. Rejecting at the proxy means
+		# the bytes never reach Python at all.
 		handle /api/* {
+			request_body {
+				max_size 64KB
+			}
 			reverse_proxy gate:8000
 		}
 

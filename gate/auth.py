@@ -26,24 +26,104 @@ from config import (
 logger = logging.getLogger("upperroom.auth")
 
 
-# ---- Login rate limiting --------------------------------------------------
-# A short per address history of login attempts. Simple on purpose, and it
-# resets if the service restarts, which is fine for a single operator.
+# ---- Rate limiting --------------------------------------------------------
+# A short per address history of attempts. Still simple, and it still resets if
+# the service restarts, which is fine for a single operator.
+#
+# The eviction is not incidental. This used to be a bare defaultdict that grew a
+# permanent entry per address it ever saw: the timestamps inside each entry
+# aged out, but the entry itself never did. Roughly 880 bytes each, never
+# returned. That is a slow memory leak under ordinary traffic and a way to push
+# a small box over on purpose, so entries whose window has fully passed are now
+# swept, and there is a hard ceiling as a backstop.
 
-_ATTEMPTS = defaultdict(deque)
-_MAX_ATTEMPTS = 5
 _WINDOW_SECONDS = 60
+# Sweep when the table has grown past this. Well above any real audience, so a
+# normal install never pays for the sweep at all.
+_SWEEP_THRESHOLD = 2048
+# An absolute cap, in case something arrives faster than the sweep can clear.
+# Reaching this means the limiter starts refusing everyone, which is the correct
+# failure for a flood: the alternative is running out of memory.
+_MAX_TRACKED = 20000
+
+
+class RateLimiter:
+    """Per-address attempt counting over a sliding window.
+
+    One instance per thing being limited, so a viewer fetching a new challenge
+    question does not eat into the allowance that protects password guessing.
+    """
+
+    def __init__(self, max_attempts, name):
+        self.max_attempts = max_attempts
+        self.name = name
+        self._hits = defaultdict(deque)
+
+    def _sweep(self, now):
+        """Drop addresses with nothing left inside the window."""
+        stale = [
+            ip for ip, hits in self._hits.items()
+            if not hits or now - hits[-1] > _WINDOW_SECONDS
+        ]
+        for ip in stale:
+            del self._hits[ip]
+        if stale:
+            logger.debug(
+                "%s limiter swept %d idle addresses (%d tracked)",
+                self.name, len(stale), len(self._hits),
+            )
+
+    def hit(self, ip):
+        """Record an attempt from `ip`. True if it should be refused."""
+        now = time.time()
+        if len(self._hits) >= _SWEEP_THRESHOLD:
+            self._sweep(now)
+        if ip not in self._hits and len(self._hits) >= _MAX_TRACKED:
+            # Under a flood from many addresses, refuse rather than keep
+            # allocating. Addresses already being tracked still get their normal
+            # allowance, so a real viewer mid-session is not thrown out.
+            logger.warning(
+                "%s limiter is at its address ceiling (%d); refusing new ones",
+                self.name, _MAX_TRACKED,
+            )
+            return True
+        history = self._hits[ip]
+        while history and now - history[0] > _WINDOW_SECONDS:
+            history.popleft()
+        if len(history) >= self.max_attempts:
+            return True
+        history.append(now)
+        return False
+
+    def clear(self):
+        self._hits.clear()
+
+    def tracked(self):
+        return len(self._hits)
+
+
+# Password guessing and pass-code guessing share this one, so an attacker cannot
+# get two budgets by alternating between them.
+_LOGIN_LIMITER = RateLimiter(5, "login")
+
+# Fetching a challenge question is not an attempt at anything, so it gets its own
+# and a far higher ceiling: the page asks for one on load and again after every
+# wrong answer, and a household behind one address might do that a few times a
+# minute quite legitimately. It is limited at all because each one costs a
+# signature, and this box has one core.
+_CHALLENGE_LIMITER = RateLimiter(60, "challenge")
 
 
 def too_many_attempts(ip):
-    now = time.time()
-    history = _ATTEMPTS[ip]
-    while history and now - history[0] > _WINDOW_SECONDS:
-        history.popleft()
-    if len(history) >= _MAX_ATTEMPTS:
-        return True
-    history.append(now)
-    return False
+    return _LOGIN_LIMITER.hit(ip)
+
+
+def too_many_challenges(ip):
+    return _CHALLENGE_LIMITER.hit(ip)
+
+
+# The tests reach for this to reset state between cases.
+_ATTEMPTS = _LOGIN_LIMITER._hits
 
 
 # ---- Sessions -------------------------------------------------------------
