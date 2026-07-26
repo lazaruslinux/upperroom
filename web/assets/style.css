@@ -1432,6 +1432,44 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #clip-msg a { color: var(--accent); margin-left: 4px; }
 
 /* =========================================================================
+   Likes and comments
+   ========================================================================= */
+
+.reactions { display: flex; gap: 8px; margin: 12px 0 0; }
+
+.comments { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+.comments-head {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+/* The global `form` rule stacks children in a column, which is right for the
+   sign-in card and wrong here: this is one line and a button side by side. */
+.comment-form { display: flex; flex-direction: row; gap: 8px; margin-bottom: 12px; }
+.comment-form input { flex: 1 1 auto; min-width: 0; }
+.comment-form button { flex: 0 0 auto; width: auto; }
+/* Buttons in a flex row size to their label, not to the row. */
+.reactions .chip-btn { flex: 0 0 auto; }
+
+.comment-list { display: flex; flex-direction: column; gap: 12px; }
+.comment { display: flex; gap: 8px; align-items: flex-start; }
+.comment-body { flex: 1; min-width: 0; }
+.comment-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.comment-author { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.comment-when { font-size: 11px; }
+.comment-text {
+  font-size: 14px;
+  color: var(--text);
+  /* Someone else's words, so they must wrap rather than stretch the page. */
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.comment.is-deleted .comment-text { font-style: italic; }
+.comment-delete { margin-top: 6px; }
+
+/* =========================================================================
    Public clip page
    ========================================================================= */
 

@@ -188,6 +188,11 @@ CLIP_LAG = 2
 # interval; a source with longer keyframes just gets a slightly softer edge.
 CLIP_KEYFRAME_SLACK = 2
 
+# Comments on a recording or a clip. Longer than a chat line because this is
+# written after the fact rather than in the moment, but still a comment and not
+# an essay.
+MAX_COMMENT_LENGTH = 1000
+
 # ---- Chat socket limits ---------------------------------------------------
 # One person legitimately has a couple of tabs open. Beyond that it is either a
 # stuck reconnect loop or somebody leaning on the server, and the chat socket is

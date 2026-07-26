@@ -19,7 +19,10 @@ import db
 from auth import (
     GUEST_REFUSED, admin_user, member_user, read_session, session_user,
 )
-from config import CLIP_DIR, COOKIE_NAME, SCHEDULE_GRACE, THUMB_PATH, VOD_DIR
+from config import (
+    CLIP_DIR, COOKIE_NAME, MAX_COMMENT_LENGTH, SCHEDULE_GRACE, THUMB_PATH,
+    VOD_DIR,
+)
 from hub import hub
 from media import (
     fetch_path, link_shared, make_clip, ready_epoch, unlink_shared,
@@ -251,6 +254,110 @@ def shared_clip(token: str):
         "video": f"/shared/{token}.mp4",
         "poster": f"/shared/{token}.jpg",
     }
+
+
+# ---- Likes and comments ---------------------------------------------------
+# Accounts only. Guests may watch and chat, and both of these outlive a guest's
+# half hour, so they are refused the same way clipping is. Deliberately separate
+# from the chat replay, which is untouched: the replay is what was said live,
+# this is what people say afterwards.
+
+_KINDS = {"vods": "vod", "clips": "clip"}
+
+
+def _media_exists(kind, ref_id):
+    return bool(db.get_vod(ref_id) if kind == "vod" else db.get_clip(ref_id))
+
+
+@router.get("/api/{plural}/{ref_id}/reactions")
+def get_reactions(plural: str, ref_id: int, request: Request):
+    """The like count, whether this viewer liked it, and the comment thread."""
+    kind = _KINDS.get(plural)
+    if not kind:
+        return Response(status_code=404)
+    user = member_user(request)
+    if not user:
+        return Response(status_code=401)
+    if not _media_exists(kind, ref_id):
+        return JSONResponse({"error": "No such item."}, status_code=404)
+    total, mine = db.like_state(kind, ref_id, user["username"])
+    return {
+        "likes": total,
+        "liked": mine,
+        "comments": db.list_comments(kind, ref_id),
+        # So the page knows whether to offer a delete on someone else's comment.
+        "can_moderate": bool(user["is_admin"] or user["is_moderator"]),
+    }
+
+
+@router.post("/api/{plural}/{ref_id}/like")
+async def set_like(plural: str, ref_id: int, request: Request):
+    kind = _KINDS.get(plural)
+    if not kind:
+        return Response(status_code=404)
+    if not session_user(request):
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    if not _media_exists(kind, ref_id):
+        return JSONResponse({"error": "No such item."}, status_code=404)
+    try:
+        body = await request.json()
+        liked = bool(body["liked"])
+    except (ValueError, TypeError, KeyError):
+        return JSONResponse({"error": "Say whether you like it."}, status_code=400)
+    total = db.set_like(kind, ref_id, user["username"], liked, int(time.time()))
+    return {"ok": True, "likes": total, "liked": liked}
+
+
+@router.post("/api/{plural}/{ref_id}/comments")
+async def post_comment(plural: str, ref_id: int, request: Request):
+    kind = _KINDS.get(plural)
+    if not kind:
+        return Response(status_code=404)
+    if not session_user(request):
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    if not _media_exists(kind, ref_id):
+        return JSONResponse({"error": "No such item."}, status_code=404)
+    # A comment is a chat message by another name, so it obeys the same
+    # moderation: someone banned or timed out in chat cannot post one here
+    # instead. Reusing the hub's own checks keeps the two from drifting.
+    if hub.is_banned(user["username"]):
+        return JSONResponse(
+            {"error": "You are banned from chat."}, status_code=403
+        )
+    if hub.is_timed_out(user["username"]):
+        return JSONResponse(
+            {"error": "You are timed out."}, status_code=403
+        )
+    body = await request.json()
+    text = str(body.get("text") or "").strip()[:MAX_COMMENT_LENGTH]
+    if not text:
+        return JSONResponse({"error": "Say something first."}, status_code=400)
+    db.add_comment(kind, ref_id, user["username"], text, int(time.time()))
+    return {"ok": True, "comments": db.list_comments(kind, ref_id)}
+
+
+@router.delete("/api/comments/{comment_id}")
+def delete_comment(comment_id: int, request: Request):
+    """An author may remove their own; a moderator or admin may remove any.
+    Soft delete, so the thread shows that something was removed rather than
+    silently closing the gap."""
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    comment = db.get_comment(comment_id)
+    if not comment:
+        return JSONResponse({"error": "No such comment."}, status_code=404)
+    is_author = comment["username"] == user["username"]
+    if not (is_author or user["is_admin"] or user["is_moderator"]):
+        return JSONResponse({"error": "Not yours to delete."}, status_code=403)
+    db.delete_comment(comment_id, user["username"])
+    return {"ok": True}
 
 
 @router.delete("/api/vods/{vod_id}")

@@ -279,6 +279,160 @@ function applyAccent(value) {
   }
 }
 
+
+// ---- likes and comments ---------------------------------------------------
+// Accounts only, and deliberately beside the chat replay rather than inside it.
+// The replay is what was said live and is frozen; this is what people say
+// afterwards. The public clip page has neither, by design.
+
+const likeBtn = document.getElementById("like-btn");
+const likeCount = document.getElementById("like-count");
+const commentsSection = document.getElementById("comments-section");
+const commentList = document.getElementById("comment-list");
+const commentEmpty = document.getElementById("comment-empty");
+const commentForm = document.getElementById("comment-form");
+const commentInput = document.getElementById("comment-input");
+const commentMsg = document.getElementById("comment-msg");
+
+let liked = false;
+let canModerate = false;
+
+function showCommentMsg(text, ok) {
+  commentMsg.textContent = text;
+  commentMsg.classList.toggle("good", !!ok);
+  commentMsg.classList.toggle("bad", !ok);
+  commentMsg.hidden = false;
+  setTimeout(() => { commentMsg.hidden = true; }, 4000);
+}
+
+function renderComments(comments) {
+  commentList.innerHTML = "";
+  commentEmpty.hidden = comments.length > 0;
+  comments.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "comment" + (c.deleted_by ? " is-deleted" : "");
+
+    row.appendChild(avatarNode(c.username, c.display_name, c.avatar_version));
+
+    const bubble = document.createElement("div");
+    bubble.className = "comment-body";
+
+    const head = document.createElement("div");
+    head.className = "comment-head";
+    const who = document.createElement("span");
+    who.className = "comment-author";
+    // textContent, never innerHTML: a display name is somebody else's input.
+    who.textContent = c.display_name || c.username;
+    if (c.name_color) who.style.color = c.name_color;
+    head.appendChild(who);
+    const badge = roleBadgeNode(c.is_admin, c.is_moderator);
+    if (badge) head.appendChild(badge);
+    const when = document.createElement("span");
+    when.className = "comment-when muted";
+    when.textContent = new Date(c.ts * 1000).toLocaleString([], {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+    head.appendChild(when);
+    bubble.appendChild(head);
+
+    const text = document.createElement("div");
+    text.className = "comment-text";
+    if (c.deleted_by) {
+      // Shown as removed rather than vanishing, so the thread does not silently
+      // close the gap. Same as the chat replay.
+      text.classList.add("muted");
+      text.textContent = "removed";
+    } else {
+      text.textContent = c.text;
+    }
+    bubble.appendChild(text);
+
+    // An author may remove their own; a moderator or admin may remove any.
+    const mine = me && c.username === me.username;
+    if (!c.deleted_by && (mine || canModerate)) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "chip-btn comment-delete";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => removeComment(c.id, del));
+      bubble.appendChild(del);
+    }
+
+    row.appendChild(bubble);
+    commentList.appendChild(row);
+  });
+}
+
+async function loadReactions() {
+  try {
+    const reply = await fetch(`/api/${TYPE}s/${ID}/reactions`);
+    if (!reply.ok) return;
+    const data = await reply.json();
+    liked = data.liked;
+    canModerate = data.can_moderate;
+    likeCount.textContent = data.likes;
+    likeBtn.classList.toggle("pinned-chip", liked);
+    likeBtn.title = liked ? "You like this. Click to undo." : "Like this";
+    likeBtn.hidden = false;
+    commentsSection.hidden = false;
+    renderComments(data.comments || []);
+  } catch { /* leave the section hidden rather than showing a broken one */ }
+}
+
+likeBtn.addEventListener("click", async () => {
+  likeBtn.disabled = true;
+  try {
+    const reply = await fetch(`/api/${TYPE}s/${ID}/like`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liked: !liked }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      liked = data.liked;
+      likeCount.textContent = data.likes;
+      likeBtn.classList.toggle("pinned-chip", liked);
+      likeBtn.title = liked ? "You like this. Click to undo." : "Like this";
+    }
+  } catch { /* leave the count as it was */ }
+  likeBtn.disabled = false;
+});
+
+commentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = commentInput.value.trim();
+  if (!text) return;
+  const button = commentForm.querySelector("button");
+  button.disabled = true;
+  try {
+    const reply = await fetch(`/api/${TYPE}s/${ID}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      commentInput.value = "";
+      renderComments(data.comments || []);
+    } else {
+      showCommentMsg(data.error || "Could not post that.", false);
+    }
+  } catch { showCommentMsg("Could not reach the server.", false); }
+  button.disabled = false;
+});
+
+async function removeComment(id, button) {
+  if (!confirm("Remove this comment?")) return;
+  button.disabled = true;
+  try {
+    const reply = await fetch(`/api/comments/${id}`, { method: "DELETE" });
+    if (reply.ok) { loadReactions(); return; }
+    const data = await reply.json().catch(() => ({}));
+    showCommentMsg(data.error || "Could not remove it.", false);
+  } catch { showCommentMsg("Could not remove it.", false); }
+  button.disabled = false;
+}
+
 // The operator's site name leads the top bar and names the browser tab, so the
 // platform brand ("powered by upperroom") stays a credit rather than the title.
 async function boot() {
@@ -291,6 +445,7 @@ async function boot() {
   mountNav(me, { current: "media", siteName: status.site_name });
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
+  loadReactions();
 }
 
 boot();

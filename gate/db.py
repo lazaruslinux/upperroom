@@ -215,6 +215,38 @@ CREATE TABLE IF NOT EXISTS media_views (
 -- A persistent chat ban (unlike a timeout, it survives restarts). banned_by
 -- records who issued it, so a moderator can later lift only their own bans,
 -- while an admin can lift any.
+-- A like on a recording or a clip. Exactly the shape of media_views, and for
+-- the same reason: the primary key makes one person count once, so liking twice
+-- is not two likes and unliking is a plain delete. Accounts only; a guest has
+-- nothing to leave behind.
+CREATE TABLE IF NOT EXISTS media_likes (
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    PRIMARY KEY (kind, ref_id, username)
+);
+
+-- A comment on a recording or a clip. Deliberately NOT the chat replay: the
+-- replay is what was said live, frozen, and it stays exactly as it is. This is
+-- what people say afterwards, and it sits beside the replay rather than mixed
+-- into it.
+--
+-- deleted_by mirrors chat_log: a removed comment keeps its row and gains the
+-- name of whoever removed it, so moderation reads the same way in both places
+-- and a deletion can be accounted for.
+CREATE TABLE IF NOT EXISTS media_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    text TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    deleted_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_media_comments_ref
+    ON media_comments(kind, ref_id, ts);
+
 CREATE TABLE IF NOT EXISTS bans (
     username TEXT PRIMARY KEY,
     banned_by TEXT NOT NULL,
@@ -889,6 +921,11 @@ def delete_user(username):
         conn.execute("DELETE FROM watch_sessions WHERE username = ?", (username,))
         conn.execute("DELETE FROM chat_log WHERE username = ?", (username,))
         conn.execute("DELETE FROM bans WHERE username = ?", (username,))
+        # Their likes and comments go with them, the same as their chat. A
+        # comment naming a deleted account would be a ghost in the thread, and
+        # the guest reaper runs this every few minutes.
+        conn.execute("DELETE FROM media_likes WHERE username = ?", (username,))
+        conn.execute("DELETE FROM media_comments WHERE username = ?", (username,))
         cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
         return cur.rowcount > 0
 
@@ -1291,6 +1328,130 @@ def count_guests(now):
         return row["n"] if row else 0
 
 
+# ---- Likes and comments ---------------------------------------------------
+# Accounts only, and deliberately separate from the chat replay. The replay is
+# what was said live and it stays frozen; this is what people say afterwards.
+
+def set_like(kind, ref_id, username, liked, when):
+    """Like or unlike. The primary key makes one person count once, so liking
+    twice is not two likes. Returns the new total."""
+    with connect() as conn:
+        if liked:
+            conn.execute(
+                "INSERT OR IGNORE INTO media_likes (kind, ref_id, username, ts) "
+                "VALUES (?, ?, ?, ?)",
+                (kind, ref_id, username, when),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM media_likes WHERE kind = ? AND ref_id = ? AND username = ?",
+                (kind, ref_id, username),
+            )
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM media_likes WHERE kind = ? AND ref_id = ?",
+            (kind, ref_id),
+        ).fetchone()
+        return row["n"]
+
+
+def like_state(kind, ref_id, username):
+    """(total, whether this person liked it)."""
+    with connect() as conn:
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM media_likes WHERE kind = ? AND ref_id = ?",
+            (kind, ref_id),
+        ).fetchone()["n"]
+        mine = conn.execute(
+            "SELECT 1 FROM media_likes WHERE kind = ? AND ref_id = ? AND username = ?",
+            (kind, ref_id, username),
+        ).fetchone()
+        return total, bool(mine)
+
+
+def add_comment(kind, ref_id, username, text, when):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO media_comments (kind, ref_id, username, text, ts) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (kind, ref_id, username, text, when),
+        )
+        return cur.lastrowid
+
+
+def list_comments(kind, ref_id):
+    """Comments oldest first, with the author's current display name and avatar
+    so the thread reflects a rename rather than freezing the name at the time.
+
+    Deleted ones are included but carry no text: the thread should show that
+    something was removed rather than silently closing the gap, which is how the
+    chat replay behaves too."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.username, c.text, c.ts, c.deleted_by, "
+            "u.display_name, u.avatar_version, u.is_admin, u.is_moderator, "
+            "u.name_color "
+            "FROM media_comments c LEFT JOIN users u ON u.username = c.username "
+            "WHERE c.kind = ? AND c.ref_id = ? ORDER BY c.ts ASC, c.id ASC",
+            (kind, ref_id),
+        ).fetchall()
+        out = []
+        for r in rows:
+            row = dict(r)
+            if row["deleted_by"]:
+                row["text"] = ""
+            out.append(row)
+        return out
+
+
+def get_comment(comment_id):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM media_comments WHERE id = ?", (comment_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_comment(comment_id, by):
+    """Soft delete, the same way chat_log does it: the row stays and gains the
+    name of whoever removed it, so a deletion can be accounted for later."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE media_comments SET deleted_by = ? "
+            "WHERE id = ? AND deleted_by IS NULL",
+            (by, comment_id),
+        )
+        return cur.rowcount > 0
+
+
+def comment_counts(kind, ref_ids):
+    """How many live comments each item has, for the listings. One query rather
+    than one per card."""
+    if not ref_ids:
+        return {}
+    marks = ",".join("?" for _ in ref_ids)
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT ref_id, COUNT(*) AS n FROM media_comments "
+            f"WHERE kind = ? AND deleted_by IS NULL AND ref_id IN ({marks}) "
+            "GROUP BY ref_id",
+            (kind, *ref_ids),
+        ).fetchall()
+        return {r["ref_id"]: r["n"] for r in rows}
+
+
+def like_counts(kind, ref_ids):
+    if not ref_ids:
+        return {}
+    marks = ",".join("?" for _ in ref_ids)
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT ref_id, COUNT(*) AS n FROM media_likes "
+            f"WHERE kind = ? AND ref_id IN ({marks}) GROUP BY ref_id",
+            (kind, *ref_ids),
+        ).fetchall()
+        return {r["ref_id"]: r["n"] for r in rows}
+
+
 # ---- Public clip sharing --------------------------------------------------
 # A published clip is reachable without an account. Everything else on the site
 # sits behind the session check, so this is the one deliberate hole in it and
@@ -1539,18 +1700,27 @@ def set_clip_filename(clip_id, filename):
         )
 
 
+def _delete_media_children(conn, kind, ref_id):
+    """Remove everything hanging off one recording or clip.
+
+    There are three separate paths that delete media (the admin delete, the
+    retention sweep, and the startup cleanup of unfinished recordings) and each
+    used to carry its own copy of this list. Adding likes and comments meant
+    touching all three, which is exactly how one gets missed and leaves orphaned
+    rows nobody notices. One list, one place."""
+    conn.execute("DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    conn.execute("DELETE FROM media_views WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    conn.execute("DELETE FROM media_likes WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    conn.execute("DELETE FROM media_comments WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+
+
 def clear_unfinished_vods():
     """Remove VOD rows whose recording never finished (ready = 0), e.g. if the
     gate restarted mid broadcast. Called at startup so no half rows linger."""
     with connect() as conn:
         rows = conn.execute("SELECT id FROM vods WHERE ready = 0").fetchall()
         for row in rows:
-            conn.execute(
-                "DELETE FROM replay_chat WHERE kind = 'vod' AND ref_id = ?", (row["id"],)
-            )
-            conn.execute(
-                "DELETE FROM media_views WHERE kind = 'vod' AND ref_id = ?", (row["id"],)
-            )
+            _delete_media_children(conn, "vod", row["id"])
         conn.execute("DELETE FROM vods WHERE ready = 0")
         return [r["id"] for r in rows]
 
@@ -1580,12 +1750,7 @@ def delete_media(kind, ref_id):
         ).fetchone()
         if not row:
             return None
-        conn.execute(
-            "DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id)
-        )
-        conn.execute(
-            "DELETE FROM media_views WHERE kind = ? AND ref_id = ?", (kind, ref_id)
-        )
+        _delete_media_children(conn, kind, ref_id)
         conn.execute(f"DELETE FROM {table} WHERE id = ?", (ref_id,))
         return dict(row)
 
@@ -1781,8 +1946,7 @@ def _rows_for_retention(conn, kind):
 
 def _delete_media_row(conn, kind, ref_id):
     table = _media_table(kind)
-    conn.execute("DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id))
-    conn.execute("DELETE FROM media_views WHERE kind = ? AND ref_id = ?", (kind, ref_id))
+    _delete_media_children(conn, kind, ref_id)
     conn.execute(f"DELETE FROM {table} WHERE id = ?", (ref_id,))
 
 
