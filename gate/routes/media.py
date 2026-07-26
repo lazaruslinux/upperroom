@@ -14,7 +14,9 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
 import db
-from auth import admin_user, read_session
+from auth import (
+    GUEST_REFUSED, admin_user, member_user, read_session, session_user,
+)
 from config import CLIP_DIR, COOKIE_NAME, SCHEDULE_GRACE, THUMB_PATH, VOD_DIR
 from hub import hub
 from media import fetch_path, make_clip, ready_epoch, _remove_media_files
@@ -45,7 +47,12 @@ def thumbnail(request: Request):
 # live video), so large files never pass through this Python service.
 
 def _signed_in(request):
-    return read_session(request.cookies.get(COOKIE_NAME, "")) is not None
+    """Whether this request may see the library.
+
+    Members only: the recordings and clips, and the chat replay attached to
+    them, are not part of what a guest pass buys. A guest is watching a
+    broadcast, not browsing an archive of the ones they missed."""
+    return member_user(request) is not None
 
 
 def _media_summary(row, kind):
@@ -111,22 +118,22 @@ def get_clip(clip_id: int, request: Request):
 
 @router.post("/api/vods/{vod_id}/view")
 def view_vod(vod_id: int, request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    user = member_user(request)
+    if not user:
         return Response(status_code=401)
     if not db.get_vod(vod_id):
         return JSONResponse({"error": "No such VOD."}, status_code=404)
-    return {"views": db.add_view("vod", vod_id, session["sub"])}
+    return {"views": db.add_view("vod", vod_id, user["username"])}
 
 
 @router.post("/api/clips/{clip_id}/view")
 def view_clip(clip_id: int, request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    user = member_user(request)
+    if not user:
         return Response(status_code=401)
     if not db.get_clip(clip_id):
         return JSONResponse({"error": "No such clip."}, status_code=404)
-    return {"views": db.add_view("clip", clip_id, session["sub"])}
+    return {"views": db.add_view("clip", clip_id, user["username"])}
 
 
 @router.get("/api/vods/{vod_id}/chat")
@@ -145,12 +152,13 @@ def clip_chat(clip_id: int, request: Request):
 
 @router.post("/api/clip")
 async def create_clip_endpoint(request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = db.get_user(session["sub"])
+    # A clip outlives the broadcast and carries its maker's name, so it needs an
+    # account that will still be there tomorrow.
+    user = member_user(request)
     if not user:
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
     body = await request.json()
     clip_id, error = await make_clip(user, body.get("name"))
     if error:

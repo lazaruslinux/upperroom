@@ -167,6 +167,17 @@ MAX_SCHEDULE_NOTE = 120
 CLIP_SECONDS = 30                  # how much of the live edge a clip captures
 CLIP_LAG = 2                       # stay this far back from the very live edge
 
+# ---- Guest passes ---------------------------------------------------------
+# A guest pass is a single-use code that lets someone watch and chat without an
+# account. Redeeming one creates a real users row flagged is_guest, because
+# presence, watch sessions, bans and every moderator command resolve their
+# target through that row: a guest with no row could talk in chat and could not
+# be timed out, banned or purged.
+GUEST_MINUTES = 30                 # the clock starts on redemption, not on issue
+GUEST_REAP_INTERVAL = 300          # how often expired guest accounts are removed
+MAX_GUEST_NAME = 24                # shorter than a member's; it is on screen only
+MAX_GUEST_PASS_BATCH = 25          # how many passes one click may mint
+
 # Recorder resilience. The stream watcher supervises the recording ffmpeg while
 # the stream is live: if the process dies or its scratch file stops growing, the
 # partial recording is finalized (when it holds usable content) or discarded, and

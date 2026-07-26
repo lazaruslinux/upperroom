@@ -14,9 +14,10 @@ from fastapi.responses import JSONResponse
 import db
 from auth import _clean_username, admin_user
 from config import (
-    MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_INVITE_LABEL,
-    MAX_SCHEDULE_NOTE, MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
-    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
+    GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
+    MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_SCHEDULE_NOTE, MAX_SITE_NAME,
+    MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL,
+    SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from media import enforce_retention, media_usage
@@ -389,6 +390,81 @@ def admin_invites_revoke(code: str, request: Request):
             {"error": "That invite is not active."}, status_code=400
         )
     return {"ok": True}
+
+
+# ---- Guest passes ---------------------------------------------------------
+# The same shape as invites above, deliberately: he generates a handful, pastes
+# them into a group text, and each person redeems one. Unlike invites, these are
+# built with a real delete from the start rather than revoke-only, because the
+# complaint about invites piling up applies here twice over: a pass is spent
+# within the hour and its row has nothing to say afterwards.
+
+@router.get("/api/admin/guest-passes")
+def admin_guest_passes_list(request: Request):
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {
+        "passes": db.list_guest_passes(),
+        "minutes": GUEST_MINUTES,
+        "now": int(time.time()),
+    }
+
+
+@router.post("/api/admin/guest-passes")
+async def admin_guest_passes_create(request: Request):
+    actor = admin_user(request)
+    if not actor:
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    label = (body.get("label") or "").strip()[:MAX_INVITE_LABEL]
+    # Making several at once is the actual workflow: one text message, one code
+    # each. Capped so a slip on the number field cannot mint thousands.
+    try:
+        count = int(body.get("count") or 1)
+    except (TypeError, ValueError):
+        count = 1
+    count = max(1, min(count, MAX_GUEST_PASS_BATCH))
+    now = int(time.time())
+    codes = [
+        db.create_guest_pass(label, actor["username"], now) for _ in range(count)
+    ]
+    return {"ok": True, "codes": codes}
+
+
+@router.delete("/api/admin/guest-passes/{code}")
+def admin_guest_passes_revoke(code: str, request: Request):
+    """Revoke an unused pass. Spent passes are removed with the route below;
+    this one only ever stops a code that could still be redeemed."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not db.revoke_guest_pass(code.strip().lower(), int(time.time())):
+        return JSONResponse(
+            {"error": "That guest pass is not active."}, status_code=400
+        )
+    return {"ok": True}
+
+
+@router.post("/api/admin/guest-passes/{code}/remove")
+def admin_guest_passes_remove(code: str, request: Request):
+    """Delete a spent pass row for good. Only revoked or redeemed passes go: an
+    active code has to be revoked first, so removing can never be a quiet way to
+    un-issue a code somebody is still holding."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not db.delete_guest_pass(code.strip().lower()):
+        return JSONResponse(
+            {"error": "Revoke that pass before removing it."}, status_code=400
+        )
+    return {"ok": True}
+
+
+@router.post("/api/admin/guest-passes/clear-used")
+def admin_guest_passes_clear_used(request: Request):
+    """Sweep every redeemed and revoked pass at once, which is the thing that
+    actually gets asked for once a few broadcasts have gone by."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"ok": True, "removed": db.clear_used_guest_passes()}
 
 
 # ---- Overlay key ----------------------------------------------------------

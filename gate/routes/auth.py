@@ -18,8 +18,8 @@ from PIL import Image, ImageOps
 
 import db
 from auth import (
-    _clean_username, client_ip, country_allowed, issue_token, read_session,
-    too_many_attempts,
+    GUEST_REFUSED, _clean_username, client_ip, country_allowed, guest_expired,
+    issue_token, member_user, read_session, session_user, too_many_attempts,
 )
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
@@ -39,15 +39,21 @@ _INTERNAL_NETS = tuple(
 )
 
 
-def _signed_in_response(user, payload=None):
+def _signed_in_response(user, payload=None, max_age=None):
     """A JSON response that also sets the session cookie for `user`, exactly like
     a successful sign in. Used by the login, setup, and register endpoints so all
-    three log the account in the moment it is created or authenticated."""
+    three log the account in the moment it is created or authenticated.
+
+    max_age overrides how long the cookie lives, which guest redemption uses so
+    the cookie dies with the pass instead of lingering for the normal session
+    length. It is belt and braces, not the enforcement: the expiry that matters
+    is checked against the row on every /api/verify and on the chat socket, so a
+    guest who keeps a cookie alive by hand still stops watching on time."""
     response = JSONResponse(payload or {"ok": True})
     response.set_cookie(
         key=COOKIE_NAME,
         value=issue_token(user),
-        max_age=SESSION_HOURS * 3600,
+        max_age=SESSION_HOURS * 3600 if max_age is None else max_age,
         httponly=True,
         secure=True,
         samesite="lax",
@@ -75,6 +81,13 @@ def me(request: Request):
         "email": user["email"] if user else "",
         "name_color": user["name_color"] if user else "",
         "msg_color": user["msg_color"] if user else "",
+        # Read from the row, not the token: the session cookie has no idea what
+        # a guest is, which is deliberate. A token minted before guests existed,
+        # or one belonging to a deleted row, is simply not a guest.
+        "guest": bool(user["is_guest"]) if user else False,
+        # Absolute, so the countdown does not drift with a slow page load and
+        # does not care about the visitor's clock being wrong by minutes.
+        "guest_expires_at": user["guest_expires_at"] if user else 0,
     }
 
 
@@ -117,10 +130,15 @@ def verify(request: Request):
     # returns 401 and Caddy refuses to serve the video. Checking the account
     # exists (not just that the token is valid) means deleting a user cuts off
     # their video at once, rather than waiting for the token to expire.
+    # A guest whose pass has run out is refused here too, which is what actually
+    # stops the video: the player's next segment request gets a 401 from Caddy.
     session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if session and db.get_user(session["sub"]):
-        return Response(status_code=200)
-    return Response(status_code=401)
+    if not session:
+        return Response(status_code=401)
+    user = db.get_user(session["sub"])
+    if not user or guest_expired(user):
+        return Response(status_code=401)
+    return Response(status_code=200)
 
 
 @router.get("/api/geo")
@@ -318,9 +336,13 @@ def logout():
 async def change_password(request: Request):
     # Lets a signed in viewer change their own password. They must prove they
     # know the current one, so a borrowed session cannot lock the owner out.
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
+    # A guest row has no usable password hash to change, and no owner to lock
+    # out. Refused explicitly rather than left to fail the current-password
+    # check, which would read as "you typed it wrong".
+    if not member_user(request):
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
     body = await request.json()
     current = body.get("current_password", "")
     new = body.get("new_password", "")
@@ -355,10 +377,13 @@ def crop_to_square(picture):
 
 @router.post("/api/avatar")
 async def set_avatar(request: Request, image: UploadFile = File(...)):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
-    username = session["sub"]
+    # An avatar is a file that outlives a thirty minute pass.
+    member = member_user(request)
+    if not member:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    username = member["username"]
 
     length = request.headers.get("content-length", "")
     if length.isdigit() and int(length) > MAX_AVATAR_BYTES + 4096:
@@ -410,10 +435,14 @@ def get_avatar(username: str, request: Request):
 
 @router.post("/api/profile")
 async def set_profile(request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
-    username = session["sub"]
+    # Guests pick their display name once, when they redeem the pass. There is
+    # no settings modal behind this for them and nothing here to persist.
+    member = member_user(request)
+    if not member:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    username = member["username"]
     body = await request.json()
 
     font = None

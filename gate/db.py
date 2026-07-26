@@ -224,6 +224,22 @@ CREATE TABLE IF NOT EXISTS invites (
     redeemed_by TEXT,
     redeemed_at INTEGER
 );
+
+-- Guest passes: single-use codes that let someone watch and chat for a while
+-- without making an account. Deliberately the same shape as invites, because
+-- they are the same idea with a different outcome: an invite creates a
+-- permanent account, a guest pass creates a temporary one. The account a pass
+-- creates is recorded in redeemed_by exactly as it is for invites, so a pass
+-- can be traced to whoever used it even after the account is reaped.
+CREATE TABLE IF NOT EXISTS guest_passes (
+    code TEXT PRIMARY KEY,
+    label TEXT DEFAULT '',
+    created_by TEXT,
+    created_at INTEGER,
+    revoked_at INTEGER,
+    redeemed_by TEXT,
+    redeemed_at INTEGER
+);
 """
 
 
@@ -263,6 +279,13 @@ def init_db():
         _ensure_column(conn, "users", "msg_color", "TEXT NOT NULL DEFAULT ''")
         # Provenance: which invite code (if any) this account was created from.
         _ensure_column(conn, "users", "invite_code", "TEXT")
+        # A guest is a real account with a short life. Keeping it a row rather
+        # than a rowless session is what lets presence, watch sessions, bans and
+        # every moderator command keep working on guests unchanged; all of those
+        # resolve their target through a users row. is_guest is read fresh from
+        # the row wherever it matters, never trusted from the session cookie.
+        _ensure_column(conn, "users", "is_guest", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "users", "guest_expires_at", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
         _ensure_column(
             conn, "channel_settings", "site_name", "TEXT NOT NULL DEFAULT 'upperroom'"
@@ -813,12 +836,14 @@ def set_notify_live(username, on):
 def list_live_recipients():
     """Email addresses to notify when the channel goes live: non-admin accounts
     that have an address and have not opted out. Admins run the broadcast, so
-    they are never emailed that their own stream is live. Returns a list of
+    they are never emailed that their own stream is live. Guests are excluded
+    outright: they have no address and a thirty minute account has no business
+    receiving mail about future broadcasts. Returns a list of
     (display_name, email)."""
     with connect() as conn:
         rows = conn.execute(
             "SELECT display_name, email FROM users "
-            "WHERE notify_live = 1 AND email != '' AND is_admin = 0"
+            "WHERE notify_live = 1 AND email != '' AND is_admin = 0 AND is_guest = 0"
         ).fetchall()
         return [(r["display_name"], r["email"]) for r in rows]
 
@@ -886,31 +911,82 @@ def list_bans():
         return [dict(r) for r in rows]
 
 
-# ---- Invites --------------------------------------------------------------
+# ---- Codes ----------------------------------------------------------------
 # Readable, single-use codes: three short words joined by dashes, e.g.
-# "ember-quiet-harbor". The words are picked with the secrets module so a code is
-# not guessable, and the small wordlist stays easy to read out or type in.
+# "ember-quiet-harbor". The words are picked with the secrets module, and the
+# words themselves stay easy to read out loud, type on a phone, and tell apart.
+#
+# The size of this list is a security property, not a matter of taste. An invite
+# code only reaches a private sign-up form, but a guest pass reaches a public
+# redemption endpoint that anyone can post to, so the list has to be big enough
+# that guessing is hopeless on its own. Three words from 48 is 110,592
+# combinations, which a script would walk through in minutes. This list is sized
+# so that three words clear 10 million, and redemption is rate limited per
+# address on top of that.
+#
+# Keep them: lowercase a-z only, 3-8 letters, no plurals, no two words that
+# sound alike when read down a phone.
 
-_INVITE_WORDS = (
-    "amber", "anchor", "aspen", "basil", "beacon", "birch", "cedar", "cinder",
-    "cobalt", "comet", "coral", "cove", "delta", "dune", "ember", "fable",
-    "fern", "flint", "garnet", "grove", "harbor", "hazel", "indigo", "ivory",
-    "jade", "juniper", "kelp", "lark", "lotus", "maple", "meadow", "onyx",
-    "opal", "pebble", "pine", "quartz", "quiet", "raven", "reed", "river",
-    "sage", "slate", "spruce", "thistle", "tide", "umber", "violet", "willow",
+_CODE_WORDS = (
+    "acorn", "alder", "almond", "amber", "anchor", "anvil", "apple", "arbor",
+    "arch", "arrow", "ash", "aspen", "astro", "atlas", "autumn", "azure",
+    "badge", "balsa", "bamboo", "banjo", "barley", "basil", "basin", "bay",
+    "beacon", "beetle", "bellow", "birch", "bison", "blossom", "bluff", "bolt",
+    "boulder", "bramble", "branch", "brass", "brick", "bridge", "brook", "buckle",
+    "bugle", "burrow", "cabin", "cactus", "camber", "candle", "canoe", "canyon",
+    "cargo", "carrot", "cascade", "cedar", "chalk", "charm", "cherry", "chime",
+    "cinder", "cirrus", "citron", "clay", "cliff", "clover", "cobalt", "comet",
+    "compass", "copper", "coral", "cove", "cricket", "crocus", "crystal", "cypress",
+    "dagger", "daisy", "dapple", "dawn", "delta", "denim", "dew", "domino",
+    "dune", "dusk", "eagle", "echo", "elder", "elm", "ember", "emerald",
+    "fable", "falcon", "fathom", "fennel", "fern", "fig", "finch", "flax",
+    "flint", "flute", "forest", "fossil", "fox", "frost", "gable", "galley",
+    "garnet", "gecko", "geode", "ginger", "glacier", "glade", "granite", "gravel",
+    "grotto", "grove", "gully", "gypsum", "halo", "harbor", "harvest", "hawk",
+    "hazel", "heather", "hedge", "helm", "hemlock", "heron", "hickory", "hollow",
+    "honey", "hopper", "husk", "indigo", "inlet", "iris", "ironwood", "island",
+    "ivory", "jade", "jasper", "jetty", "juniper", "kelp", "kestrel", "kettle",
+    "keystone", "lagoon", "lantern", "lark", "laurel", "lavender", "ledge", "lemon",
+    "lichen", "lilac", "linen", "lotus", "lumber", "lupine", "magnet", "mahogany",
+    "mallow", "mango", "manor", "maple", "marble", "marsh", "meadow", "mesa",
+    "mica", "millet", "mint", "mirror", "mist", "moss", "mulberry", "nectar",
+    "nettle", "nimbus", "nutmeg", "oak", "oasis", "obsidian", "ochre", "olive",
+    "onyx", "opal", "orchard", "orchid", "osprey", "otter", "oxbow", "paddle",
+    "pampas", "pantry", "papyrus", "parcel", "pasture", "pebble", "pelican", "pennant",
+    "pepper", "pewter", "pigment", "pine", "pinion", "piper", "plateau", "plum",
+    "pollen", "pond", "poplar", "porch", "portage", "prairie", "puffin", "pumice",
+    "quarry", "quartz", "quill", "quiet", "radish", "rafter", "rapids", "raven",
+    "reed", "reef", "relay", "ribbon", "ridge", "rill", "rimrock", "river",
+    "rosemary", "rowan", "rudder", "ripple", "russet", "rye", "saffron", "sage",
+    "sandbar", "sapling", "sapphire", "satchel", "sedge", "sequoia", "shale", "shamrock",
+    "shelter", "shingle", "sierra", "silo", "silver", "solstice", "skiff", "slate",
+    "sleet", "sorrel", "spindle", "spire", "spruce", "starling", "steppe", "sumac",
+    "summit", "sundial", "sycamore", "tamarind", "tandem", "tanager", "teak", "tempo",
+    "thicket", "thistle", "thorn", "thyme", "tide", "timber", "topaz", "torrent",
+    "trellis", "trillium", "trout", "tulip", "tundra", "turret", "umber", "valley",
+    "velvet", "verbena", "vessel", "vine", "violet", "vireo", "walnut", "wander",
+    "warbler", "wattle", "wax", "wedge", "whistle", "wicker", "willow", "windmill",
+    "wisteria", "wren", "yarrow", "yew", "yucca", "zephyr", "zinnia", "zircon",
 )
 
+# Three words drawn from the list above. Kept as a named number so a test can
+# assert the space rather than trusting the list to stay large by accident.
+CODE_WORD_COUNT = 3
+CODE_SPACE = len(_CODE_WORDS) ** CODE_WORD_COUNT
 
-def _new_invite_code():
-    return "-".join(secrets.choice(_INVITE_WORDS) for _ in range(3))
 
+def _new_code():
+    return "-".join(secrets.choice(_CODE_WORDS) for _ in range(CODE_WORD_COUNT))
+
+
+# ---- Invites --------------------------------------------------------------
 
 def create_invite(label, created_by, created_at):
     """Generate a fresh single-use invite code and store it. Retries on the rare
     chance the random words collide with an existing code. Returns the code."""
     with connect() as conn:
         for _ in range(20):
-            code = _new_invite_code()
+            code = _new_code()
             try:
                 conn.execute(
                     "INSERT INTO invites (code, label, created_by, created_at) "
@@ -995,6 +1071,153 @@ def register_via_invite(code, username, display_name, password, when):
             (username, display_name, hash_password(password), when, code),
         )
         return "ok"
+
+
+# ---- Guest passes ---------------------------------------------------------
+# Same single-use, race-safe, revocable shape as invites, but redeeming one
+# creates a temporary account instead of a permanent one.
+
+# Stored in place of a password hash on a guest row. verify_password() splits on
+# "$" and needs three parts, so this can never match any password: a guest
+# cannot sign in through /api/auth at all, whatever they type.
+GUEST_PASSWORD_SENTINEL = "guest-account-no-password"
+
+
+def create_guest_pass(label, created_by, created_at):
+    """Generate a fresh single-use guest pass and store it. Returns the code."""
+    with connect() as conn:
+        for _ in range(20):
+            code = _new_code()
+            try:
+                conn.execute(
+                    "INSERT INTO guest_passes (code, label, created_by, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (code, label or "", created_by, created_at),
+                )
+                return code
+            except sqlite3.IntegrityError:
+                continue
+        raise RuntimeError("could not generate a unique guest pass code")
+
+
+def get_guest_pass(code):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM guest_passes WHERE code = ?", (code,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_guest_passes():
+    """Every guest pass, newest first, with the display name of the guest it
+    created. The name survives in guest_passes.redeemed_by after the reaper has
+    deleted the account, so a spent pass still shows what it was used for."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT g.code, g.label, g.created_by, g.created_at, g.revoked_at, "
+            "g.redeemed_by, g.redeemed_at, u.display_name AS redeemed_by_name, "
+            "u.guest_expires_at "
+            "FROM guest_passes g LEFT JOIN users u ON u.username = g.redeemed_by "
+            "ORDER BY g.created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def revoke_guest_pass(code, when):
+    """Revoke an unused pass. Returns True if one changed. Revoking does not end
+    a session already redeemed from it; that expires on its own."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE guest_passes SET revoked_at = ? "
+            "WHERE code = ? AND revoked_at IS NULL AND redeemed_at IS NULL",
+            (when, code),
+        )
+        return cur.rowcount > 0
+
+
+def delete_guest_pass(code):
+    """Remove a spent pass row for good. Only a pass that is already revoked or
+    redeemed can go: an active code must be revoked first, so deleting can never
+    become a quiet way to un-issue a code somebody is still holding. Returns
+    True if a row was removed."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM guest_passes WHERE code = ? "
+            "AND (revoked_at IS NOT NULL OR redeemed_at IS NOT NULL)",
+            (code,),
+        )
+        return cur.rowcount > 0
+
+
+def clear_used_guest_passes():
+    """Remove every redeemed or revoked pass at once. Returns how many went."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM guest_passes "
+            "WHERE revoked_at IS NOT NULL OR redeemed_at IS NOT NULL"
+        )
+        return cur.rowcount
+
+
+def redeem_guest_pass(code, username, display_name, when, expires_at):
+    """Atomically claim a single-use guest pass and create the guest account.
+
+    The claim and the insert share one transaction, mirroring
+    register_via_invite(), so two people racing on one code cannot both win.
+    Returns 'ok', 'used' (missing, revoked or already redeemed), or
+    'user_exists' (the generated username collided; the claim is rolled back so
+    the pass is not burned).
+    """
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE guest_passes SET redeemed_by = ?, redeemed_at = ? "
+            "WHERE code = ? AND redeemed_at IS NULL AND revoked_at IS NULL",
+            (username, when, code),
+        )
+        if cur.rowcount == 0:
+            return "used"
+        taken = conn.execute(
+            "SELECT 1 FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if taken:
+            conn.execute(
+                "UPDATE guest_passes SET redeemed_by = NULL, redeemed_at = NULL "
+                "WHERE code = ?",
+                (code,),
+            )
+            return "user_exists"
+        conn.execute(
+            "INSERT INTO users "
+            "(username, display_name, password_hash, is_admin, created_at, "
+            " is_guest, guest_expires_at, notify_live) "
+            "VALUES (?, ?, ?, 0, ?, 1, ?, 0)",
+            (username, display_name, GUEST_PASSWORD_SENTINEL, when, expires_at),
+        )
+        return "ok"
+
+
+def expired_guests(now):
+    """Usernames of guest accounts whose time is up. Separate from the delete so
+    the reaper can log what it removed and so this is testable on its own."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT username FROM users "
+            "WHERE is_guest = 1 AND guest_expires_at > 0 AND guest_expires_at <= ?",
+            (now,),
+        ).fetchall()
+        return [r["username"] for r in rows]
+
+
+def count_guests(now):
+    """How many guest accounts are currently live, for the analytics page. Guests
+    are filtered out of the account list, so without this they would be invisible
+    rather than merely separate."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM users "
+            "WHERE is_guest = 1 AND guest_expires_at > ?", (now,)
+        ).fetchone()
+        return row["n"] if row else 0
 
 
 # ---- Channel points -------------------------------------------------------
@@ -1509,9 +1732,15 @@ def count_media():
 # ---- Admin views ----------------------------------------------------------
 
 def admin_list_users(include_admins=True):
-    """Every account with rolled-up activity stats, for the dashboards. The mod
-    dashboard passes include_admins=False so admin accounts never appear there."""
-    where = "" if include_admins else "WHERE u.is_admin = 0"
+    """Every real account with rolled-up activity stats, for the dashboards. The
+    mod dashboard passes include_admins=False so admin accounts never appear
+    there.
+
+    Guests are always excluded. They are accounts only so that moderation and
+    presence keep working on them; they are not people who signed up, and a busy
+    broadcast would otherwise bury the real account list under expiring rows.
+    The analytics page counts them separately instead (count_guests)."""
+    where = "WHERE u.is_guest = 0" + ("" if include_admins else " AND u.is_admin = 0")
     with connect() as conn:
         rows = conn.execute(
             f"""

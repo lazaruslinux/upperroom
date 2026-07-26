@@ -271,6 +271,32 @@ class Hub:
                 who["mod"] = bool(mod)
         await self.broadcast(self.presence_message())
 
+    async def disconnect_user(self, username, code=4401):
+        """Close every socket belonging to one user.
+
+        Needed because a chat socket is long lived: checking a guest's expiry
+        when they connect only covers guests who arrive already expired, and the
+        interesting case is the guest who is sitting in chat when their pass
+        runs out. Their video stops on its own (the next segment fails
+        /api/verify) but the socket would happily stay open for hours.
+
+        Closing is enough on its own; leave() runs from the socket's own
+        disconnect handler, so presence and the watch session are tidied up
+        there rather than duplicated here. Returns how many sockets were closed.
+        """
+        closed = 0
+        for socket, who in list(self._sockets.items()):
+            if who["username"] != username:
+                continue
+            try:
+                await socket.close(code=code)
+                closed += 1
+            except Exception:
+                # Already gone, or closing mid-flight. The disconnect handler
+                # cleans up either way, so this is not worth a warning.
+                logger.debug("disconnect_user close failed", exc_info=True)
+        return closed
+
     async def notify_user(self, username, text):
         """Send a private system line to one user's open sockets (e.g. to tell
         them they have been timed out). Others do not see it."""

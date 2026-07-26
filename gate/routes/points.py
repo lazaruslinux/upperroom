@@ -13,8 +13,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import db
-from auth import read_session
-from config import COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
+from auth import GUEST_REFUSED, member_user, session_user
+from config import HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
 from hub import hub
 
 logger = logging.getLogger("upperroom.points")
@@ -26,18 +26,25 @@ router = APIRouter()
 def points(request: Request):
     # Any signed-in viewer: their own balance and the fixed highlight cost, so the
     # watch page can show the points chip and drive the highlight composer.
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    # Guests never accrue points, so they have no balance to show and no
+    # highlight to buy. Refused rather than shown as zero, which would read as a
+    # thing they could earn.
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
-    return {"points": db.get_points(session["sub"]), "cost": HIGHLIGHT_COST}
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    return {"points": db.get_points(user["username"]), "cost": HIGHLIGHT_COST}
 
 
 @router.post("/api/redeem")
 async def redeem(request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
-    username = session["sub"]
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    username = user["username"]
     body = await request.json()
     # The highlight text follows the same length rule the chat socket enforces:
     # strip, then truncate to the chat limit. An empty message after stripping is

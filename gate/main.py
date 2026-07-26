@@ -37,6 +37,7 @@ from media import (
 )
 from routes import admin as admin_routes
 from routes import auth as auth_routes
+from routes import guest as guest_routes
 from routes import media as media_routes
 from routes import mod as mod_routes
 from routes import points as points_routes
@@ -92,6 +93,7 @@ async def lifespan(_app):
         asyncio.create_task(chat_purge_worker()),
         asyncio.create_task(retention_worker()),
         asyncio.create_task(schedule_worker()),
+        asyncio.create_task(auth.guest_reaper()),
     ]
     try:
         yield
@@ -106,6 +108,7 @@ for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_D
     os.makedirs(_dir, exist_ok=True)
 
 app.include_router(auth_routes.router)
+app.include_router(guest_routes.router)
 app.include_router(media_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(mod_routes.router)

@@ -14,7 +14,7 @@ from collections import deque
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import db
-from auth import country_allowed, read_session, resolve_client_ip
+from auth import country_allowed, guest_expired, read_session, resolve_client_ip
 from config import COOKIE_NAME, MAX_MESSAGE_LENGTH
 from hub import hub
 
@@ -298,7 +298,10 @@ async def chat_socket(websocket: WebSocket):
     user = db.get_user(session["sub"])
     # If the account was deleted, the token may still be valid but there is no
     # one to be: refuse the socket rather than seating a ghost in chat.
-    if not user:
+    # A guest whose pass has run out is the same case, one moment earlier: the
+    # reaper has not deleted the row yet. Guests already in chat when their time
+    # runs out are closed by the reaper, not here.
+    if not user or guest_expired(user):
         await websocket.close(code=4401)
         return
     who = {

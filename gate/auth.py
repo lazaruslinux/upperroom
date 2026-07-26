@@ -8,6 +8,7 @@ coded here; identities come from the account database, keyed by the signed
 session cookie.
 """
 
+import asyncio
 import ipaddress
 import logging
 import time
@@ -18,8 +19,8 @@ import jwt
 
 import db
 from config import (
-    ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, JWT_SECRET, SAFE_USERNAME,
-    SESSION_HOURS,
+    ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, GUEST_REAP_INTERVAL,
+    JWT_SECRET, SAFE_USERNAME, SESSION_HOURS,
 )
 
 logger = logging.getLogger("upperroom.auth")
@@ -92,6 +93,55 @@ def mod_actor(request):
     return user
 
 
+def guest_expired(user, now=None):
+    """Whether this row is a guest whose time is up.
+
+    Read from the row, never from the session cookie, for the same reason
+    is_admin is: the cookie outlives the decision. This runs on /api/verify,
+    which Caddy calls once per video segment, so it stays a comparison on data
+    the caller has already loaded rather than anything that touches the database
+    again."""
+    if not user or not user["is_guest"]:
+        return False
+    expires = user["guest_expires_at"] or 0
+    return expires > 0 and expires <= (time.time() if now is None else now)
+
+
+# What a guest is told when they reach something that needs an account. One
+# wording, in one place, so every refusal reads the same.
+GUEST_REFUSED = "Guests can watch and chat. Sign in or use an invite code to do that."
+
+
+def session_user(request):
+    """The signed-in account's row, or None.
+
+    None covers all three ways a cookie can be worthless: it does not verify, the
+    account behind it is gone, or it is a guest whose pass has run out. Routes
+    get expiry enforcement by using this rather than reading the session
+    themselves, which is the point of having it."""
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return None
+    user = db.get_user(session["sub"])
+    if not user or guest_expired(user):
+        return None
+    return user
+
+
+def member_user(request):
+    """As session_user, but None for guests as well.
+
+    The line this draws: a guest may watch and chat, because those are the two
+    things the pass is for. Everything that leaves a mark on the channel or on
+    an account (clipping, points, the library, editing a profile) needs an
+    account somebody actually owns. is_guest is read from the row, never from
+    the session cookie, exactly as is_admin is."""
+    user = session_user(request)
+    if not user or user["is_guest"]:
+        return None
+    return user
+
+
 def can_moderate(user):
     """Whether a user may run moderator actions. Admin and moderator are separate
     roles, but an admin keeps every moderator power (admin is a superset of mod in
@@ -149,9 +199,18 @@ def client_ip(request):
     )
 
 
+# Guest accounts are named guest_<random>. Reserve the prefix so a member can
+# never register a name that reads as a guest in chat, or vice versa.
+GUEST_USERNAME_PREFIX = "guest_"
+
+
 def _clean_username(raw):
     name = (raw or "").strip().lower()
-    return name if SAFE_USERNAME.match(name) else None
+    if not SAFE_USERNAME.match(name):
+        return None
+    if name.startswith(GUEST_USERNAME_PREFIX):
+        return None
+    return name
 
 
 # Geo lookup. The database is baked into the image at build time. If it is
@@ -167,6 +226,37 @@ except Exception as exc:
         "geo database unavailable at %s (%r); the country gate is open",
         GEO_DB_PATH, exc,
     )
+
+
+async def guest_reaper():
+    """Delete guest accounts whose passes have run out, on a timer.
+
+    Expiry is already enforced on every request, so this is housekeeping rather
+    than a gate: without it the users table would keep a row per guest who ever
+    visited. It reuses db.delete_user(), which already clears watch sessions,
+    chat log and bans, so a reaped guest leaves nothing orphaned behind.
+
+    It also closes the guest's chat socket. That is the part that is not merely
+    tidying: a guest sitting in chat when their time runs out would otherwise
+    keep the socket open indefinitely, since the connect-time check only catches
+    guests who arrive already expired.
+    """
+    # Imported here rather than at module scope: hub imports nothing from auth
+    # today, and a module level import would make that a cycle waiting to
+    # happen the first time it does.
+    from hub import hub
+
+    while True:
+        try:
+            now = int(time.time())
+            for username in db.expired_guests(now):
+                await hub.disconnect_user(username)
+                if db.delete_user(username):
+                    logger.info("guest account expired and removed: %s", username)
+        except Exception:
+            # A failed sweep must not kill the worker; the next one retries.
+            logger.warning("guest reaper pass failed", exc_info=True)
+        await asyncio.sleep(GUEST_REAP_INTERVAL)
 
 
 def country_allowed(ip):
