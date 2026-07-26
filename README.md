@@ -242,9 +242,21 @@ The full set, in reading order:
 
 ## License
 
-MIT. See `LICENSE`.
+GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs LLC.
+
+In plain terms: run it, modify it, and self-host it freely. If you host a
+modified version for other people to use, you must share your modifications
+under the same license. That last part is the point of the AGPL rather than the
+plain GPL, and it matters here because this is software people reach over a
+network.
+
+Two carve-outs, both third-party and both unchanged by the above: the vendored
+copy of hls.js in `web/assets/vendor/` is Apache-2.0 (see the README there), and
+the bundled fonts are under the SIL Open Font License (see
+`web/assets/fonts/OFL.txt`).
 
 ## A note on how this was built
 
-Parts of this project were written with the help of Claude Code. The design
-choices, the review, and running it are my own.
+This project was built with Claude Code. The code was largely written by the AI;
+I specified what it should do, reviewed and corrected it, tested it, and made
+the design and operational calls. I run it and I am responsible for it.
