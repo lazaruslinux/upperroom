@@ -31,8 +31,7 @@
   --text: #e6e8e2;
   --muted: #7c8278;
   --border: #232622;
-  --accent: #6ab48a;          /* smoky phosphor green (green flavor default) */
-  --accent-glow: rgba(106, 180, 138, 0.4);   /* the one cursor glow */
+  --accent: #6ab48a;          /* smoky green (green flavor default) */
   --live-red: #ff4d4d;        /* reserved for LIVE only */
   --error: #ff6b6b;           /* error + destructive red */
   /* Role colors are constant across themes so op/mod always read the same. */
@@ -56,7 +55,7 @@
 }
 
 [data-theme="light"] {
-  --bg: #ece9e3;              /* terminal on paper */
+  --bg: #ece9e3;              /* warm paper */
   --panel: #f7f5f0;
   --text: #22241f;
   --muted: #6e7268;
@@ -66,21 +65,17 @@
   --error: #d9363e;
   --accent-tint: rgba(74, 138, 103, 0.1);
   --error-tint: rgba(217, 54, 62, 0.1);
-  /* --op / --mod / --avatar-default deliberately not overridden: constant.
-     --accent-glow is not overridden either: the glow is always the dark accent
-     at 0.4 in both themes. */
+  /* --op / --mod / --avatar-default deliberately not overridden: constant. */
   color-scheme: light;
 }
 
 /* ---- accent flavors (channel-wide brand color) ----
    The admin picks one flavor for the whole site; every visitor sees it. Each
    block sets the dark-theme accent; the paired [data-theme="light"] block sets
-   the lighter accent for paper. The glow is the dark accent at 0.4 in both
-   themes, so only the dark block sets it. green is the :root default and needs
-   no block. Role tags (op/mod) and the LIVE red stay constant, never tinted. */
+   the lighter accent for paper. green is the :root default and needs no block.
+   Role tags (op/mod) and the LIVE red stay constant, never tinted. */
 html[data-accent="amber"] {
   --accent: #c2a05c;
-  --accent-glow: rgba(194, 160, 92, 0.4);
   --accent-tint: rgba(194, 160, 92, 0.08);
 }
 html[data-theme="light"][data-accent="amber"] {
@@ -89,7 +84,6 @@ html[data-theme="light"][data-accent="amber"] {
 }
 html[data-accent="blue"] {
   --accent: #7aa3c0;
-  --accent-glow: rgba(122, 163, 192, 0.4);
   --accent-tint: rgba(122, 163, 192, 0.08);
 }
 html[data-theme="light"][data-accent="blue"] {
@@ -98,7 +92,6 @@ html[data-theme="light"][data-accent="blue"] {
 }
 html[data-accent="ghost"] {
   --accent: #9aa39a;
-  --accent-glow: rgba(154, 163, 154, 0.4);
   --accent-tint: rgba(154, 163, 154, 0.08);
 }
 html[data-theme="light"][data-accent="ghost"] {
@@ -143,7 +136,7 @@ body {
 .msg.enter { animation: msg-in 0.15s ease-out; }
 
 /* One place to switch it all off. Transitions are near-instant; the blinking
-   cursor and live dots are left running so the mark never vanishes. */
+   live dots are left running so the LIVE state never reads as offline. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
   .modal:not([hidden]),

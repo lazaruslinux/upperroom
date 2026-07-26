@@ -183,8 +183,8 @@ function showLive(isLive, watching) {
   online = isLive;
   card.classList.toggle("is-live", isLive);
 
-  // One badge that toggles state: red blinking LIVE when live, muted Offline
-  // otherwise.
+  // One badge that toggles state: red LIVE with a blinking dot when live, muted
+  // Offline otherwise.
   streamBadge.classList.toggle("is-live", isLive);
   streamBadge.classList.toggle("is-offline", !isLive);
   badgeLabel.textContent = isLive ? "LIVE" : "Offline";
