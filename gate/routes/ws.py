@@ -14,8 +14,11 @@ from collections import deque
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import db
-from auth import country_allowed, guest_expired, read_session, resolve_client_ip
-from config import COOKIE_NAME, MAX_MESSAGE_LENGTH
+from auth import (
+    country_allowed, guest_expired, read_session, resolve_client_ip,
+    too_many_socket_connects,
+)
+from config import COOKIE_NAME, MAX_MESSAGE_LENGTH, MAX_SOCKETS_PER_USER
 from hub import hub
 
 logger = logging.getLogger("upperroom.ws")
@@ -304,6 +307,12 @@ async def chat_socket(websocket: WebSocket):
         await websocket.close(code=4403)
         return
 
+    # Before the account lookup below, so a connect flood costs a dictionary
+    # probe rather than a query each.
+    if too_many_socket_connects(ws_ip):
+        await websocket.close(code=4429)
+        return
+
     user = db.get_user(session["sub"])
     # If the account was deleted, the token may still be valid but there is no
     # one to be: refuse the socket rather than seating a ghost in chat.
@@ -312,6 +321,19 @@ async def chat_socket(websocket: WebSocket):
     # runs out are closed by the reaper, not here.
     if not user or guest_expired(user):
         await websocket.close(code=4401)
+        return
+
+    # One account's share of the room. Joining broadcasts to every open socket,
+    # so this is not about being tidy: without it one signed-in viewer, or one
+    # thirty minute guest pass, can open sockets in a loop and make quadratic
+    # work for everybody. Refused with its own code so the page can tell this
+    # apart from being signed out and does not sit in a reconnect loop.
+    if hub.socket_count(session["sub"]) >= MAX_SOCKETS_PER_USER:
+        logger.info(
+            "refusing a chat socket for %s: already at %d open",
+            session["sub"], MAX_SOCKETS_PER_USER,
+        )
+        await websocket.close(code=4429)
         return
     who = {
         "username": session["sub"],

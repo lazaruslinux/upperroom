@@ -58,9 +58,11 @@ def client(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "test.db"))
     db.init_db()
-    # The rate limiter, chat backlog, bans and timeouts are process-global; reset
-    # them so one test's state cannot leak into the next.
-    auth._ATTEMPTS.clear()
+    # The rate limiters, chat backlog, bans and timeouts are process-global;
+    # reset them so one test's state cannot leak into the next. reset_limiters()
+    # covers all of them at once, so a limiter added later cannot be forgotten
+    # here and turn the suite order-dependent.
+    auth.reset_limiters()
     hub._sockets.clear()
     hub._watchers.clear()
     hub._history.clear()

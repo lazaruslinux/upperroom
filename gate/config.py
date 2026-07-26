@@ -181,6 +181,18 @@ CLIP_LAG = 2
 # interval; a source with longer keyframes just gets a slightly softer edge.
 CLIP_KEYFRAME_SLACK = 2
 
+# ---- Chat socket limits ---------------------------------------------------
+# One person legitimately has a couple of tabs open. Beyond that it is either a
+# stuck reconnect loop or somebody leaning on the server, and the chat socket is
+# an expensive thing to lean on: every join broadcasts presence AND a joined
+# line to every open socket, so the work is quadratic in the number of them.
+# Measured on the demo stack, one ordinary account: 10 sockets cost 120 frames,
+# 25 cost 683, 50 cost 2,600. A thousand would be about a million.
+MAX_SOCKETS_PER_USER = 6
+# Connection attempts per address per minute. Generous next to a real person
+# (who connects once and stays) and far below what a flood needs.
+MAX_SOCKET_CONNECTS = 30
+
 # ---- Guest passes ---------------------------------------------------------
 # A guest pass is a single-use code that lets someone watch and chat without an
 # account. Redeeming one creates a real users row flagged is_guest, because

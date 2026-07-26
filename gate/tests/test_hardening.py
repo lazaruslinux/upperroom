@@ -129,3 +129,68 @@ def test_an_unknown_code_gives_nothing_away(client):
     # the code is revealed until a human check has been passed.
     assert a.status_code == b.status_code == 400
     assert a.json()["error"] == b.json()["error"]
+
+
+# ---- one account cannot take over the room --------------------------------
+
+def test_one_account_is_capped_to_a_few_chat_sockets(client):
+    """Joining broadcasts to every open socket, so the cost of one account
+    opening sockets is quadratic for everyone else. Measured on the demo stack:
+    10 sockets cost 120 frames, 25 cost 683, 50 cost 2,600.
+
+    The cap is what stops a single viewer, or a single thirty minute guest pass,
+    from doing that."""
+    from config import MAX_SOCKETS_PER_USER
+    from starlette.websockets import WebSocketDisconnect
+
+    setup_admin(client, username="owner")
+    open_sockets = []
+    try:
+        for i in range(MAX_SOCKETS_PER_USER):
+            ws = client.websocket_connect(
+                "/ws", cookies={auth.COOKIE_NAME: client.cookies.get(auth.COOKIE_NAME)}
+            ).__enter__()
+            ws.receive_json()          # hello
+            open_sockets.append(ws)
+        # The next one is refused, with a code of its own so the page can tell
+        # it apart from being signed out.
+        with client.websocket_connect(
+            "/ws", cookies={auth.COOKIE_NAME: client.cookies.get(auth.COOKIE_NAME)}
+        ) as extra:
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                extra.receive_json()
+        assert excinfo.value.code == 4429
+    finally:
+        for ws in open_sockets:
+            try:
+                ws.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+def test_closing_a_socket_gives_the_slot_back(client):
+    """The cap counts what is open now, not what has ever been opened, or a
+    viewer who reloads six times would lock themselves out."""
+    from config import MAX_SOCKETS_PER_USER
+    setup_admin(client, username="owner")
+    cookie = {auth.COOKIE_NAME: client.cookies.get(auth.COOKIE_NAME)}
+    for _ in range(MAX_SOCKETS_PER_USER + 3):
+        with client.websocket_connect("/ws", cookies=cookie) as ws:
+            ws.receive_json()
+    # All of those closed, so the room is empty again and a fresh one is fine.
+    with client.websocket_connect("/ws", cookies=cookie) as ws:
+        assert ws.receive_json()["type"] == "hello"
+
+
+def test_socket_connects_have_their_own_budget(client):
+    """Reconnecting after a blip must not spend the password-guessing
+    allowance, and vice versa."""
+    setup_admin(client, username="owner")
+    cookie = {auth.COOKIE_NAME: client.cookies.get(auth.COOKIE_NAME)}
+    for _ in range(10):
+        with client.websocket_connect("/ws", cookies=cookie) as ws:
+            ws.receive_json()
+    # The login allowance is untouched.
+    assert client.post(
+        "/api/auth", json={"username": "ghost", "password": "wrong"}
+    ).status_code == 401

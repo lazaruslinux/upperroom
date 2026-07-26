@@ -61,6 +61,14 @@ class Hub:
         """Whether the stream watcher currently considers the stream live."""
         return self._live
 
+    def socket_count(self, username):
+        """How many chat sockets this account currently holds open.
+
+        Used to cap one person's share. The cap matters because joining is not
+        cheap for everyone else: each join broadcasts to every open socket, so
+        one account opening sockets in a loop makes work for the whole room."""
+        return sum(1 for who in self._sockets.values() if who["username"] == username)
+
     def present_usernames(self):
         """The distinct authenticated usernames connected to chat right now, one
         entry per person no matter how many tabs they have open. Overlay watchers

@@ -20,7 +20,7 @@ import jwt
 import db
 from config import (
     ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, GUEST_REAP_INTERVAL,
-    JWT_SECRET, SAFE_USERNAME, SESSION_HOURS,
+    JWT_SECRET, MAX_SOCKET_CONNECTS, SAFE_USERNAME, SESSION_HOURS,
 )
 
 logger = logging.getLogger("upperroom.auth")
@@ -114,15 +114,34 @@ _LOGIN_LIMITER = RateLimiter(5, "login")
 _CHALLENGE_LIMITER = RateLimiter(60, "challenge")
 
 
+# Opening a chat socket. Its own budget again: a viewer reconnecting after a
+# network blip must not spend the allowance that protects password guessing.
+_SOCKET_LIMITER = RateLimiter(MAX_SOCKET_CONNECTS, "socket")
+
+
 def too_many_attempts(ip):
     return _LOGIN_LIMITER.hit(ip)
+
+
+def too_many_socket_connects(ip):
+    return _SOCKET_LIMITER.hit(ip)
+
+
+def reset_limiters():
+    """Clear every limiter. For the tests, which share one process: state
+    carried between cases makes them order-dependent. They are reset together
+    rather than one by one, because adding a fourth limiter and forgetting to
+    reset it is exactly the kind of thing that produces a test that passes
+    alone and fails in the suite."""
+    for limiter in (_LOGIN_LIMITER, _CHALLENGE_LIMITER, _SOCKET_LIMITER):
+        limiter.clear()
 
 
 def too_many_challenges(ip):
     return _CHALLENGE_LIMITER.hit(ip)
 
 
-# The tests reach for this to reset state between cases.
+# Kept for tests that reach in directly.
 _ATTEMPTS = _LOGIN_LIMITER._hits
 
 

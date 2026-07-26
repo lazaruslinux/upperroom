@@ -359,6 +359,18 @@ function connectChat() {
       if (me && me.guest) endGuestSession();
       return;
     }
+    if (event.code === 4429) {
+      // Too many sockets from this account, or too many attempts from this
+      // address. Retrying faster is exactly the wrong response, and a tight
+      // loop here is what the limit exists to stop, so back off a long way.
+      renderSystem({
+        type: "system",
+        text: "Chat is open in too many places. Close another tab, or wait a minute.",
+        ts: Math.floor(Date.now() / 1000),
+      });
+      setTimeout(connectChat, 60000);
+      return;
+    }
     setTimeout(connectChat, 3000);
   });
 
