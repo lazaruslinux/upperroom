@@ -112,6 +112,32 @@
 			file_server
 		}
 
+		# Published clips: the one thing on this site deliberately reachable
+		# without signing in. Note what is and is not relaxed here.
+		#
+		# The country gate above still applies, because it is a site-wide policy
+		# and a share link is not a reason to drop it. What is missing is the
+		# forward_auth to /api/verify that every other media path carries, so no
+		# session is needed.
+		#
+		# The whole credential is the filename: a clip is only reachable at
+		# /shared/<token>.mp4 where the token is 16 random bytes, and only the
+		# publish path ever creates a file in here. file_server without `browse`
+		# means the directory itself cannot be listed, so the tokens cannot be
+		# discovered by asking for the folder.
+		handle /shared/* {
+			root * /srv/media
+			file_server
+		}
+
+		# The page that wraps a shared clip. /clip/<token> is served by one
+		# static page which then asks the API what to show.
+		handle /clip/* {
+			rewrite * /clip.html
+			root * /srv/web
+			file_server
+		}
+
 		# Accounts, bans and invites moved onto the dashboard. Kept so an old
 		# bookmark lands somewhere useful instead of the sign-in page.
 		redir /accounts /admin permanent

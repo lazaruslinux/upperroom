@@ -70,6 +70,20 @@ async function loadContent() {
     left.querySelector(".muted").textContent =
       `${durationClock(item.duration)} · ${item.views} views · ${when}` +
       (kind === "clip" && item.creator ? ` · @${item.creator}` : "");
+    // Sharing is per clip and admin only. VODs are deliberately not shareable:
+    // a whole broadcast is a much bigger mistake to make public than a minute
+    // of it, and a clip's short life bounds the mistake anyway.
+    let share = null;
+    if (kind === "clip") {
+      share = document.createElement("button");
+      share.type = "button";
+      share.className = "chip-btn" + (item.shared ? " pinned-chip" : "");
+      share.textContent = item.shared ? "Shared" : "Share";
+      share.title = item.shared
+        ? "Anyone with the link can watch this. Click to stop sharing."
+        : "Make a link anyone can watch, without an account.";
+      share.addEventListener("click", () => toggleShare(item, share));
+    }
     const pin = document.createElement("button");
     pin.type = "button";
     pin.className = "chip-btn" + (item.keep ? " pinned-chip" : "");
@@ -85,10 +99,41 @@ async function loadContent() {
     btn.addEventListener("click", () => deleteContent(kind, item.id, title, btn));
     const actions = document.createElement("span");
     actions.className = "row-actions";
+    if (share) actions.appendChild(share);
     actions.append(pin, btn);
     row.append(left, actions);
     list.appendChild(row);
   });
+}
+
+async function toggleShare(item, btn) {
+  const turningOn = !item.shared;
+  if (turningOn && !confirm(
+    `Share "${item.name}" publicly?\n\n` +
+    "Anyone with the link can watch it without an account. " +
+    "The chat replay is not included. You can stop sharing at any time.")) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/clips/${item.id}/share`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ share: turningOn }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      alert(data.error || "Could not change sharing.");
+    } else if (data.url) {
+      const link = window.location.origin + data.url;
+      try {
+        await navigator.clipboard.writeText(link);
+        alert("Link copied:\n\n" + link);
+      } catch {
+        prompt("Share this link:", link);
+      }
+    }
+  } catch { alert("Could not change sharing."); }
+  btn.disabled = false;
+  loadContent();
 }
 
 async function togglePin(kind, id, keep, btn) {

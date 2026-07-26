@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>upperroom</title>
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
+    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
+  </script>
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
+  <meta name="theme-color" content="#0b0c0b">
+  <!-- Deliberately generic. This page is reachable without signing in, so the
+       share card must not name the channel, the streamer or the clip: a link
+       pasted into a group chat should reveal nothing until it is opened. -->
+  <meta property="og:type" content="video.other">
+  <meta property="og:title" content="A clip">
+  <meta property="og:description" content="Shared from a private livestream.">
+  <meta property="og:image" content="/assets/icons/og-default.png?v=1">
+  <meta name="twitter:card" content="summary_large_image">
+  <!-- Search engines have no business indexing a link meant for one person. -->
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="/assets/style.css?v=37">
+</head>
+<body class="center">
+  <main class="card clip-public">
+    <div id="loading" class="muted">Loading…</div>
+
+    <div id="clip-body" hidden>
+      <h1 id="clip-title" class="clip-public-title"></h1>
+      <p id="clip-meta" class="muted clip-public-meta"></p>
+      <video id="clip-video" controls playsinline preload="metadata"></video>
+      <p class="clip-public-note muted">
+        Shared from a private livestream. This link may stop working.
+      </p>
+      <p class="alt-toggle">
+        <a href="/">sign in</a>
+      </p>
+    </div>
+
+    <div id="missing" hidden>
+      <div class="masthead">
+        <h1 class="site-title">Not available</h1>
+      </div>
+      <p class="muted">
+        This clip is not shared any more, or the link is wrong.
+      </p>
+      <p class="alt-toggle">
+        <a href="/">sign in</a>
+      </p>
+    </div>
+  </main>
+  <script src="/assets/clip.js?v=1"></script>
+</body>
+</html>

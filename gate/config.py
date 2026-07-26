@@ -143,6 +143,13 @@ RECORD_TMP = os.environ.get("SELFSTREAM_RECORD_TMP", "/data/rec")
 MEDIA_DIR = os.environ.get("SELFSTREAM_MEDIA_DIR", "/data/media")
 VOD_DIR = os.path.join(MEDIA_DIR, "vods")
 CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
+# Published clips. A clip in here is reachable without signing in, so nothing
+# may be written to it except by the publish path. The files are hard links to
+# the originals in CLIP_DIR, not copies: a hard link is a second name for the
+# same bytes on disk, so publishing costs no space and the shared copy can never
+# drift from the real one. The bytes go when the last name goes, which is why
+# deleting a clip has to remove both.
+SHARED_DIR = os.path.join(MEDIA_DIR, "shared")
 # Retention lives in the dashboard now (channel_settings), not here: the limits
 # are per-channel state the operator changes without a restart, and they ship at
 # zero so a fresh install never deletes a recording on its own. The old

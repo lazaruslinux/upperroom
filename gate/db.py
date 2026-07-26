@@ -355,6 +355,15 @@ def init_db():
         )
         _ensure_column(conn, "vods", "keep", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "clips", "keep", "INTEGER NOT NULL DEFAULT 0")
+        # A clip is private until an admin publishes it. The token is the whole
+        # of the public URL, so it has to be unguessable, and it is null rather
+        # than blank when unpublished so the uniqueness index below does not
+        # treat every private clip as a duplicate of every other one.
+        _ensure_column(conn, "clips", "share_token", "TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_clips_share_token "
+            "ON clips(share_token) WHERE share_token IS NOT NULL"
+        )
         # Clip length moved out of config.py and onto the channel. An existing
         # channel picks up 60 here, which is the change this shipped for.
         _ensure_column(
@@ -1282,6 +1291,63 @@ def count_guests(now):
         return row["n"] if row else 0
 
 
+# ---- Public clip sharing --------------------------------------------------
+# A published clip is reachable without an account. Everything else on the site
+# sits behind the session check, so this is the one deliberate hole in it and
+# the rules are kept narrow: admin only, one clip at a time, private by default,
+# and revocable.
+
+def publish_clip(clip_id, token):
+    """Mark a clip public under `token`. Returns True if a clip changed.
+
+    Only sets the token when there is not one already, so publishing twice
+    cannot quietly rotate the link out from under somebody who already has it."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE clips SET share_token = ? WHERE id = ? AND share_token IS NULL",
+            (token, clip_id),
+        )
+        return cur.rowcount > 0
+
+
+def unpublish_clip(clip_id):
+    """Take a clip back out of public reach. Returns the token it had, so the
+    caller can remove the matching file, or None if it was not published."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT share_token FROM clips WHERE id = ?", (clip_id,)
+        ).fetchone()
+        if not row or not row["share_token"]:
+            return None
+        conn.execute(
+            "UPDATE clips SET share_token = NULL WHERE id = ?", (clip_id,)
+        )
+        return row["share_token"]
+
+
+def get_clip_by_token(token):
+    """The clip behind a share link, or None. Used by the public page, so the
+    caller must be careful which fields it passes on: the row carries the
+    creator's username and this is the one place it must not travel."""
+    if not token:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM clips WHERE share_token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def published_clip_tokens():
+    """Every live share token. The sweep that removes orphaned public files
+    needs the full set, so a token whose clip vanished leaves nothing behind."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT share_token FROM clips WHERE share_token IS NOT NULL"
+        ).fetchall()
+        return {r["share_token"] for r in rows}
+
+
 # ---- Channel points -------------------------------------------------------
 # Viewers earn points by watching the stream live and spend them to highlight a
 # short message on stream. Balances live on the users row; there is no ledger or
@@ -1701,8 +1767,13 @@ def _rows_for_retention(conn, kind):
     cutting it, and deleting it mid-cut would strand the file it is writing."""
     table, ts_column = _MEDIA_KINDS[kind]
     ready = " AND ready = 1" if kind == "vod" else ""
+    # share_token comes along for clips because the sweep has to remove the
+    # public copy of a published clip as well as the private one. Without it a
+    # clip deleted by retention would stay playable for anyone holding the link,
+    # forever, and nothing would look wrong from the inside.
+    share = "share_token" if kind == "clip" else "NULL AS share_token"
     return conn.execute(
-        f"SELECT id, filename, {ts_column} AS ts FROM {table} "
+        f"SELECT id, filename, {share}, {ts_column} AS ts FROM {table} "
         f"WHERE keep = 0{ready} AND filename IS NOT NULL AND filename != '' "
         "ORDER BY ts DESC, id DESC"
     ).fetchall()
@@ -1732,7 +1803,8 @@ def prune_candidates(limits, now):
                 too_old = keep_days > 0 and row["ts"] < now - keep_days * 86400
                 if too_many or too_old:
                     doomed.append(
-                        {"kind": kind, "id": row["id"], "filename": row["filename"]}
+                        {"kind": kind, "id": row["id"], "filename": row["filename"],
+                         "share_token": row["share_token"]}
                     )
     return doomed
 

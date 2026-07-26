@@ -22,6 +22,7 @@ import httpx
 import db
 from config import (
     CLIP_DIR, CLIP_KEYFRAME_SLACK, CLIP_LAG, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
+    SHARED_DIR,
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
     SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
@@ -392,6 +393,79 @@ async def _probe_duration(path):
         return 0
 
 
+def shared_paths(token):
+    """The public file names for a share token: the video and its poster."""
+    return (
+        os.path.join(SHARED_DIR, f"{token}.mp4"),
+        os.path.join(SHARED_DIR, f"{token}.jpg"),
+    )
+
+
+def link_shared(clip_id, filename, token):
+    """Make a published clip reachable by hard-linking it into SHARED_DIR.
+
+    A hard link is a second name for the same bytes, so this costs no disk and
+    cannot drift from the original. Returns True if the video was linked; the
+    poster is best effort, since a clip without one is still watchable.
+    """
+    os.makedirs(SHARED_DIR, exist_ok=True)
+    source = os.path.join(CLIP_DIR, os.path.basename(filename or ""))
+    video, poster = shared_paths(token)
+    if not filename or not os.path.exists(source):
+        logger.warning("cannot publish clip %s: %s is missing", clip_id, source)
+        return False
+    try:
+        if not os.path.exists(video):
+            os.link(source, video)
+    except OSError:
+        logger.warning("could not link %s for sharing", source, exc_info=True)
+        return False
+    source_poster = os.path.join(CLIP_DIR, f"{clip_id}.jpg")
+    try:
+        if os.path.exists(source_poster) and not os.path.exists(poster):
+            os.link(source_poster, poster)
+    except OSError:
+        logger.debug("could not link the poster for clip %s", clip_id, exc_info=True)
+    return True
+
+
+def unlink_shared(token):
+    """Remove the public names for a token. The clip itself is untouched: the
+    bytes survive because CLIP_DIR still holds a name for them."""
+    if not token:
+        return
+    for path in shared_paths(token):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            logger.warning("could not unshare %s", path, exc_info=True)
+
+
+def sweep_orphan_shared():
+    """Delete public files with no live token behind them.
+
+    Belt and braces for the case that matters most here: a file left reachable
+    after its clip is gone. Publishing and unpublishing keep these in step, but
+    this is the one directory where being wrong means strangers can still watch
+    something that was deleted, so it is also checked at startup."""
+    if not os.path.isdir(SHARED_DIR):
+        return 0
+    live = db.published_clip_tokens()
+    removed = 0
+    for name in os.listdir(SHARED_DIR):
+        token = os.path.splitext(name)[0]
+        if token in live:
+            continue
+        try:
+            os.remove(os.path.join(SHARED_DIR, name))
+            removed += 1
+            logger.info("removed an orphaned public clip file: %s", name)
+        except OSError:
+            logger.warning("could not remove %s", name, exc_info=True)
+    return removed
+
+
 def _remove_media_files(folder, filename, item_id):
     for name in (filename, f"{item_id}.jpg"):
         if not name:
@@ -485,8 +559,15 @@ def _item_bytes(item):
 
 def _remove_item_files(item):
     """Remove a VOD or clip's file and poster. True when nothing of it is left
-    on disk, which is what lets the caller decide whether the row may go."""
+    on disk, which is what lets the caller decide whether the row may go.
+
+    A published clip has a second name in SHARED_DIR, and the bytes only go when
+    the last name does. Missing that would leave a deleted clip still playing
+    for anyone holding the link, including after the retention sweep removed it,
+    so the public name goes first."""
     folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
+    if item.get("share_token"):
+        unlink_shared(item["share_token"])
     _remove_media_files(folder, item.get("filename"), item["id"])
     for name in (item.get("filename"), f"{item['id']}.jpg"):
         if name and os.path.exists(os.path.join(folder, os.path.basename(name))):

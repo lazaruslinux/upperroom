@@ -1432,6 +1432,27 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #clip-msg a { color: var(--accent); margin-left: 4px; }
 
 /* =========================================================================
+   Public clip page
+   ========================================================================= */
+
+/* Wider than the sign-in card, because it holds a video. */
+.clip-public { max-width: 720px; width: 100%; }
+.clip-public-title {
+  font-size: 17px;
+  margin: 0 0 4px;
+  color: var(--text);
+  word-break: break-word;
+}
+.clip-public-meta { margin: 0 0 12px; font-size: 12px; }
+#clip-video {
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  display: block;
+}
+.clip-public-note { margin: 12px 0 0; font-size: 12px; }
+
+/* =========================================================================
    Guest passes
    ========================================================================= */
 

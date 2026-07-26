@@ -33,6 +33,7 @@ from hub import chat_purge_worker, hub
 from notify import schedule_worker
 from media import (
     cleanup_record_scratch, retention_worker, stream_watcher, sweep_orphan_media,
+    sweep_orphan_shared,
     thumbnail_worker,
 )
 from routes import admin as admin_routes
@@ -87,6 +88,10 @@ async def lifespan(_app):
     # And the archived side: files whose rows were dropped above are bytes
     # nothing points at, which would otherwise count against the size cap.
     sweep_orphan_media()
+    # And the public directory. This is the one place where a stale file means
+    # strangers can still watch something that was deleted, so it is checked on
+    # every start rather than trusted to the publish and delete paths alone.
+    sweep_orphan_shared()
     tasks = [
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
@@ -104,7 +109,8 @@ async def lifespan(_app):
 
 app = FastAPI(title="upperroom", docs_url=None, redoc_url=None, lifespan=lifespan)
 db.init_db()
-for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR):
+for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR,
+             config.SHARED_DIR):
     os.makedirs(_dir, exist_ok=True)
 
 app.include_router(auth_routes.router)

@@ -7,7 +7,9 @@ The media files themselves are served straight from disk by Caddy at /media/*
 through this Python service; only metadata and view counting live here.
 """
 
+import logging
 import os
+import secrets
 import time
 
 from fastapi import APIRouter, Request, Response
@@ -19,7 +21,12 @@ from auth import (
 )
 from config import CLIP_DIR, COOKIE_NAME, SCHEDULE_GRACE, THUMB_PATH, VOD_DIR
 from hub import hub
-from media import fetch_path, make_clip, ready_epoch, _remove_media_files
+from media import (
+    fetch_path, link_shared, make_clip, ready_epoch, unlink_shared,
+    _remove_media_files,
+)
+
+logger = logging.getLogger("upperroom.media")
 
 router = APIRouter()
 
@@ -78,6 +85,11 @@ def _media_summary(row, kind):
         out.update(
             name=row["name"], creator=row.get("creator"),
             created_at=row["created_at"],
+            # Whether it is public, and the link if so. Only ever sent to
+            # signed-in members; the public page gets its own shape from
+            # /api/shared and never sees this one.
+            shared=bool(row.get("share_token")),
+            share_url=(f"/clip/{row['share_token']}" if row.get("share_token") else None),
         )
     return out
 
@@ -176,6 +188,71 @@ async def create_clip_endpoint(request: Request):
     return {"ok": True, "id": clip_id}
 
 
+@router.post("/api/clips/{clip_id}/share")
+async def set_clip_share(clip_id: int, request: Request):
+    """Publish or unpublish one clip. Admin only, and one clip at a time: there
+    is deliberately no way to make the whole library public at once."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    try:
+        body = await request.json()
+        share = bool(body["share"])
+    except (ValueError, TypeError, KeyError):
+        return JSONResponse(
+            {"error": "Say whether to share it."}, status_code=400
+        )
+    clip = db.get_clip(clip_id)
+    if not clip:
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+
+    if not share:
+        token = db.unpublish_clip(clip_id)
+        unlink_shared(token)
+        return {"ok": True, "shared": False, "url": None}
+
+    if clip.get("share_token"):
+        # Already public. Return the existing link rather than minting a second
+        # one, so a link already sent to somebody keeps working.
+        return {"ok": True, "shared": True, "url": f"/clip/{clip['share_token']}"}
+
+    # 16 random bytes. The token is the entire credential for the clip, so it
+    # has to be long enough that it cannot be found by trying.
+    token = secrets.token_urlsafe(16)
+    if not db.publish_clip(clip_id, token):
+        return JSONResponse({"error": "Could not share that clip."}, status_code=409)
+    if not link_shared(clip_id, clip.get("filename"), token):
+        # The file could not be linked, so undo the row rather than advertise a
+        # link that will 404.
+        db.unpublish_clip(clip_id)
+        return JSONResponse(
+            {"error": "That clip's file is missing."}, status_code=409
+        )
+    logger.info("clip %s published as %s", clip_id, token)
+    return {"ok": True, "shared": True, "url": f"/clip/{token}"}
+
+
+@router.get("/api/shared/{token}")
+def shared_clip(token: str):
+    """What the public clip page shows. No session needed, so this is the one
+    endpoint that answers a stranger about content.
+
+    It returns the title, the length and the file name, and nothing else. In
+    particular NOT the creator, which is an account username: the clip row
+    carries it and this is the one place it must not travel. There is no chat
+    replay here either, since a replay carries every chatter's display name and
+    avatar, and none of them agreed to be published."""
+    clip = db.get_clip_by_token(token)
+    if not clip:
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+    return {
+        "name": clip["name"],
+        "duration": clip.get("duration") or 0,
+        "created_at": clip["created_at"],
+        "video": f"/shared/{token}.mp4",
+        "poster": f"/shared/{token}.jpg",
+    }
+
+
 @router.delete("/api/vods/{vod_id}")
 def delete_vod(vod_id: int, request: Request):
     if not admin_user(request):
@@ -194,6 +271,9 @@ def delete_clip(clip_id: int, request: Request):
     row = db.delete_media("clip", clip_id)
     if not row:
         return JSONResponse({"error": "No such clip."}, status_code=404)
+    # The public copy first. It is a second name for the same bytes, so leaving
+    # it behind would keep a deleted clip playing for anyone holding the link.
+    unlink_shared(row.get("share_token"))
     _remove_media_files(CLIP_DIR, row.get("filename"), clip_id)
     return {"ok": True}
 
