@@ -1033,6 +1033,43 @@ def revoke_invite(code, when):
         return cur.rowcount > 0
 
 
+def delete_invite(code):
+    """Remove a spent invite row for good.
+
+    Invite rows are kept after use on purpose: redeemed_by is the record of
+    which account a code created, and that is worth having. But the list only
+    ever grows, and a code that is already spent has nothing left to say beyond
+    that, so it can go when the operator says so.
+
+    Only a revoked or redeemed code can be removed. An active one must be
+    revoked first, so deleting can never become a quiet way to un-issue a code
+    somebody is still holding, which is the property that made keeping the rows
+    deliberate in the first place.
+
+    The audit trail is not entirely lost either way: users.invite_code records
+    which code created each account, on the account's own row, and that is
+    untouched by this. Returns True if a row was removed."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM invites WHERE code = ? "
+            "AND (revoked_at IS NOT NULL OR redeemed_at IS NOT NULL)",
+            (code,),
+        )
+        return cur.rowcount > 0
+
+
+def clear_used_invites():
+    """Remove every redeemed or revoked invite at once. Returns how many went.
+    This is the actual complaint: they pile up and there was no way to sweep
+    them."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM invites "
+            "WHERE revoked_at IS NOT NULL OR redeemed_at IS NOT NULL"
+        )
+        return cur.rowcount
+
+
 def register_via_invite(code, username, display_name, password, when):
     """Atomically claim a single-use invite and create a viewer account from it.
     The claim and the insert share one transaction, so a code can never mint two

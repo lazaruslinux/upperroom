@@ -383,6 +383,8 @@ async def admin_invites_create(request: Request):
 
 @router.delete("/api/admin/invites/{code}")
 def admin_invites_revoke(code: str, request: Request):
+    """Revoke an active invite. Note this only stamps revoked_at and keeps the
+    row; removing it is the separate route below, and deliberately so."""
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     if not db.revoke_invite(code.strip().lower(), int(time.time())):
@@ -390,6 +392,29 @@ def admin_invites_revoke(code: str, request: Request):
             {"error": "That invite is not active."}, status_code=400
         )
     return {"ok": True}
+
+
+@router.post("/api/admin/invites/{code}/remove")
+def admin_invites_remove(code: str, request: Request):
+    """Delete a spent invite row for good. Only a revoked or redeemed code goes:
+    an active one has to be revoked first, so removing can never quietly
+    un-issue a code somebody is holding."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not db.delete_invite(code.strip().lower()):
+        return JSONResponse(
+            {"error": "Revoke that invite before removing it."}, status_code=400
+        )
+    return {"ok": True}
+
+
+@router.post("/api/admin/invites/clear-used")
+def admin_invites_clear_used(request: Request):
+    """Sweep every redeemed and revoked invite at once, which is the thing that
+    actually gets asked for: they pile up and there was no way to clear them."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"ok": True, "removed": db.clear_used_invites()}
 
 
 # ---- Guest passes ---------------------------------------------------------

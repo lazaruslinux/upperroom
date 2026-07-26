@@ -465,3 +465,72 @@ def test_a_moderator_can_act_on_a_guest(client):
     # guest leaves nothing orphaned.
     assert db.delete_user("guest_mod00001") is True
     assert not any(b["username"] == "guest_mod00001" for b in db.list_bans())
+
+
+# ---- invite codes are removable once spent (phase 5) ----------------------
+
+def test_a_spent_invite_can_be_removed_but_an_active_one_cannot(client):
+    """The complaint was that revoked codes just sit there. They can go now,
+    but only once spent: an active code must be revoked first, so removing can
+    never quietly un-issue a code somebody is holding."""
+    setup_admin(client)
+    now = int(time.time())
+    active = db.create_invite("still good", "owner", now)
+    revoked = db.create_invite("changed my mind", "owner", now)
+    db.revoke_invite(revoked, now)
+
+    assert db.delete_invite(active) is False
+    assert db.get_invite(active) is not None
+    assert db.delete_invite(revoked) is True
+    assert db.get_invite(revoked) is None
+
+
+def test_removing_a_redeemed_invite_leaves_the_account_alone(client):
+    """The account and its provenance survive: users.invite_code is on the
+    account's own row, so clearing the invite list is not destroying history."""
+    setup_admin(client)
+    now = int(time.time())
+    code = db.create_invite("for a friend", "owner", now)
+    assert db.register_via_invite(code, "friend", "Friend", "password1", now) == "ok"
+
+    assert db.delete_invite(code) is True
+    assert db.get_invite(code) is None
+    user = db.get_user("friend")
+    assert user is not None
+    assert user["invite_code"] == code
+
+
+def test_clear_used_invites_sweeps_only_spent_codes(client):
+    setup_admin(client)
+    now = int(time.time())
+    active = db.create_invite("keep", "owner", now)
+    revoked = db.create_invite("revoked", "owner", now)
+    redeemed = db.create_invite("redeemed", "owner", now)
+    db.revoke_invite(revoked, now)
+    db.register_via_invite(redeemed, "someone", "Someone", "password1", now)
+
+    assert db.clear_used_invites() == 2
+    assert [i["code"] for i in db.list_invites()] == [active]
+
+
+def test_invite_removal_routes_are_admin_only(client):
+    setup_admin(client)
+    add_user("viewer")
+    now = int(time.time())
+    code = db.create_invite("x", "owner", now)
+    db.revoke_invite(code, now)
+    member = make_client()
+    login(member, "viewer", ip="203.0.113.92")
+    assert member.post(f"/api/admin/invites/{code}/remove").status_code == 403
+    assert member.post("/api/admin/invites/clear-used").status_code == 403
+    # And it really did not go.
+    assert db.get_invite(code) is not None
+
+
+def test_removing_an_active_invite_through_the_route_is_refused(client):
+    setup_admin(client)
+    code = db.create_invite("active", "owner", int(time.time()))
+    resp = client.post(f"/api/admin/invites/{code}/remove")
+    assert resp.status_code == 400
+    assert "Revoke" in resp.json()["error"]
+    assert db.get_invite(code) is not None

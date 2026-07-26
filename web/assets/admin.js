@@ -1023,12 +1023,53 @@ function renderInvites() {
       revokeBtn.textContent = "Revoke";
       revokeBtn.addEventListener("click", () => revokeInvite(inv.code, revokeBtn));
       actions.appendChild(revokeBtn);
+    } else {
+      // Spent codes previously had no action at all, so the list only grew.
+      // Only these can be removed; an active one has to be revoked first.
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "chip-btn danger-chip";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => removeInvite(inv.code, removeBtn));
+      actions.appendChild(removeBtn);
     }
 
     row.append(left, actions);
     list.appendChild(row);
   });
+  // The sweep is only offered when there is something to sweep.
+  const spent = invites.filter((i) => i.redeemed_at || i.revoked_at);
+  document.getElementById("invite-clear-used").hidden = spent.length === 0;
 }
+
+async function removeInvite(code, btn) {
+  btn.disabled = true;
+  try {
+    const reply = await fetch(
+      `/api/admin/invites/${encodeURIComponent(code)}/remove`,
+      { method: "POST" },
+    );
+    if (reply.ok) { loadInvites(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not remove the code.");
+  } catch { alert("Could not remove the code."); }
+  btn.disabled = false;
+}
+
+document.getElementById("invite-clear-used").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (!confirm("Remove every used and revoked invite code? The accounts they created are not affected.")) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/admin/invites/clear-used", { method: "POST" });
+    if (!reply.ok) {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not clear the codes.");
+    }
+  } catch { alert("Could not reach the server."); }
+  btn.disabled = false;
+  loadInvites();
+});
 
 async function copyInvite(code, btn) {
   try {
