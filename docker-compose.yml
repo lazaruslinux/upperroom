@@ -131,15 +131,27 @@ services:
     # expand at runtime from the environment above, keeping the password out of
     # the rendered config. Modest 1500k bitrate, keyframe every 2s (-g 60 at
     # 30fps), no B-frames (this app's HLS muxer breaks on B-frame reordering).
+    #
+    # testsrc2 rather than a prettier generated pattern, and ultrafast rather
+    # than veryfast, because the source has to hold 30fps on one core forever.
+    # This previously used mandelbrot, which cannot, and the failure is nasty to
+    # diagnose: the publisher falls further and further behind ("Resumed reading
+    # ... after a lag of 700s"), MediaMTX keeps reporting the path ready with
+    # both tracks, and readers simply get nothing, so the gate logs a recorder
+    # stalled at zero bytes and blames itself.
+    #
+    # The streams are mapped explicitly because there are two inputs; relying on
+    # ffmpeg to guess is how the recorder lost its audio in the first place.
     command:
       - |
         while true; do
           echo "demo-stream: starting ffmpeg publish to mediamtx"
           ffmpeg -hide_banner -loglevel warning \
-            -re -f lavfi -i "mandelbrot=size=1280x720:rate=30" \
+            -re -f lavfi -i "testsrc2=size=1280x720:rate=30" \
             -f lavfi -i "sine=frequency=220:sample_rate=48000" \
             -filter:a "volume=0.08" \
-            -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+            -map 0:v -map 1:a \
+            -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p \
             -b:v 1500k -maxrate 1500k -bufsize 3000k \
             -g 60 -keyint_min 60 -sc_threshold 0 -bf 0 \
             -c:a aac -b:a 128k -ar 48000 \
