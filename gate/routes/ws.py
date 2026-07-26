@@ -252,10 +252,10 @@ async def overlay_socket(websocket: WebSocket, key):
     stored = db.get_overlay_key()
     # Constant-time compare, and refuse if no key has ever been generated so an
     # empty/absent key can never authenticate.
+    await websocket.accept()
     if not stored or not secrets.compare_digest(str(key), stored):
         await websocket.close(code=4401)
         return
-    await websocket.accept()
     hub.add_watcher(websocket)
     try:
         while True:
@@ -279,6 +279,15 @@ async def chat_socket(websocket: WebSocket):
     if overlay_key is not None:
         await overlay_socket(websocket, overlay_key)
         return
+
+    # Accept before any of the checks below, so a refusal can carry its close
+    # code. Closing a socket that was never accepted rejects the handshake
+    # instead, and the browser reports 1006 with no code of ours attached, so
+    # the 4401 and 4403 below were never actually observable by the client. That
+    # matters now: a client that cannot tell "you are not welcome" from "the
+    # network blipped" has no choice but to retry forever, and with guest passes
+    # every session ends this way.
+    await websocket.accept()
 
     session = read_session(websocket.cookies.get(COOKIE_NAME, ""))
     if not session:
@@ -314,7 +323,6 @@ async def chat_socket(websocket: WebSocket):
         "name_color": user["name_color"],
         "msg_color": user["msg_color"],
     }
-    await websocket.accept()
     await hub.join(websocket, who)
 
     sent_times = deque(maxlen=5)

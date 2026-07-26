@@ -26,6 +26,10 @@ async function requireAdmin() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
+  // A guest pass buys the stream and chat, nothing else on the site.
+  // Send them where their pass actually works rather than rendering a
+  // page whose every request will 401.
+  if (data.guest) { window.location.href = "/watch"; return false; }
   if (!data.admin) { window.location.href = "/home"; return false; }
   me = data;
   return true;
@@ -1070,11 +1074,181 @@ document.getElementById("invite-new").addEventListener("click", async (e) => {
   btn.disabled = false;
 });
 
+// ---- guest passes (generate in a batch, copy, revoke, remove) ----
+// The workflow this is shaped around: make several at once, copy them all into
+// one group text, and each person redeems one. So the batch field and "copy all
+// unused" are the primary controls, not conveniences.
+
+let guestPasses = [];
+let guestMinutes = 30;
+
+async function loadGuestPasses() {
+  try {
+    const data = await (await fetch("/api/admin/guest-passes")).json();
+    guestPasses = data.passes || [];
+    guestMinutes = data.minutes || 30;
+    document.getElementById("guest-minutes").textContent = guestMinutes;
+  } catch { guestPasses = []; }
+  renderGuestPasses();
+}
+
+function guestPassStatus(row, now) {
+  if (row.redeemed_at) {
+    const who = row.redeemed_by_name || "a guest";
+    // While the session is still running, the useful thing to know is how long
+    // is left, not when it started.
+    const left = (row.guest_expires_at || 0) - now;
+    if (left > 0) {
+      return { text: `${who} · ${Math.ceil(left / 60)} min left`, cls: "active" };
+    }
+    return { text: `used by ${who}`, cls: "redeemed" };
+  }
+  if (row.revoked_at) return { text: "revoked", cls: "revoked" };
+  return { text: "unused", cls: "active" };
+}
+
+function renderGuestPasses() {
+  const list = document.getElementById("gp-list");
+  const now = Math.floor(Date.now() / 1000);
+  document.getElementById("gp-empty").hidden = guestPasses.length > 0;
+  const spent = guestPasses.filter((p) => p.redeemed_at || p.revoked_at);
+  const unused = guestPasses.filter((p) => !p.redeemed_at && !p.revoked_at);
+  document.getElementById("gp-copy-all").hidden = unused.length === 0;
+  document.getElementById("gp-clear-used").hidden = spent.length === 0;
+  list.innerHTML = "";
+  guestPasses.forEach((row) => {
+    const status = guestPassStatus(row, now);
+    const item = document.createElement("div");
+    item.className = "activity-row ban-row";
+
+    const left = document.createElement("span");
+    const code = document.createElement("span");
+    code.className = "invite-code";
+    code.textContent = row.code;
+    const meta = document.createElement("span");
+    meta.className = "invite-status " + status.cls;
+    meta.textContent = (row.label ? `${row.label} · ` : "") + status.text;
+    left.append(code, document.createElement("br"), meta);
+
+    const actions = document.createElement("span");
+    actions.className = "invite-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "chip-btn";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => copyInvite(row.code, copyBtn));
+    actions.appendChild(copyBtn);
+
+    if (!row.redeemed_at && !row.revoked_at) {
+      const revokeBtn = document.createElement("button");
+      revokeBtn.type = "button";
+      revokeBtn.className = "chip-btn danger-chip";
+      revokeBtn.textContent = "Revoke";
+      revokeBtn.addEventListener("click", () => revokeGuestPass(row.code, revokeBtn));
+      actions.appendChild(revokeBtn);
+    } else {
+      // Only a spent pass can be removed. An active one has to be revoked
+      // first, so removing can never quietly un-issue a code someone holds.
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "chip-btn danger-chip";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => removeGuestPass(row.code, removeBtn));
+      actions.appendChild(removeBtn);
+    }
+
+    item.append(left, actions);
+    list.appendChild(item);
+  });
+}
+
+async function revokeGuestPass(code, btn) {
+  if (!confirm(`Revoke ${code}? It can no longer be redeemed.`)) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/admin/guest-passes/${encodeURIComponent(code)}`, {
+      method: "DELETE",
+    });
+    if (reply.ok) { loadGuestPasses(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not revoke the pass.");
+  } catch { alert("Could not revoke the pass."); }
+  btn.disabled = false;
+}
+
+async function removeGuestPass(code, btn) {
+  btn.disabled = true;
+  try {
+    const reply = await fetch(
+      `/api/admin/guest-passes/${encodeURIComponent(code)}/remove`,
+      { method: "POST" },
+    );
+    if (reply.ok) { loadGuestPasses(); return; }
+    const data = await reply.json().catch(() => ({}));
+    alert(data.error || "Could not remove the pass.");
+  } catch { alert("Could not remove the pass."); }
+  btn.disabled = false;
+}
+
+document.getElementById("gp-new").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const label = document.getElementById("gp-label").value;
+  const count = Number(document.getElementById("gp-count").value) || 1;
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/admin/guest-passes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, count }),
+    });
+    if (reply.ok) {
+      document.getElementById("gp-label").value = "";
+      loadGuestPasses();
+    } else {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not generate passes.");
+    }
+  } catch { alert("Could not reach the server."); }
+  btn.disabled = false;
+});
+
+document.getElementById("gp-copy-all").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const codes = guestPasses
+    .filter((p) => !p.redeemed_at && !p.revoked_at)
+    .map((p) => p.code);
+  if (!codes.length) return;
+  try {
+    await navigator.clipboard.writeText(codes.join("\n"));
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    alert(codes.join("\n"));
+  }
+});
+
+document.getElementById("gp-clear-used").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (!confirm("Remove every used and revoked pass? The codes themselves are already spent.")) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch("/api/admin/guest-passes/clear-used", { method: "POST" });
+    if (!reply.ok) {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not clear the passes.");
+    }
+  } catch { alert("Could not reach the server."); }
+  btn.disabled = false;
+  loadGuestPasses();
+});
+
 async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "dashboard" });
   loadBans();
   loadInvites();
+  loadGuestPasses();
   loadContent();
   loadChannel();
   loadModeration();

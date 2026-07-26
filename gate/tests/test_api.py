@@ -482,9 +482,16 @@ def test_profile_enforces_bio_and_font_limits(client):
 # ---- 7. Chat moderation over the WebSocket --------------------------------
 
 def test_ws_refuses_an_unauthenticated_socket(client):
-    with pytest.raises(WebSocketDisconnect) as excinfo:
-        with client.websocket_connect("/ws"):
-            pass
+    """Refused with a close code the client can actually read.
+
+    The socket is accepted first and then closed, deliberately. Closing one that
+    was never accepted rejects the handshake, and a browser reports that as 1006
+    with no code attached, so it cannot tell "you are not welcome" from "the
+    network blipped" and retries forever. Asserting on the delivered code is
+    what keeps that from regressing."""
+    with client.websocket_connect("/ws") as ws:
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            ws.receive_json()
     assert excinfo.value.code == 4401
 
 
@@ -564,9 +571,11 @@ def test_ws_overlay_receives_chat_but_is_not_a_viewer(client):
 def test_ws_overlay_bad_key_is_refused(client):
     setup_admin(client, username="owner")
     db.regenerate_overlay_key()
-    with pytest.raises(WebSocketDisconnect) as excinfo:
-        with client.websocket_connect("/ws?overlay=not-the-real-key"):
-            pass
+    # The overlay reconnects unattended from OBS, so it needs a readable code
+    # for the same reason the chat socket does.
+    with client.websocket_connect("/ws?overlay=not-the-real-key") as ws:
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            ws.receive_json()
     assert excinfo.value.code == 4401
 
 

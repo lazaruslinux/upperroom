@@ -1432,6 +1432,68 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #clip-msg a { color: var(--accent); margin-left: 4px; }
 
 /* =========================================================================
+   Guest passes
+   ========================================================================= */
+
+/* The bulk actions sit under the generator, sized to their text rather than
+   stretched across the row the way the generator's fields are. */
+.gp-bulk { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+/* "How many" takes a number up to 25, so it does not need a text field's width. */
+.gp-count-field { flex: 0 0 auto; min-width: 0; width: 90px; }
+
+/* The challenge on the guest form. It is a question, not a field label, so it
+   gets room to be read rather than being squeezed above the input. */
+.guest-challenge {
+  display: block;
+  margin: 4px 0 6px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted);
+}
+.guest-note {
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* The remaining time, in the watch page chat bar. margin-left:auto pushes it to
+   the end of the bar without disturbing the icon buttons around it. */
+.guest-timer {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;   /* so the seconds do not jitter */
+  color: var(--muted);
+  white-space: nowrap;
+}
+.guest-timer.is-low { color: var(--accent); }
+.guest-timer.is-out { color: #c96f6f; }
+
+/* The takeover when a pass ends. Covers the stage, because the video behind it
+   has been stopped and there is nothing to see through to. */
+.guest-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  text-align: center;
+  background: var(--bg);
+}
+.guest-over-title { margin: 0; font-size: 18px; color: var(--text); }
+.guest-over .muted { margin: 0; }
+.guest-over-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* =========================================================================
    Self-hosted fonts. Inter is the app-wide UI face; the rest are the optional
    per-author chat fonts (that feature is untouched).
    ========================================================================= */

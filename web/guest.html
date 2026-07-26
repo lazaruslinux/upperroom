@@ -17,13 +17,12 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <!-- How the site looks when someone pastes the link into a chat. Only this
-       page needs them: every other page is behind the sign in and will never be
-       scraped. A crawler does not run JavaScript, so this says upperroom rather
-       than the operator's own name, which the pages themselves fill in. -->
+  <!-- This page is reachable without signing in, so it gets the same share
+       card the login page does. It deliberately says nothing about who is
+       streaming or that guest passes exist. -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="upperroom">
-  <meta property="og:description" content="A private livestream. Sign in to watch.">
+  <meta property="og:description" content="A private livestream.">
   <meta property="og:image" content="/assets/icons/og-default.png?v=1">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -37,39 +36,32 @@
       <span id="status-label">Checking status…</span>
       <span id="status-time" class="status-time"></span>
     </div>
-    <p id="next-stream" class="next-stream" hidden>
-      <span id="next-count"></span>
-      <span id="next-when" class="next-when"></span>
-    </p>
     <div class="masthead">
       <h1 class="site-title" id="site-title">upperroom</h1>
       <p class="powered">livestream powered by <span class="wordmark">upper<span class="wm-accent">room</span></span></p>
     </div>
-    <p class="muted">sign in</p>
-    <form id="login-form" autocomplete="off">
-      <input type="text" id="username" placeholder="Username" autocomplete="off" required>
-      <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
-      <button type="submit">Sign in</button>
-      <p id="error" class="error" hidden></p>
+    <p class="muted">use a guest pass</p>
+
+    <form id="guest-form" autocomplete="off">
+      <input type="text" id="g-code" placeholder="Guest pass code" autocomplete="off" required>
+      <input type="text" id="g-name" placeholder="Name to show in chat" autocomplete="off" maxlength="24" required>
+      <label class="guest-challenge" for="g-answer">
+        <span id="g-question">Loading a question…</span>
+      </label>
+      <input type="text" id="g-answer" placeholder="Answer" autocomplete="off" required>
+      <button type="submit" id="g-submit">Start watching</button>
+      <p id="g-error" class="error" hidden></p>
     </form>
 
-    <p class="alt-toggle" id="invite-alt">
-      <button type="button" id="show-register">have an invite?</button>
+    <p class="guest-note muted">
+      A guest pass lets you watch and chat for <span id="g-minutes">30</span> minutes.
+      It works once, and it starts when you press the button.
     </p>
 
-    <form id="register-form" autocomplete="off" hidden>
-      <p class="muted">redeem an invite</p>
-      <input type="text" id="r-code" placeholder="Invite code" autocomplete="off" required>
-      <input type="text" id="r-username" placeholder="Username" autocomplete="off" required>
-      <input type="text" id="r-name" placeholder="Display name" autocomplete="off" required>
-      <input type="password" id="r-password" placeholder="Password (at least 8 characters)" autocomplete="new-password" required>
-      <button type="submit">Join</button>
-      <p id="r-error" class="error" hidden></p>
-      <p class="alt-toggle">
-        <button type="button" id="show-login">back to sign in</button>
-      </p>
-    </form>
+    <p class="alt-toggle">
+      <a href="/">have an account? sign in</a>
+    </p>
   </main>
-  <script src="/assets/gate.js?v=18"></script>
+  <script src="/assets/guest.js?v=1"></script>
 </body>
 </html>

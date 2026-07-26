@@ -348,8 +348,18 @@ function connectChat() {
     }
   });
 
-  // If the connection drops, wait a moment and reconnect.
-  socket.addEventListener("close", () => setTimeout(connectChat, 3000));
+  // If the connection drops, wait a moment and reconnect. Not, however, when
+  // the server closed it because this session is no longer welcome: 4401 (no
+  // valid account behind the cookie, which includes a guest whose pass ran out)
+  // and 4403 (country) are answers, not blips, and retrying every three seconds
+  // forever would be a loop that only stops when the tab closes.
+  socket.addEventListener("close", (event) => {
+    if (event.code === 4401 || event.code === 4403) {
+      if (me && me.guest) endGuestSession();
+      return;
+    }
+    setTimeout(connectChat, 3000);
+  });
 
   chatForm.onsubmit = (event) => {
     event.preventDefault();
@@ -784,6 +794,75 @@ pointsChip.addEventListener("click", () => {
   loadPoints();   // fetch a fresh balance and cost each time it opens
 });
 
+// ---- guest passes ---------------------------------------------------------
+// A guest watches and chats and does nothing else, so the controls that need an
+// account are removed rather than left to fail on a 403. The countdown is drawn
+// from the absolute expiry the server sent, so it does not drift while the page
+// sits open and does not care whether the visitor's clock is right.
+
+const guestTimer = document.getElementById("guest-timer");
+const guestOver = document.getElementById("guest-over");
+let guestTick = null;
+
+function formatRemaining(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes > 0) return `${minutes}:${String(rest).padStart(2, "0")} left`;
+  return `${rest}s left`;
+}
+
+function endGuestSession() {
+  if (guestTick) { clearInterval(guestTick); guestTick = null; }
+  guestTimer.textContent = "pass ended";
+  guestTimer.classList.add("is-out");
+  // Stop the video rather than let it stall on its own: the next segment would
+  // be refused by /api/verify anyway, and a spinner reads as a broken stream
+  // instead of a pass that ran out.
+  try {
+    video.pause();
+    if (hls) { hls.destroy(); hls = null; }
+  } catch (e) { /* nothing to stop */ }
+  video.hidden = true;
+  offline.hidden = true;
+  guestOver.hidden = false;
+  // Chat goes with it. The socket is closed from the server side by the reaper,
+  // but do not leave a live-looking composer behind in the meantime.
+  chatInput.disabled = true;
+  chatInput.placeholder = "your guest pass has ended";
+}
+
+function renderGuestTimer() {
+  const left = me.guest_expires_at - Math.floor(Date.now() / 1000);
+  if (left <= 0) {
+    endGuestSession();
+    return;
+  }
+  guestTimer.textContent = formatRemaining(left);
+  // The last five minutes get a warning look, so the end is not a surprise.
+  guestTimer.classList.toggle("is-low", left <= 300);
+}
+
+function setUpGuest() {
+  if (!me || !me.guest) return;
+  // Clipping, points and the highlight composer all need an account.
+  clipBtn.remove();
+  pointsChip.remove();
+  const note = document.querySelector("#settings-panel .settings-note.muted");
+  if (note) {
+    note.textContent =
+      "You are watching as a guest. Sign in or use an invite code for an account.";
+  }
+  // The home link goes nowhere useful for a guest; point it at the way in.
+  const homeLink = document.querySelector(".chat-head a[href='/home']");
+  if (homeLink) {
+    homeLink.setAttribute("href", "/");
+    homeLink.setAttribute("aria-label", "Sign in");
+  }
+  guestTimer.hidden = false;
+  renderGuestTimer();
+  guestTick = setInterval(renderGuestTimer, 1000);
+}
+
 async function boot() {
   if (!(await requireAuth())) return;
   // Let moderators and admins know the commands exist, without cluttering chat
@@ -791,8 +870,10 @@ async function boot() {
   if (me && (me.admin || me.mod)) {
     chatInput.placeholder = "say something, or /help";
   }
+  setUpGuest();
   loadMyProfile();
-  loadPoints();
+  // A guest has no balance and the endpoint refuses them, so do not ask.
+  if (!me.guest) loadPoints();
   connectChat();
   checkStream();
 }

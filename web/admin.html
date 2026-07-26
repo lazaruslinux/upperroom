@@ -16,7 +16,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=35">
+  <link rel="stylesheet" href="/assets/style.css?v=36">
 </head>
 <body class="admin">
   <div id="site-nav"></div>
@@ -47,6 +47,26 @@
       </div>
       <div id="invite-list" class="activity-list"></div>
       <p id="invite-empty" class="muted" hidden>No invite codes yet.</p>
+    </div>
+
+    <h2 class="section-title" style="margin-top:1.75rem;">Guest passes</h2>
+    <div class="notify-panel">
+      <span class="muted">Single-use codes that let someone watch and chat for <span id="guest-minutes">30</span> minutes without an account. The clock starts when they redeem it, not when you make it. Send them to <span class="invite-code">/guest</span> to use one.</span>
+      <div class="invite-gen">
+        <label>Label <span class="muted">(optional)</span>
+          <input id="gp-label" type="text" maxlength="60" placeholder="who they're for" autocomplete="off">
+        </label>
+        <label class="gp-count-field">How many
+          <input id="gp-count" type="number" min="1" max="25" value="1">
+        </label>
+        <button type="button" id="gp-new" class="solid-btn">Generate passes</button>
+      </div>
+      <div class="gp-bulk">
+        <button type="button" id="gp-copy-all" class="chip-btn" hidden>Copy all unused</button>
+        <button type="button" id="gp-clear-used" class="chip-btn danger-chip" hidden>Clear used passes</button>
+      </div>
+      <div id="gp-list" class="activity-list"></div>
+      <p id="gp-empty" class="muted" hidden>No guest passes yet.</p>
     </div>
 
     <h2 class="section-title">Channel</h2>
@@ -317,7 +337,7 @@
     </div>
   </div>
 
-  <script src="/assets/nav.js?v=2"></script>
-  <script src="/assets/admin.js?v=22"></script>
+  <script src="/assets/nav.js?v=3"></script>
+  <script src="/assets/admin.js?v=23"></script>
 </body>
 </html>

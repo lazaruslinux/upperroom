@@ -227,6 +227,10 @@ async function requireAuth() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
+  // A guest pass buys the stream and chat, nothing else on the site.
+  // Send them where their pass actually works rather than rendering a
+  // page whose every request will 401.
+  if (data.guest) { window.location.href = "/watch"; return false; }
   me = data;
   return true;
 }

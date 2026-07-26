@@ -22,14 +22,19 @@
   // Nav items in fixed order. Every page renders all of them; `show` decides
   // who sees which, and the item matching `current` is marked rather than
   // dropped, so the bar never changes shape as you move around.
+  // A guest sees only the way back to the stream and the way out. They have no
+  // dashboard, no analytics, and nothing in settings that would persist past
+  // their pass, so offering any of it would be offering a dead end. Pages send
+  // guests to /watch anyway; this is the second lock on the same door.
   const ITEMS = [
-    { key: "home", label: "home", href: "/home" },
+    { key: "home", label: "home", href: "/home", show: (me) => !me.guest },
+    { key: "watch", label: "watch", href: "/watch", show: (me) => me.guest },
     { key: "dashboard", label: "dashboard", href: "/admin", show: (me) => me.admin },
     { key: "analytics", label: "analytics", href: "/analytics", show: (me) => me.admin },
     // An admin already has every moderator power and the dashboard is a
     // superset, so only a plain moderator needs this.
     { key: "mod", label: "mod", href: "/mod", show: (me) => me.mod && !me.admin },
-    { key: "settings", label: "settings", action: "settings" },
+    { key: "settings", label: "settings", action: "settings", show: (me) => !me.guest },
     { key: "logout", label: "sign out", action: "logout" },
   ];
 

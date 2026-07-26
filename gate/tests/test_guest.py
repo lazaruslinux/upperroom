@@ -440,3 +440,28 @@ def test_the_code_space_is_large_enough_to_be_public():
     code = db._new_code()
     assert len(code.split("-")) == db.CODE_WORD_COUNT
     assert all(part in db._CODE_WORDS for part in code.split("-"))
+
+
+# ---- moderation, the reason guests are rows at all ------------------------
+
+def test_a_moderator_can_act_on_a_guest(client):
+    """The justification for the whole row-based design. Every moderator command
+    resolves its target through db.get_user() at a single choke point, so a
+    guest with no row could chat and could not be touched. If this test ever
+    fails, the rowless approach has crept back in."""
+    setup_admin(client, username="owner")
+    now = int(time.time())
+    db.redeem_guest_pass(make_pass(), "guest_mod00001", "Rowdy", now, now + 600)
+
+    from routes.ws import _target_name
+    target = db.get_user(_target_name("@guest_mod00001"))
+    assert target is not None, "a moderator command could not resolve the guest"
+
+    # Ban, the strongest of them, and the one that must persist.
+    db.add_ban(target["username"], "owner", "spam", now)
+    assert any(b["username"] == "guest_mod00001" for b in db.list_bans())
+
+    # And deleting the guest takes the ban and their chat with it, so a reaped
+    # guest leaves nothing orphaned.
+    assert db.delete_user("guest_mod00001") is True
+    assert not any(b["username"] == "guest_mod00001" for b in db.list_bans())
