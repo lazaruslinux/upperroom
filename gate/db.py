@@ -14,6 +14,8 @@ import sqlite3
 import time
 from contextlib import contextmanager
 
+import wordfilter
+
 DB_PATH = os.environ.get("SELFSTREAM_DB", "/data/selfstream.db")
 
 # The accent flavors the admin can pick for the whole channel. green is the
@@ -420,9 +422,14 @@ def init_db():
         # same lightweight in-init migration as the column adds above.
         conn.execute("DROP TABLE IF EXISTS rewards")
         # Ensure the single channel_settings row exists so getters always find it.
+        # A FRESH install starts with the default banned-words list; OR IGNORE is
+        # what keeps that from reaching an existing channel, which owns its own
+        # list and may have emptied it on purpose. Same reasoning as
+        # slow_mode_seconds and clip_keep_days above.
         conn.execute(
-            "INSERT OR IGNORE INTO channel_settings (id, stream_title) "
-            "VALUES (1, 'Live Stream')"
+            "INSERT OR IGNORE INTO channel_settings (id, stream_title, banned_words) "
+            "VALUES (1, 'Live Stream', ?)",
+            (wordfilter.DEFAULT_BANNED_WORDS,),
         )
         # This database predates dashboard-managed retention, so until now it has
         # been pruning by the old environment variables. Carry those values over

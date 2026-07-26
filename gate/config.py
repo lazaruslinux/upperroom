@@ -58,7 +58,11 @@ MAX_BIO_LENGTH = 200
 
 # Chat moderation knobs the admin sets on the dashboard.
 MAX_SLOW_SECONDS = 3600         # cap on the slow-mode interval (a typo can't lock chat for a day)
-MAX_BANNED_WORDS_LEN = 2000     # length cap on the banned-words text
+# Length cap on the banned-words text. Raised from 2000 when the default list
+# shipped: that list is ~650 characters on its own, and a third of the operator's
+# budget going to the defaults left too little room to add their own. Still far
+# below Caddy's 64KB cap on /api/* bodies, so nothing else has to move.
+MAX_BANNED_WORDS_LEN = 4000
 
 
 def sanitize_chat_color(value):

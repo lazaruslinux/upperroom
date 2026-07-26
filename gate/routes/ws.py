@@ -14,6 +14,7 @@ from collections import deque
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import db
+import wordfilter
 from auth import (
     country_allowed, guest_expired, read_session, resolve_client_ip,
     too_many_socket_connects,
@@ -46,19 +47,10 @@ def _target_name(arg):
     return arg.strip().lower().lstrip("@")
 
 
-def _split_banned(raw):
-    """The admin's banned-words text is split on newlines and commas into a set
-    of lowercased phrases, empties dropped."""
-    words = set()
-    for chunk in str(raw or "").replace(",", "\n").split("\n"):
-        word = chunk.strip().lower()
-        if word:
-            words.add(word)
-    return words
-
-
 def _contains_banned(text_lower, raw):
-    return any(word in text_lower for word in _split_banned(raw))
+    """Whole-word, not substring. The rule and the reasoning live in
+    gate/wordfilter.py; changing it here alone would be a mistake."""
+    return wordfilter.contains_banned(text_lower, raw)
 
 
 async def handle_mod_delete(websocket, who, raw_id):

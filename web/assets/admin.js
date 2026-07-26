@@ -258,6 +258,9 @@ document.getElementById("ch-save").addEventListener("click", async () => {
 const modSlow = document.getElementById("mod-slow");
 const modBanned = document.getElementById("mod-banned");
 const modMsg = document.getElementById("mod-msg");
+const modBannedLabel = document.getElementById("mod-banned-label");
+const bannedModal = document.getElementById("banned-modal");
+const bannedMsg = document.getElementById("mod-banned-msg");
 
 function showModMsg(text, ok) {
   modMsg.textContent = text;
@@ -266,12 +269,61 @@ function showModMsg(text, ok) {
   modMsg.hidden = false;
 }
 
+function showBannedMsg(text, ok) {
+  bannedMsg.textContent = text;
+  bannedMsg.classList.toggle("good", !!ok);
+  bannedMsg.classList.toggle("bad", !ok);
+  bannedMsg.hidden = false;
+}
+
+// Entries are separated by newlines or commas, the same split the server does.
+// Counting here is only for the summary line, so it never has to be exact about
+// anything the filter itself decides.
+function countBannedWords(raw) {
+  return new Set(
+    String(raw || "").replace(/,/g, "\n").split("\n").map((w) => w.trim().toLowerCase()).filter(Boolean)
+  ).size;
+}
+
+function showBannedCount(raw) {
+  const n = countBannedWords(raw);
+  modBannedLabel.textContent = n === 1 ? "Banned words (1)" : `Banned words (${n})`;
+}
+
 async function loadModeration() {
   let data = {};
   try { data = await (await fetch("/api/admin/moderation")).json(); } catch { return; }
   modSlow.value = data.slow_mode_seconds != null ? data.slow_mode_seconds : 0;
   modBanned.value = data.banned_words || "";
+  showBannedCount(modBanned.value);
 }
+
+document.getElementById("mod-banned-open").addEventListener("click", () => {
+  // Reopen always shows what is actually saved, so abandoning an edit and
+  // coming back does not resurrect the abandoned text.
+  bannedMsg.hidden = true;
+  loadModeration().then(() => { bannedModal.hidden = false; });
+});
+
+document.getElementById("mod-banned-save").addEventListener("click", async () => {
+  bannedMsg.hidden = true;
+  // Only banned_words goes up: the endpoint updates just the fields it is given,
+  // so this cannot quietly save an unsaved slow-mode value sitting behind it.
+  try {
+    const reply = await fetch("/api/admin/moderation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ banned_words: modBanned.value }),
+    });
+    if (!reply.ok) {
+      const d = await reply.json().catch(() => ({}));
+      showBannedMsg(d.error || "Could not save.", false);
+      return;
+    }
+  } catch { showBannedMsg("Could not reach the server.", false); return; }
+  showBannedCount(modBanned.value);
+  showBannedMsg("Saved.", true);
+});
 
 document.getElementById("mod-save").addEventListener("click", async () => {
   const slow = parseInt(modSlow.value, 10);
@@ -281,7 +333,9 @@ document.getElementById("mod-save").addEventListener("click", async () => {
     const reply = await fetch("/api/admin/moderation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slow_mode_seconds: slow, banned_words: modBanned.value }),
+      // Slow mode only. The word list has its own save inside its modal, and
+      // sending it from here too would let an abandoned edit ride along.
+      body: JSON.stringify({ slow_mode_seconds: slow }),
     });
     if (!reply.ok) {
       const d = await reply.json().catch(() => ({}));

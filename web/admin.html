@@ -140,9 +140,15 @@
         <input id="mod-slow" type="number" min="0" max="3600" inputmode="numeric" placeholder="0">
       </label>
       <span class="muted">Starts at 2 seconds on a new install. Mods and admins are exempt from slow mode.</span>
-      <label>Banned words
-        <textarea id="mod-banned" maxlength="2000" rows="3" placeholder="One word or phrase per line. A message containing any of these is removed."></textarea>
-      </label>
+      <!-- The list itself lives in a modal rather than an always-open textarea:
+           it ships with about a hundred entries, and nobody wants a wall of
+           slurs sitting on the dashboard every time they open it. -->
+      <div class="settings-rows">
+        <div class="setting">
+          <span id="mod-banned-label">Banned words</span>
+          <button type="button" id="mod-banned-open" class="pill">Open banned words list</button>
+        </div>
+      </div>
       <div class="edit-actions">
         <button type="button" id="mod-save" class="solid-btn">Save moderation settings</button>
       </div>
@@ -242,6 +248,27 @@
   <!-- People. One modal that swaps its body between list, create, edit, delete
        and activity, rather than stacking modals, which would fight over Escape
        and z-index once opened from inside another one. -->
+  <!-- Banned words. Its own modal with its own save, so closing it without
+       saving changes nothing, and saving it does not also push whatever is
+       currently sitting in the slow-mode box. -->
+  <div id="banned-modal" class="modal" hidden>
+    <div class="modal-card admin-modal">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3>Banned words</h3>
+      <p class="settings-note muted" style="margin-bottom:10px;">One entry per line, or separated by commas.
+        A message containing any of them is refused and never reaches the room.
+        Matching is whole word, so "ass" does not block "class", and common
+        endings are already covered: "fuck" also catches fucking and fucked.
+        This one applies to everybody, moderators and you included.</p>
+      <textarea id="mod-banned" maxlength="4000" rows="14" spellcheck="false"
+        placeholder="One word or phrase per line."></textarea>
+      <div class="edit-actions">
+        <button type="button" id="mod-banned-save" class="solid-btn">Save list</button>
+      </div>
+      <p id="mod-banned-msg" class="notify-msg" hidden></p>
+    </div>
+  </div>
+
   <div id="users-modal" class="modal" hidden>
     <div class="modal-card admin-modal">
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
@@ -344,6 +371,6 @@
   </div>
 
   <script src="/assets/nav.js?v=3"></script>
-  <script src="/assets/admin.js?v=26"></script>
+  <script src="/assets/admin.js?v=27"></script>
 </body>
 </html>

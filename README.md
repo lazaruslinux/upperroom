@@ -73,7 +73,9 @@ only repackages the video and stays light.
   timeouts, bans and promotions, or hover a line to delete just that one.
 - Slow mode and a banned word list, both set in the dashboard. Chat starts at a
   2 second minimum between a viewer's messages, which you can raise or turn off.
-  Moderators are exempt.
+  Moderators are exempt from slow mode, but not from the word list. A new
+  install ships with a default list, which you own and can empty. Matching is
+  whole word, so banning "ass" does not also block "class".
 - Viewers pick their own name and message colors. The server rejects anything
   too dark to read, or close enough to the red reserved for the LIVE badge to be
   confusing.

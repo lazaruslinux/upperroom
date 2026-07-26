@@ -160,9 +160,34 @@ or raise it when chat gets away from you. An install that was already running
 before this default arrived keeps whatever it had, so nothing changes under you
 on an update.
 
-The banned words list is one word or phrase per line, and a message containing
-any of them is dropped, with only the sender told why. The list is admin-only
-and never leaves the dashboard.
+The banned words list sits behind **Open banned words list**, rather than on the
+dashboard itself, because a new install ships with about a hundred entries and
+most of them are not things you want on screen every time you open the page. It
+is one entry per line, or separated by commas, and a message containing any of
+them is refused, with only the sender told why. The list is admin-only and never
+leaves the dashboard. It has its own Save inside the modal, so closing without
+saving changes nothing, and unlike slow mode it applies to everybody, moderators
+and you included.
+
+A new install starts with a default list covering ordinary profanity and slurs.
+An install that was already running keeps its own list and is never given the
+defaults, on the same reasoning as slow mode: you may have emptied it on
+purpose, and an update should not put words back that you removed. Edit it down
+to nothing if you would rather run without one.
+
+Matching is whole word, not "appears anywhere in the message". This matters more
+than it sounds. If a banned word matched anywhere inside a message, banning
+"ass" would also block class, pass, grass and assist; "cum" would block document
+and cucumber; "anal" would block analysis. Whole-word matching means the entry
+has to stand on its own, while still covering the obvious endings, so "fuck"
+catches fucking, fucked and fucker without "ass" ever reaching "assist".
+
+What it deliberately does not do is chase evasion. Spacing a word out, stretching
+it, or punching symbols through it will get past the filter. That is a trade
+rather than an oversight: tightening it far enough to catch those reliably also
+starts refusing ordinary messages, and a viewer who cannot say "class" has no
+idea why and will not tell you, whereas a message that slips through is one your
+moderators remove in seconds.
 
 ## Changing your own password
 
