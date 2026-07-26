@@ -4,7 +4,9 @@ Launch your own streaming site. Self hosted, single channel live streaming with
 accounts and chat: you broadcast from OBS, your viewers open one link, sign in,
 and watch in 1080p60 with live chat and a list of who else is watching. No third
 party streaming service, and nobody gets an account unless you made it or handed
-them an invite. It runs on a server you control, at your own domain.
+them an invite. You can also hand out a guest pass to let somebody watch for a
+while without one, or share a single clip publicly. It runs on a server you
+control, at your own domain.
 
 ## What it does
 
@@ -17,11 +19,20 @@ only repackages the video and stays light.
   roughly two to five seconds behind live.
 - Serves one watch page. No video leaves the server without a valid session.
 - Live chat, a list of who is watching, and a count.
-- Records every broadcast as a VOD, and lets viewers clip the last 30 seconds.
-  Both carry a view count.
+- Records every broadcast as a VOD, and lets viewers clip the recent stream.
+  Clip length is a channel setting (sixty seconds by default). A clip captures
+  the moment the viewer pressed the button, not the moment they finished naming
+  it. Both carry a view count.
 - Recordings and clips replay with the chat that happened at the time, and a bar
   chart under the player shows when chat was busiest, so you can click straight
   to the loud parts.
+- Signed-in viewers can like and comment on a recording or a clip. Those sit
+  beside the chat replay rather than inside it: the replay is what was said
+  live, comments are what people say afterwards.
+- Any single clip can be published as a public link that works without an
+  account. Private by default, admin only, one clip at a time, and revocable.
+  A public clip is video only: no chat replay, no comments, and it never names
+  who made it.
 - Optionally restricts the whole site to a list of countries.
 
 ### Accounts
@@ -30,7 +41,18 @@ only repackages the video and stays light.
   your admin account and names your site. The page seals itself afterwards.
 - Invite codes let you hand out accounts without making them yourself. Generate
   a code on the dashboard, label it, and it works once. Whoever redeems it
-  picks their own username and password and arrives as a viewer.
+  picks their own username and password and arrives as a viewer. Once a code
+  has been used or revoked you can remove it, and there is a button to clear
+  every spent code at once, so the list does not just grow.
+- Guest passes are the other half of that: single use codes that let somebody
+  watch and chat for half an hour without making an account at all. Generate a
+  batch, copy them in one go, and send them to `/guest`. The clock starts when
+  the pass is redeemed, not when you make it. A guest can watch and chat and
+  nothing else, and can be timed out, banned and purged exactly like anyone
+  else. Their account removes itself when the time is up.
+- The guest form asks a small question to keep casual automation out. It is
+  answered by the server itself: no third party, nothing phones home, and it
+  works on a machine with no internet access beyond your own viewers.
 - You can also create accounts directly from that page, for anyone who would
   rather not deal with a code.
 - No account needs an email address. A viewer supplies one only if they want
@@ -177,20 +199,31 @@ explains every value.
 
 Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
-description, accent color, clip cooldowns, the stream key, the overlay key, slow
-mode, banned words, the next stream, the storage limits, and the Discord
-webhook.
+description, accent color, clip length and clip cooldowns, the stream key, the
+overlay key, slow mode, banned words, the next stream, the storage limits, and
+the Discord webhook.
 
 ## Security model
 
-In short: no video is served without a valid session cookie, that cookie is only
-issued after a correct username and password, and the ingest port is firewalled
-to your broadcasting address and, even from there, requires the current stream
-key, which you can rotate from the dashboard at any time. Passwords are stored
-as scrypt hashes. Accounts arrive either from you or from an invite code you
-generated, and an invite can only ever produce a viewer. The full explanation is
-in `docs/05-security.md`, and the firewall rule itself is in
-`docs/01-vps-setup.md`.
+In short: the live stream and the recordings are served only to a valid session
+cookie, and that cookie is only issued after a correct username and password, a
+redeemed invite, or a redeemed guest pass. The ingest port requires the current
+stream key, which you can rotate from the dashboard at any time. Passwords are
+stored as scrypt hashes. An invite can only ever produce a viewer, never an
+admin or a moderator, and a guest pass produces an account that can only watch
+and chat and expires on its own.
+
+There is exactly one deliberate exception, and it is worth stating plainly: a
+clip you choose to publish is readable by anyone holding its link, with no
+session. That is the point of the feature. It applies to one clip at a time, it
+is admin only, it is off until you turn it on, and turning it off takes effect
+at once. A published clip is video only, carries no chat replay or comments, and
+does not name who made it.
+
+Request sizes, sign-in attempts, guest-pass redemptions and chat connections are
+all bounded per address, so the parts a stranger can reach cannot be used to
+exhaust the server. The full explanation is in `docs/05-security.md`, and the
+firewall rules are in `docs/01-vps-setup.md`.
 
 ## Documentation
 

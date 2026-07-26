@@ -82,6 +82,24 @@ docker compose up -d
 
 That invalidates every existing cookie at once.
 
+## The one thing that is deliberately public
+
+A clip you publish is readable by anyone with its link and no session at all.
+That is the whole point of the feature, but it is the only hole in "nothing is
+served without a session", so it is worth knowing exactly how big it is:
+
+- It is **per clip**. There is no way to publish the library.
+- It is **admin only**, and **off** until you turn it on for a specific clip.
+- **Unsharing takes effect immediately.** The file stops being reachable, not
+  just the page.
+- The link is the entire credential: a long random token, and the folder it
+  lives in cannot be listed, so links cannot be discovered by guessing.
+- A published clip is **video only**. No chat replay, no comments, and it does
+  not name who made it. Nobody who spoke in your chat is published by it.
+- Deleting a clip, by hand or by the two day sweep, removes the public copy too.
+
+If you never press Share, nothing on your site is reachable without signing in.
+
 ## What this does not do
 
 - It does not hide your server's IP. The firewall and the login are the

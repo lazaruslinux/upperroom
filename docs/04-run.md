@@ -41,11 +41,30 @@ username, a display name, a password, and a site name (your own brand, shown
 above "powered by upperroom" on every page), then create the account. That first account is the admin, you are signed in at once, and the
 wizard closes for good the moment it exists.
 
-From then on you let other people in with invite codes: open the dashboard at
+From then on there are two ways to let people in, and they answer different
+questions.
+
+**Invite codes** are for someone you want to keep. Open the dashboard at
 `/admin`, generate a single-use code under **Invites**, and share it. They
 redeem it from the login page ("have an invite?") to make their own viewer
-account. No terminal, and no email is involved. See
-`docs/06-accounts-and-chat.md` for the details.
+account, and it is theirs from then on. No terminal, and no email is involved.
+
+**Guest passes** are for someone who just wants to watch this one. Under
+**Guest passes**, choose how many you want and generate them: each is single
+use and lets one person watch and chat for half an hour without making an
+account. "Copy all unused" puts the whole batch on your clipboard, one per
+line, which is the point: one message, one code each, first come first served.
+Send people to `/guest` to redeem one. The half hour starts when they redeem
+it, not when you make it, so you can prepare a batch days ahead.
+
+A guest can watch and chat, and nothing else. No clipping, no library, no
+likes or comments, no points. They can be timed out, banned, `/del`ed and
+`/purge`d exactly like anyone else, which is the whole reason they exist as
+real accounts rather than as a separate kind of visitor. When the time is up
+their video stops, they are shown a sign-in prompt, and the account removes
+itself a few minutes later.
+
+See `docs/06-accounts-and-chat.md` for the details.
 
 Everything you run the place with is on the dashboard at `/admin`: people
 (accounts, bans and invites), branding, the schedule, chat rules, the stream
@@ -70,8 +89,34 @@ written to a local scratch volume (a plain copy of the stream, with no
 re-encoding, pulled over the internal docker network), so it never competes with
 the live stream for bandwidth or quality. When the stream ends, the finished
 file is archived to the media store and shown on the home page under **VODs**.
-Viewers can also clip the last 30 seconds while you are live, and those appear
-under **Clips**, each with synced chat replay.
+Viewers can also clip the recent stream while you are live, and those appear
+under **Clips**, each with synced chat replay. How much a clip captures is a
+channel setting (**Clip length** on the dashboard, sixty seconds by default).
+The clip is taken from the moment the viewer pressed the button, so taking your
+time to name it does not move the window.
+
+Clips are deleted after two days unless you pin them. That is the one retention
+limit a fresh install ships switched on, and it is deliberate: a clip is the
+thing you hand to other people, so a short life keeps a mistake from standing
+forever. Change it under **Storage**, or pin a clip to keep it regardless.
+
+### Sharing a clip publicly
+
+Any single clip can be given a link that works without an account. Press
+**Share** on it in the dashboard's library and the link is copied for you.
+Press it again to stop sharing, and the link stops working immediately.
+
+This is the only part of the site a stranger can reach. A public clip is video
+only: no chat replay, no comments, and it does not say who made it. Nothing
+else opens up, and the clip stays private until you choose otherwise.
+
+### Likes and comments
+
+Signed-in viewers can like a recording or a clip, and leave comments under it.
+Comments are separate from the chat replay on purpose: the replay is what was
+said live, comments are what people say afterwards. An author can delete their
+own; you and your moderators can delete any. A comment obeys the same chat
+rules, so someone banned from chat cannot comment instead.
 
 Recording recovers on its own. If the recorder ever dies or its file stops
 growing mid-broadcast (for example, a rough reconnect on a long session), the

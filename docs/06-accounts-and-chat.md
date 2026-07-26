@@ -25,6 +25,49 @@ After setup you add everyone else with single-use invite codes, from the
 - Each code works **once**. After it is redeemed the page shows who used it and
   when. You can **Revoke** a code that has not been redeemed yet, which keeps the
   row for the record but stops it from ever being used.
+- Once a code is spent, either used or revoked, a **Remove** button appears on
+  it, and **Clear used codes** sweeps all of them at once. An active code has to
+  be revoked before it can be removed, so removing can never quietly un-issue a
+  code somebody is still holding. Removing a code does not affect the account it
+  created; the account keeps its own record of where it came from.
+
+## Letting someone watch without an account: guest passes
+
+An invite makes somebody a member forever. A **guest pass** is for the other
+case: one person, one broadcast, no account.
+
+- **Generate a batch** under **Guest passes** on the dashboard. Set how many you
+  want; each one is single use. They look the same as invite codes.
+- **Copy all unused** puts the whole batch on your clipboard, one per line. The
+  intended shape is one group message with several codes in it: whoever gets
+  there first takes one.
+- **Send people to `/guest`**. They type the code, the name they want in chat,
+  and answer a small question. Then they are watching.
+- **The half hour starts when they redeem it**, not when you generate it, so you
+  can prepare passes days in advance.
+- A pass that has been used, or revoked, can be **removed**, and there is a
+  **Clear used passes** button for the same reason as the invites one.
+
+What a guest can and cannot do:
+
+- **Can**: watch the live stream, and chat.
+- **Cannot**: clip, like, comment, earn points, or see the recordings and clips
+  library. They have no settings page, because there is nothing on it that would
+  outlast them.
+- **Can be moderated exactly like anyone else.** A guest can be timed out,
+  banned, `/del`ed and `/purge`d. This is the reason a redeemed pass creates a
+  real account behind the scenes rather than some separate kind of visitor: a
+  stranger who can talk in your chat and cannot be moderated would be worse than
+  no guests at all.
+
+When the time runs out their video stops, they get a sign-in prompt, and a few
+minutes later the account deletes itself along with anything attached to it.
+
+The question on the guest form is there to keep casual automation out. It is
+generated and checked by your own server, so there is no third party involved
+and nothing is sent anywhere. It will not stop somebody determined; what stops
+them is that redemption is rate limited per address and the codes are drawn from
+a space of about thirty million.
 
 ## Managing people
 
