@@ -244,7 +244,7 @@ The full set, in reading order:
 
 ## License
 
-GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs LLC.
+GNU AGPL-3.0. See [LICENSE](LICENSE). Copyright (c) 2026 Lazarus Labs.
 
 In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people to use, you must share your modifications
