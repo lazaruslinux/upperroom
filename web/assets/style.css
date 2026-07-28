@@ -873,8 +873,10 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 .msg.highlight .highlight-name { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--accent); margin-right: 8px; }
 .msg.highlight .highlight-body { font-family: var(--sans); font-size: 14px; }
 
-/* On narrow screens, stack the video on top and the chat below it. */
-@media (max-width: 720px) {
+/* On portrait phones, stack the video on top and the chat below it. A small
+   phone held sideways stays in the side-by-side layout so the video keeps its
+   width beside the chat instead of being squeezed into a strip. */
+@media (max-width: 720px) and (orientation: portrait) {
   .watch { flex-direction: column; }
   .stage { flex: 2; }
   .chat { width: 100%; flex: 3; border-left: none; border-top: 1px solid var(--border); }

@@ -1230,6 +1230,10 @@ def test_the_manifest_is_public_and_carries_the_operators_name(client):
     assert body["name"] == "Northwind Live"
     assert body["start_url"] == "/home"
     assert body["display"] == "standalone"
+    # No orientation key: a manifest orientation would lock the installed app so
+    # viewers could not rotate to watch sideways (that shipped once and a real
+    # viewer hit it).
+    assert "orientation" not in body
 
 
 def test_the_manifest_theme_color_follows_the_channel_accent(client):

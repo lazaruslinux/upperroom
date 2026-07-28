@@ -437,7 +437,6 @@ def manifest():
             "start_url": "/home",
             "scope": "/",
             "display": "standalone",
-            "orientation": "portrait",
             "background_color": "#0b0c0b",
             "theme_color": _ACCENT_HEX.get(info["accent"], _ACCENT_HEX["green"]),
             "icons": [
