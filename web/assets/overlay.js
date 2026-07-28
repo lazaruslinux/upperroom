@@ -111,9 +111,24 @@ function renderClip(msg) {
 function renderHighlight(msg) {
   const item = document.createElement("div");
   item.className = "ov-item ov-highlight";
+
+  // Role mark, like a chat line: a red camera for the host, a "mod" tag for a
+  // moderator, so a highlight shows who sent it the way chat does.
+  if (msg.admin || msg.mod) {
+    const tag = document.createElement("span");
+    if (msg.admin) {
+      tag.className = "ov-tag host";
+      tag.innerHTML = CAMERA_SVG;   // a static, trusted icon; no user data
+    } else {
+      tag.className = "ov-tag mod";
+      tag.textContent = "mod";
+    }
+    item.appendChild(tag);
+  }
+
   const who = document.createElement("span");
   who.className = "ov-highlight-who";
-  who.textContent = (msg.user || "someone") + " highlighted:";
+  who.textContent = (msg.name || "someone") + " highlighted:";
   const body = document.createElement("span");
   body.className = "ov-highlight-body";
   body.textContent = msg.message || "";

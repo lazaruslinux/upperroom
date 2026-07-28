@@ -102,6 +102,26 @@ def test_login_unknown_user_is_rejected(client):
     assert COOKIE_NAME not in resp.cookies
 
 
+def test_change_password_happy_path_and_new_password_signs_in(client):
+    # A signed-in member proving the current password can set a new one, and the
+    # new password then signs them in. Guards the route against the unbound-name
+    # bug that once made every valid change 500.
+    setup_admin(client, username="owner", password="password1")
+    resp = client.post(
+        "/api/password",
+        json={"current_password": "password1", "new_password": "newpassword1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    # The old password no longer works; the new one does.
+    stale = make_client()
+    assert stale.post(
+        "/api/auth", json={"username": "owner", "password": "password1"}
+    ).status_code == 401
+    fresh = make_client()
+    login(fresh, "owner", "newpassword1")
+
+
 def test_rate_limiter_is_shared_across_auth_setup_and_register(client):
     # Five failed logins from one address exhaust that address's allowance.
     ip = "203.0.113.7"
@@ -953,8 +973,10 @@ def test_redeem_requires_a_message(client):
 
 def test_redeem_highlights_and_broadcasts_the_event(client):
     # The success path spends the cost, returns the new balance, and broadcasts a
-    # highlight event of the documented shape to every connected watcher (the
-    # overlay). Mirror the WS event test: seat a fake watcher, then drive redeem.
+    # highlight event to every connected watcher (the overlay). The event now
+    # carries the sender's identity in the same shape a chat line does, so a
+    # highlight can render with their avatar, name, color, and role. Mirror the
+    # WS event test: seat a fake watcher, then drive redeem.
     viewer = _viewer_with_points(client, 120)
     sock = _CaptureSocket()
     hub.add_watcher(sock)
@@ -965,10 +987,27 @@ def test_redeem_highlights_and_broadcasts_the_event(client):
     assert resp.status_code == 200
     assert resp.json()["points"] == 120 - HIGHLIGHT_COST
     assert db.get_points("viewer") == 120 - HIGHLIGHT_COST
-    assert sock.sent == [
-        {"type": "highlight", "user": "Viewer", "message": "hello stream",
-         "cost": HIGHLIGHT_COST}
-    ]
+    assert len(sock.sent) == 1
+    event = sock.sent[0]
+    assert event["type"] == "highlight"
+    assert event["user"] == "viewer"          # the username, like a chat line
+    assert event["name"] == "Viewer"          # the display name
+    assert event["message"] == "hello stream"
+    assert event["cost"] == HIGHLIGHT_COST
+    assert event["admin"] is False and event["mod"] is False
+    assert "avatar" in event and "name_color" in event
+    assert isinstance(event["ts"], int)
+
+    # A viewer who joins after the redeem still sees the highlight, because it is
+    # kept in the backlog like a chat line rather than only reaching whoever was
+    # connected the instant it was redeemed.
+    with ws_connect(viewer) as fresh:
+        hello = fresh.receive_json()
+    assert hello["type"] == "hello"
+    highlights = [m for m in hello["history"] if m.get("type") == "highlight"]
+    assert len(highlights) == 1
+    assert highlights[0]["message"] == "hello stream"
+    assert highlights[0]["name"] == "Viewer"
 
 
 def test_redeem_truncates_over_length_message_like_chat(client):
@@ -992,8 +1031,20 @@ def test_redeem_insufficient_balance_is_rejected_unchanged(client):
     viewer = _viewer_with_points(client, HIGHLIGHT_COST - 1)
     resp = viewer.post("/api/redeem", json={"message": "hi"})
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "not enough points"
+    assert resp.json()["error"] == "Not enough points."
     assert db.get_points("viewer") == HIGHLIGHT_COST - 1    # balance untouched
+
+
+def test_redeem_banned_word_is_refused_and_nothing_spent(client):
+    # A highlight runs through the same word filter chat enforces, so spending
+    # points is not a paid way around it. The message is refused and the balance
+    # is untouched.
+    viewer = _viewer_with_points(client, 120)
+    db.set_chat_moderation(banned_words="pineapple\nbadword")
+    resp = viewer.post("/api/redeem", json={"message": "I love PINEAPPLE pizza"})
+    assert resp.status_code == 400
+    assert "error" in resp.json()
+    assert db.get_points("viewer") == 120           # nothing spent on a blocked say
 
 
 def test_redeem_timed_out_viewer_is_forbidden(client):

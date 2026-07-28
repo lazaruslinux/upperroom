@@ -8,11 +8,13 @@ balance and the redeem action both live here.
 """
 
 import logging
+import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import db
+import wordfilter
 from auth import GUEST_REFUSED, member_user, session_user
 from config import HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
 from hub import hub
@@ -65,21 +67,38 @@ async def redeem(request: Request):
             {"error": f"You are timed out for {remaining} more seconds."},
             status_code=403,
         )
+    # A highlight runs through the same word filter chat does, read fresh so an
+    # admin's change takes effect at once. Without this a highlight would be a
+    # paid way around the filter chat enforces.
+    settings = db.get_chat_moderation()
+    if wordfilter.contains_banned(message.lower(), settings.get("banned_words", "")):
+        return JSONResponse(
+            {"error": "Your message was blocked by the word filter."},
+            status_code=400,
+        )
     # The spend is atomic: the balance is deducted only if it covers the cost, so
     # two redemptions racing on a balance that covers one can never both win.
     balance = db.spend_points(username, HIGHLIGHT_COST)
     if balance is None:
-        return JSONResponse({"detail": "not enough points"}, status_code=400)
-    # Announce the highlight to every watch page and the overlay, the same hub
-    # broadcast path the old redeem event took. Best effort: a broadcast failure
-    # must never undo a spend that already went through.
+        return JSONResponse({"error": "Not enough points."}, status_code=400)
+    # Announce the highlight to every watch page and the overlay, and keep it in
+    # the backlog so a viewer joining later still sees it. Best effort: a
+    # broadcast failure must never undo a spend that already went through. The
+    # payload carries the sender's identity in the same shape a chat line does,
+    # so a highlight can render with their avatar, name, color, and role.
     user = db.get_user(username)
     try:
-        await hub.broadcast({
+        await hub.highlight({
             "type": "highlight",
-            "user": user["display_name"] if user else username,
+            "user": username,
+            "name": user["display_name"] if user else username,
+            "admin": bool(user["is_admin"]) if user else False,
+            "mod": bool(user["is_moderator"]) if user else False,
+            "avatar": user["avatar_version"] if user else 0,
+            "name_color": user["name_color"] if user else "",
             "message": message,
             "cost": HIGHLIGHT_COST,
+            "ts": int(time.time()),
         })
     except Exception:
         logger.debug("highlight broadcast failed", exc_info=True)

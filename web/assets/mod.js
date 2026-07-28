@@ -135,16 +135,18 @@ function renderStats() {
 }
 
 function renderUsers() {
-  const grid = document.getElementById("user-grid");
+  const list = document.getElementById("user-grid");
   document.getElementById("empty").hidden = users.length > 0;
-  grid.innerHTML = "";
+  list.innerHTML = "";
   users.forEach((u) => {
-    const card = document.createElement("article");
-    card.className = "user-card";
+    // The same .user-row list the admin account list uses, so the Viewers
+    // section is styled instead of emitting classes that carry no CSS. A
+    // moderator never sees admin accounts, and cannot edit, so the only action
+    // here is Activity.
+    const row = document.createElement("div");
+    row.className = "user-row";
+    row.appendChild(avatarNode(u.username, u.display_name, u.avatar_version, "avatar"));
 
-    const head = document.createElement("div");
-    head.className = "user-head";
-    head.appendChild(avatarNode(u.username, u.display_name, u.avatar_version, "avatar avatar-xl"));
     const ident = document.createElement("div");
     ident.className = "user-ident";
     const nameRow = document.createElement("div");
@@ -159,33 +161,24 @@ function renderUsers() {
     const handle = document.createElement("div");
     handle.className = "user-handle muted";
     handle.textContent = "@" + u.username;
-    ident.append(nameRow, handle);
-    head.appendChild(ident);
-    card.appendChild(head);
+    const seen = document.createElement("div");
+    seen.className = "user-seen";
+    seen.textContent =
+      `${relativeTime(u.last_seen)} · ${formatDuration(u.watch_seconds)} · ${u.messages} msg`;
+    ident.append(nameRow, handle, seen);
+    row.appendChild(ident);
 
-    const stats = document.createElement("div");
-    stats.className = "user-stats";
-    stats.innerHTML = `
-      <span><b></b><i>last seen</i></span>
-      <span><b></b><i>watch time</i></span>
-      <span><b></b><i>messages</i></span>`;
-    const cells = stats.querySelectorAll("b");
-    cells[0].textContent = relativeTime(u.last_seen);
-    cells[1].textContent = formatDuration(u.watch_seconds);
-    cells[2].textContent = u.messages;
-    card.appendChild(stats);
-
-    const actions = document.createElement("div");
-    actions.className = "user-actions";
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
     const actBtn = document.createElement("button");
     actBtn.type = "button";
     actBtn.className = "chip-btn";
     actBtn.textContent = "Activity";
     actBtn.addEventListener("click", () => openActivity(u));
     actions.appendChild(actBtn);
-    card.appendChild(actions);
+    row.appendChild(actions);
 
-    grid.appendChild(card);
+    list.appendChild(row);
   });
 }
 

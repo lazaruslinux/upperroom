@@ -25,8 +25,9 @@ until the balance covers the cost and there is something to say.
 Sending spends the points at once and posts the message as a highlighted line in
 chat, framed by the channel's accent color. The same message appears as a
 prominent chip on the OBS overlay, with a soft chime, so it shows on the
-broadcast too. The message obeys the same length limit as normal chat, and a
-viewer who is timed out or banned from chat cannot highlight either.
+broadcast too. The message obeys the same length limit as normal chat and is checked
+against the same word filter, and a viewer who is timed out or banned from chat
+cannot highlight either.
 
 There is no admin configuration. The cost and the earn rate are both fixed in the
 code, and there is nothing to set up.

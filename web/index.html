@@ -28,7 +28,7 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="/assets/style.css?v=40">
+  <link rel="stylesheet" href="/assets/style.css?v=41">
 </head>
 <body class="center">
   <main class="card">
@@ -46,9 +46,9 @@
       <p class="powered">livestream powered by <span class="wordmark">upper<span class="wm-accent">room</span></span></p>
     </div>
     <p class="muted">sign in</p>
-    <form id="login-form" autocomplete="off">
-      <input type="text" id="username" placeholder="Username" autocomplete="off" required>
-      <input type="password" id="password" placeholder="Password" autocomplete="new-password" required>
+    <form id="login-form">
+      <input type="text" id="username" placeholder="Username" autocomplete="username" required>
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
       <button type="submit">Sign in</button>
       <p id="error" class="error" hidden></p>
     </form>
@@ -70,6 +70,6 @@
       </p>
     </form>
   </main>
-  <script src="/assets/gate.js?v=18"></script>
+  <script src="/assets/gate.js?v=19"></script>
 </body>
 </html>

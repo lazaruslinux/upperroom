@@ -167,7 +167,8 @@ is one entry per line, or separated by commas, and a message containing any of
 them is refused, with only the sender told why. The list is admin-only and never
 leaves the dashboard. It has its own Save inside the modal, so closing without
 saving changes nothing, and unlike slow mode it applies to everybody, moderators
-and you included.
+and you included. It also covers a paid highlight, so spending points is not a
+way around it.
 
 A new install starts with a default list covering ordinary profanity and slurs.
 An install that was already running keeps its own list and is never given the

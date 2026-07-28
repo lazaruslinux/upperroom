@@ -344,13 +344,15 @@ async def change_password(request: Request):
     # A guest row has no usable password hash to change, and no owner to lock
     # out. Refused explicitly rather than left to fail the current-password
     # check, which would read as "you typed it wrong".
-    if not member_user(request):
+    member = member_user(request)
+    if not member:
         return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    username = member["username"]
     body = await request.json()
     current = body.get("current_password", "")
     new = body.get("new_password", "")
 
-    user = db.get_user(session["sub"])
+    user = db.get_user(username)
     if not user or not db.verify_password(current, user["password_hash"]):
         return JSONResponse(
             {"error": "Your current password is wrong."}, status_code=403
@@ -359,7 +361,7 @@ async def change_password(request: Request):
         return JSONResponse(
             {"error": f"Use at least {MIN_PASSWORD} characters."}, status_code=400
         )
-    db.set_password(session["sub"], new)
+    db.set_password(username, new)
     return {"ok": True}
 
 

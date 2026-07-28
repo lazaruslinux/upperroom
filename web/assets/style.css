@@ -869,9 +869,9 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 
 /* a highlighted message someone spent points on: accent border, square corners,
    no glow, sitting inline with the other chat lines */
-.msg.highlight { display: block; border: 1px solid var(--accent); padding: 6px 8px; }
-.msg.highlight .highlight-name { font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--accent); margin-right: 8px; }
-.msg.highlight .highlight-body { font-family: var(--sans); font-size: 14px; }
+/* A highlight is a chat line inside an accent border, so it keeps the flex
+   layout of .msg (avatar, role mark, name, body) rather than overriding it. */
+.msg.highlight { border: 1px solid var(--accent); padding: 6px 8px; }
 
 /* On portrait phones, stack the video on top and the chat below it. A small
    phone held sideways stays in the side-by-side layout so the video keeps its

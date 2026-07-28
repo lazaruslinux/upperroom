@@ -30,11 +30,17 @@ form.addEventListener("submit", async (event) => {
   clearError();
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
-  const reply = await fetch("/api/auth", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
+  let reply;
+  try {
+    reply = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+  } catch {
+    showError("Could not reach the server.");
+    return;
+  }
   if (reply.ok) {
     window.location.href = "/home";
   } else {

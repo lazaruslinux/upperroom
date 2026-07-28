@@ -47,10 +47,12 @@ running for a whole broadcast unattended.
   seconds. Leaving is deliberately not shown, to keep the overlay quiet.
 - **Clip alerts** ("someone clipped: <name>") with an accent border, whenever a
   viewer clips the stream.
-- **Highlighted messages** ("someone highlighted: <message>"), when a viewer
-  spends channel points to put a message on the broadcast. These carry an accent
-  border like clips and **play a short chime**, so they are the one thing on the
-  overlay that makes a sound. See `docs/09-points.md` for how points work.
+- **Highlighted messages** ("<name> highlighted: <message>"), when a viewer
+  spends channel points to put a message on the broadcast. They now carry the
+  sender's identity, their name and role mark, the same way a chat line does.
+  These carry an accent border like clips and **play a short chime**, so they
+  are the one thing on the overlay that makes a sound. See `docs/09-points.md`
+  for how points work.
 
 Moderation still applies: if a moderator deletes a message it disappears from the
 overlay too, and the overlay clears when a broadcast ends.

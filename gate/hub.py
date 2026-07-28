@@ -167,6 +167,13 @@ class Hub:
         self._history.append(message)
         await self.broadcast(message)
 
+    async def highlight(self, message):
+        """Announce a purchased highlight and keep it in the backlog, the same way
+        a chat line is retained, so a viewer who joins later still sees it rather
+        than only those connected at the moment it was redeemed."""
+        self._history.append(message)
+        await self.broadcast(message)
+
     # ---- moderation -------------------------------------------------------
 
     def is_timed_out(self, username):

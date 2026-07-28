@@ -985,7 +985,7 @@ async function openActivity(user) {
   } catch { /* show empties */ }
 
   aWatch.innerHTML = "";
-  if (!data.watch_sessions.length) {
+  if (!data.watch_sessions || !data.watch_sessions.length) {
     aWatch.innerHTML = `<p class="muted">No watch sessions recorded yet.</p>`;
   } else {
     data.watch_sessions.forEach((s) => {
@@ -1000,7 +1000,7 @@ async function openActivity(user) {
   }
 
   aChat.innerHTML = "";
-  if (!data.chat.length) {
+  if (!data.chat || !data.chat.length) {
     aChat.innerHTML = `<p class="muted">No chat messages in the last 7 days.</p>`;
   } else {
     data.chat.forEach((m) => {
@@ -1008,7 +1008,8 @@ async function openActivity(user) {
       row.className = "activity-row chat-row";
       row.innerHTML = `<span class="act-when"></span><span class="act-text"></span>`;
       row.querySelector(".act-when").textContent = formatStamp(m.ts);
-      row.querySelector(".act-text").textContent = m.text;
+      row.querySelector(".act-text").textContent =
+        m.text + (m.deleted_by ? "  (deleted)" : "");
       aChat.appendChild(row);
     });
   }

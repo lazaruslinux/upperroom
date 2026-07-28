@@ -18,6 +18,10 @@ let hls = null;
 let socket = null;
 let streamOnline = false;          // tracks live state so the count can reword
 let lastViewerCount = 0;
+// Native-HLS status listeners are bound once. startVideo runs again on every
+// offline-to-online flip, so re-adding them each time would stack duplicate
+// status pollers on the one video element.
+let nativeListenersBound = false;
 const MAX_VISIBLE_MESSAGES = 50;  // keep the last 50 lines on screen, no more
 // True once the initial history batch has rendered, so only genuinely live
 // lines animate in - the backlog on connect/reconnect appears instantly.
@@ -31,8 +35,16 @@ function setViewerLabel() {
 }
 
 async function requireAuth() {
-  const reply = await fetch("/api/me");
-  const data = await reply.json();
+  let data;
+  try {
+    data = await (await fetch("/api/me")).json();
+  } catch {
+    // A network blip on boot must not crash the page or bounce a signed-in
+    // viewer to login. Wait and try again; only an actual authed:false reply
+    // sends them to the sign-in page.
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    return requireAuth();
+  }
   if (!data.authed) {
     window.location.href = "/";
     return false;
@@ -90,13 +102,17 @@ function startVideo() {
       setTimeout(checkStream, 5000);
     });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    // Safari on iOS plays HLS natively without hls.js.
+    // Safari on iOS plays HLS natively without hls.js. Bind the status
+    // listeners only once; the restart path just re-points the source.
+    if (!nativeListenersBound) {
+      nativeListenersBound = true;
+      video.addEventListener("loadedmetadata", () => showOffline(false));
+      video.addEventListener("error", () => {
+        showOffline(true);
+        setTimeout(checkStream, 5000);
+      });
+    }
     video.src = STREAM_URL;
-    video.addEventListener("loadedmetadata", () => showOffline(false));
-    video.addEventListener("error", () => {
-      showOffline(true);
-      setTimeout(checkStream, 5000);
-    });
   }
 }
 
@@ -112,8 +128,16 @@ function applyAccent(value) {
 }
 
 async function checkStream() {
-  const reply = await fetch("/api/status");
-  const data = await reply.json();
+  let data;
+  try {
+    data = await (await fetch("/api/status")).json();
+  } catch {
+    // A failed poll must not end the polling loop: show the offline card and
+    // try again, so the page recovers on its own when the server comes back.
+    showOffline(true);
+    setTimeout(checkStream, 5000);
+    return;
+  }
   applyAccent(data.accent);
   // Name the browser tab after the operator's site, not the platform.
   if (data.site_name && document.title !== data.site_name) document.title = data.site_name;
@@ -295,19 +319,34 @@ function renderSystem(msg) {
   addLine(line);
 }
 
-// A highlight reads as a spotlighted chat line: the viewer's display name and the
-// message they spent points on, inside an accent border. textContent only, so a
-// crafted message can never inject markup.
+// A highlight reads as a spotlighted chat line: the sender's avatar, role mark,
+// display name (in their chosen color), the time, and the message they spent
+// points on, all inside an accent border. Built like renderChat so a highlight
+// carries the same identity a normal line does. textContent only, so a crafted
+// message can never inject markup.
 function renderHighlight(msg) {
   const line = document.createElement("div");
   line.className = "msg highlight";
+  line.appendChild(avatarNode(msg.user, msg.name, msg.avatar || 0, false, true));
+  const badge = roleBadgeNode(msg.admin, msg.mod, false);
+  if (badge) line.appendChild(badge);
+  const bodyWrap = document.createElement("span");
+  bodyWrap.className = "msg-body";
+  const head = document.createElement("span");
+  head.className = "msg-head";
   const name = document.createElement("span");
-  name.className = "highlight-name";
-  name.textContent = msg.user;
+  name.className = msg.admin ? "name admin" : "name";
+  name.textContent = msg.name;
+  if (msg.name_color) name.style.color = msg.name_color;
+  const time = document.createElement("span");
+  time.className = "msg-time";
+  time.textContent = formatTimestamp(msg.ts);
+  head.append(name, time);
   const body = document.createElement("span");
-  body.className = "highlight-body";
-  body.textContent = msg.message;
-  line.append(name, body);
+  body.className = "body";
+  body.textContent = msg.message;   // textContent keeps any markup inert
+  bodyWrap.append(head, body);
+  line.appendChild(bodyWrap);
   addLine(line);
 }
 
@@ -334,18 +373,26 @@ function connectChat() {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
+  // A single per-type render for the message lines, used for both the live feed
+  // and the replayed backlog, so a highlight in the history renders as a
+  // highlight rather than being forced through the plain-chat renderer.
+  function renderLine(msg) {
+    if (msg.type === "chat") renderChat(msg);
+    else if (msg.type === "highlight") renderHighlight(msg);
+    else if (msg.type === "system") renderSystem(msg);
+  }
+
   socket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
-    if (msg.type === "chat") renderChat(msg);
-    else if (msg.type === "system") renderSystem(msg);
-    else if (msg.type === "highlight") renderHighlight(msg);
-    else if (msg.type === "presence") renderPresence(msg);
+    if (msg.type === "presence") renderPresence(msg);
     else if (msg.type === "delete") applyDelete(msg.id);
     else if (msg.type === "wipe") messages.innerHTML = "";
     else if (msg.type === "hello") {
       me = me || msg.you;
-      msg.history.forEach(renderChat);
+      msg.history.forEach(renderLine);
       chatLive = true;   // everything after the backlog is live
+    } else {
+      renderLine(msg);
     }
   });
 
@@ -908,6 +955,14 @@ function setUpGuest() {
   // Clipping, points and the highlight composer all need an account.
   clipBtn.remove();
   pointsChip.remove();
+  // The font and color pickers save to a member profile, so a guest's saves
+  // 403 (and the font picker would pretend to succeed). Remove those rows
+  // rather than leave controls that cannot take.
+  document
+    .querySelectorAll("#settings-panel .setting-font, #settings-panel .setting-colors")
+    .forEach((row) => row.remove());
+  const colorNote = document.getElementById("color-msg");
+  if (colorNote) colorNote.remove();
   const note = document.querySelector("#settings-panel .settings-note.muted");
   if (note) {
     note.textContent =
@@ -932,7 +987,9 @@ async function boot() {
     chatInput.placeholder = "say something, or /help";
   }
   setUpGuest();
-  loadMyProfile();
+  // The font and color controls belong to a member profile; a guest has none
+  // and setUpGuest has already removed those rows, so skip wiring them.
+  if (!me.guest) loadMyProfile();
   // A guest has no balance and the endpoint refuses them, so do not ask.
   if (!me.guest) loadPoints();
   connectChat();
