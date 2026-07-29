@@ -208,7 +208,12 @@ body {
 .powered-sep { color: var(--border); }
 /* The source link doubles as the AGPL section-13 written offer. Kept subtle:
    a muted mono link that only picks up the accent on hover. */
-.source-line { margin: 4px 0 0; text-align: center; }
+/* The masthead credit links to the source repository (the AGPL section-13
+   written offer). It reads as part of the credit, not as a link: inherited
+   color, no underline, the accent only on hover or keyboard focus. */
+.brand-link { color: inherit; text-decoration: none; }
+.brand-link:hover .wordmark, .brand-link:focus-visible .wordmark { color: var(--accent); }
+.brand-link:hover .u-logo, .brand-link:focus-visible .u-logo { opacity: 0.75; }
 .source-link {
   font-family: var(--mono);
   font-size: 11px;
