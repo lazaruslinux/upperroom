@@ -119,6 +119,13 @@ said live, comments are what people say afterwards. An author can delete their
 own; you and your moderators can delete any. A comment obeys the same chat
 rules, so someone banned from chat cannot comment instead.
 
+A strip at the top of the dashboard shows the broadcast at a glance so you never
+have to read the container logs to know it is up: **Live** or **Offline**, how
+long you have been live, how many people are watching, and whether the broadcast
+is being recorded (**recording**, **recording (restarting)** while the recorder
+is cycling, or **not recording** if it is live but nothing is being captured). It
+refreshes on its own while the page is open.
+
 Recording recovers on its own. If the recorder ever dies or its file stops
 growing mid-broadcast (for example, a rough reconnect on a long session), the
 gate finalizes whatever it captured, starts a fresh recording while you stay

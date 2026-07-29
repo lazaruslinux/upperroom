@@ -391,6 +391,7 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
     [
         ("GET", "/api/admin/users", None),
         ("POST", "/api/stream-info", {"title": "x"}),
+        ("GET", "/api/admin/stream", None),
         ("GET", "/api/admin/activity", None),
         ("GET", "/api/admin/chat", None),
         ("GET", "/api/admin/notify", None),
@@ -691,6 +692,43 @@ def test_mtx_auth_regenerate_rotates_the_accepted_key(client):
     assert anon.post(
         "/mtx-auth", json={"action": "publish", "password": new}
     ).status_code == 200
+
+
+def test_admin_stream_reports_the_broadcast_shape(client):
+    # The dashboard strip reads this instead of the container logs. With no
+    # publisher connected MediaMTX has nothing to report, so the strip should read
+    # offline, no start time, nobody watching, and the recorder off.
+    setup_admin(client)
+    body = client.get("/api/admin/stream").json()
+    assert set(body) == {"live", "since", "watching", "recording"}
+    assert body["live"] is False
+    assert body["since"] is None
+    assert body["watching"] == 0
+    assert body["recording"] == "off"
+
+
+def test_wipe_broadcast_carries_its_reason(client):
+    # A wipe with a reason rides it to every page so chat can explain why the room
+    # emptied rather than vanishing mid-conversation; without one it stays a bare
+    # wipe, so older callers keep working unchanged.
+    import asyncio
+
+    class FakeSocket:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, message):
+            self.sent.append(message)
+
+    sock = FakeSocket()
+    hub._sockets[sock] = {"username": "owner", "name": "Owner"}
+    try:
+        asyncio.run(hub.wipe(reason="stream_ended"))
+        asyncio.run(hub.wipe())
+    finally:
+        hub._sockets.pop(sock, None)
+    assert sock.sent[0] == {"type": "wipe", "reason": "stream_ended"}
+    assert sock.sent[1] == {"type": "wipe"}
 
 
 def test_clip_event_broadcast_reaches_a_watcher(client):

@@ -20,7 +20,9 @@ from config import (
     SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
-from media import enforce_retention, media_usage
+from media import (
+    enforce_retention, fetch_path, media_usage, ready_epoch, recording_status,
+)
 from notify import notify_live
 
 router = APIRouter()
@@ -89,6 +91,26 @@ async def set_stream_info(request: Request):
         clip_cooldown_admin=cd_admin, clip_seconds=clip_seconds, accent=accent,
     )
     return {"ok": True}
+
+
+@router.get("/api/admin/stream")
+async def admin_stream(request: Request):
+    # The live broadcast at a glance for the dashboard's stream strip: whether it
+    # is live, since when, how many are watching, and whether the recorder is
+    # healthy. It polls MediaMTX and parses readyTime exactly as /api/status does,
+    # reusing the same helpers so the dashboard and the watch page can never
+    # disagree about "live". The point is that a streamer never has to read the
+    # container logs to know their broadcast is being recorded.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    data = await fetch_path()
+    live = bool(data and data.get("ready", False))
+    return {
+        "live": live,
+        "since": ready_epoch(data.get("readyTime")) if live else None,
+        "watching": len(hub.viewers()),
+        "recording": recording_status(),
+    }
 
 
 @router.get("/api/admin/moderation")

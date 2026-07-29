@@ -23,6 +23,7 @@ let replayOn = true;
 let viewCounted = false;
 let hmPlayhead = null;   // the moving marker, once the strip is built
 let hmDuration = 0;      // media length the strip was bucketed against
+let viewSuffix = "";     // the "· when · clipped by" tail after the view count
 
 // ---- shared render helpers (kept local to this page) ----
 
@@ -220,10 +221,26 @@ heatmap.addEventListener("click", (event) => {
 
 // ---- view count (once per visit, after playback starts) ----
 
+// Render the meta line for a given view count, so a fresh count from the server
+// can replace the one painted at load without rebuilding the rest of the line.
+function renderViews(n) {
+  const views = n === 1 ? "1 view" : `${n} views`;
+  subEl.textContent = views + viewSuffix;
+}
+
 async function countView() {
   if (viewCounted) return;
   viewCounted = true;
-  try { await fetch(`/api/${TYPE}s/${ID}/view`, { method: "POST" }); } catch { /* ignore */ }
+  // Counting the view returns the fresh total, so show it: the page loaded with a
+  // count that did not yet include this visit, and throwing the response away left
+  // it one behind until a reload.
+  try {
+    const reply = await fetch(`/api/${TYPE}s/${ID}/view`, { method: "POST" });
+    if (reply.ok) {
+      const data = await reply.json();
+      if (typeof data.views === "number") renderViews(data.views);
+    }
+  } catch { /* ignore: a failed count just leaves the loaded number in place */ }
 }
 
 // ---- load ----
@@ -252,11 +269,10 @@ async function loadMedia() {
     return;
   }
   titleEl.textContent = TYPE === "vod" ? meta.title : meta.name;
-  const views = meta.views === 1 ? "1 view" : `${meta.views} views`;
   const when = relDate(TYPE === "vod" ? meta.started_at : meta.created_at);
-  let sub = `${views} · ${when}`;
-  if (TYPE === "clip" && meta.creator) sub += ` · clipped by @${meta.creator}`;
-  subEl.textContent = sub;
+  viewSuffix = ` · ${when}`;
+  if (TYPE === "clip" && meta.creator) viewSuffix += ` · clipped by @${meta.creator}`;
+  renderViews(meta.views);
   if (TYPE === "vod" && meta.description) descEl.textContent = meta.description;
   video.poster = meta.poster ? `/media/${TYPE}s/${ID}.jpg` : "";
   video.src = `/media/${TYPE}s/${meta.filename}`;
@@ -266,6 +282,10 @@ async function loadMedia() {
     replay = (await (await fetch(`/api/${TYPE}s/${ID}/chat`)).json()).messages || [];
   } catch { replay = []; }
   if (!replay.length) {
+    // No chat to replay: state the absence in place of the empty dark box rather
+    // than leaving a labeled, bare panel, the same way a removed comment shows a
+    // note instead of closing the gap.
+    replayMessages.hidden = true;
     replayEmpty.hidden = false;
     replayToggle.hidden = true;
   }

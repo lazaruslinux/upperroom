@@ -350,13 +350,19 @@ class Hub:
                         )
                     who["watch_id"] = None
 
-    async def wipe(self):
-        # Called when a broadcast ends. Clear the backlog and tell every open
-        # page to empty its chat, so the next stream starts fresh.
+    async def wipe(self, reason=None):
+        # Called when a broadcast ends. Clear the backlog and tell every open page
+        # to empty its chat, so the next stream starts fresh. The reason rides the
+        # broadcast so the page can explain why the room just emptied instead of
+        # having chat silently vanish mid-conversation. Left off, no line is shown,
+        # which keeps any caller that does not pass one backward compatible.
         async with self._lock:
             self._history.clear()
-        logger.info("chat wiped")
-        await self.broadcast({"type": "wipe"})
+        logger.info("chat wiped (%s)", reason or "no reason given")
+        message = {"type": "wipe"}
+        if reason:
+            message["reason"] = reason
+        await self.broadcast(message)
 
     async def update_member(self, username, avatar=None, font=None, name=None,
                             name_color=None, msg_color=None):

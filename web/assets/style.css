@@ -1167,15 +1167,53 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 
 body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; background: var(--bg); }
 
-.admin-main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 40px; }
+/* The panels inside are capped at 640px, so a 1000px column left them hugging the
+   left with a wide dead gutter on desktop. Cap the column just past the panel
+   width instead (640 + the 16px side padding) so margin:auto genuinely centres it
+   and wide screens read balanced. Narrow screens are unaffected: below this width
+   the column already fills the viewport. */
+.admin-main { max-width: 672px; margin: 0 auto; padding: 20px 16px 40px; }
 /* The dashboard's small version footer. Its style lived inline on the element;
-   it belongs here with the rest of the admin chrome. */
+   it belongs here with the rest of the admin chrome. Matches the column width so
+   it sits under the content rather than off at the far left. */
 .admin-foot {
-  max-width: 1000px;
+  max-width: 672px;
   margin: 0 auto;
   padding: 0 16px 32px;
   font-size: 11px;
 }
+
+/* The live-broadcast strip at the top of the dashboard. Same panel chrome as the
+   rest of the page; the red dot and label follow the LIVE convention used on the
+   home card, and the recorder readout sits on the same row. */
+.stream-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.stream-strip-dot { width: 8px; height: 8px; background: var(--muted); flex: none; }
+.stream-strip-state { font-weight: 600; color: var(--muted); }
+.stream-strip.is-live { border-color: var(--live-red); }
+.stream-strip.is-live .stream-strip-dot {
+  background: var(--live-red);
+  animation: blink 0.9s steps(1) infinite;
+}
+.stream-strip.is-live .stream-strip-state { color: var(--live-red); }
+/* A healthy recorder reads as fine (accent); a stalled or missing one is a
+   warning the streamer needs to notice (amber), not something to bury. */
+.stream-strip-rec.is-recording { color: var(--accent); }
+.stream-strip-rec.is-restarting,
+.stream-strip-rec.is-notrecording { color: var(--op); font-weight: 600; }
+.stream-strip-link { margin-left: auto; color: var(--accent); text-decoration: none; }
+.stream-strip-link:hover { text-decoration: underline; }
 
 .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
 

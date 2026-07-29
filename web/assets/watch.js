@@ -61,6 +61,11 @@ function showOffline(isOffline) {
   streamOnline = !isOffline;
   // Clipping only makes sense while the stream is live (and being recorded).
   clipBtn.hidden = isOffline;
+  // The unmute button floats over the video, so it must never sit on the "stream
+  // is offline" card. Hide it while offline; on return, show it again only if the
+  // video is actually muted and playing (the "playing" handler below re-shows it
+  // in the usual case where playback resumes a moment later).
+  unmuteButton.hidden = isOffline || !(video.muted && !video.paused);
   setViewerLabel();
   // A highlight needs a live stream to show on, so the composer's send follows
   // the live state too. Guarded because the highlight controls do not exist for
@@ -396,7 +401,16 @@ function connectChat() {
     const msg = JSON.parse(event.data);
     if (msg.type === "presence") renderPresence(msg);
     else if (msg.type === "delete") applyDelete(msg.id);
-    else if (msg.type === "wipe") messages.innerHTML = "";
+    else if (msg.type === "wipe") {
+      // The room is deliberately cleared between broadcasts. Empty it, then say
+      // why, so a mid-conversation chat does not just vanish with no explanation.
+      messages.innerHTML = "";
+      if (msg.reason === "stream_ended") {
+        renderSystem({ text: "Stream ended. Chat clears between broadcasts." });
+      } else if (msg.reason === "moderator") {
+        renderSystem({ text: "A moderator cleared the chat." });
+      }
+    }
     else if (msg.type === "hello") {
       me = me || msg.you;
       msg.history.forEach(renderLine);

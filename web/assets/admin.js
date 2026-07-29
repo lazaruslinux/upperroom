@@ -1405,6 +1405,63 @@ document.getElementById("gp-clear-used").addEventListener("click", async (e) => 
   loadGuestPasses();
 });
 
+// ---- live stream strip (top of the dashboard) ----
+// A streamer should never have to read the container logs to know their broadcast
+// is up and being recorded, so the strip polls the admin stream status while the
+// page is open and shows live/offline, uptime, who is watching, and the recorder.
+const streamStrip = document.getElementById("stream-strip");
+const streamState = document.getElementById("stream-state");
+const streamSince = document.getElementById("stream-since");
+const streamWatching = document.getElementById("stream-watching");
+const streamRec = document.getElementById("stream-rec");
+
+function uptimeLabel(since) {
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - since);
+  if (secs < 60) return "up just now";
+  const hours = Math.floor(secs / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  return hours > 0 ? `up ${hours}h ${mins}m` : `up ${mins}m`;
+}
+
+function renderStream(data) {
+  const live = !!data.live;
+  streamStrip.classList.toggle("is-live", live);
+  streamStrip.classList.toggle("is-offline", !live);
+  streamState.textContent = live ? "Live" : "Offline";
+  if (!live) {
+    streamSince.hidden = true;
+    streamWatching.hidden = true;
+    streamRec.hidden = true;
+    return;
+  }
+  streamSince.textContent = data.since ? uptimeLabel(data.since) : "";
+  streamSince.hidden = !data.since;
+  const n = typeof data.watching === "number" ? data.watching : 0;
+  streamWatching.textContent = n === 1 ? "1 watching" : `${n} watching`;
+  streamWatching.hidden = false;
+  // The recorder state is the headline: a live broadcast that is not being
+  // recorded is a problem to surface, not one to leave the streamer guessing at.
+  if (data.recording === "ok") {
+    streamRec.textContent = "recording";
+    streamRec.className = "stream-strip-rec is-recording";
+  } else if (data.recording === "restarting") {
+    streamRec.textContent = "recording (restarting)";
+    streamRec.className = "stream-strip-rec is-restarting";
+  } else {
+    streamRec.textContent = "not recording";
+    streamRec.className = "stream-strip-rec is-notrecording";
+  }
+  streamRec.hidden = false;
+}
+
+async function loadStream() {
+  if (!streamStrip) return;
+  try {
+    const reply = await fetch("/api/admin/stream");
+    if (reply.ok) renderStream(await reply.json());
+  } catch { /* keep the last state rather than flashing offline on a blip */ }
+}
+
 // The dashboard footer shows the running release, read from /api/status rather
 // than baked into the markup so a version bump changes it in exactly one place
 // (config.VERSION) and can never drift here. Left blank if status is unreachable.
@@ -1421,6 +1478,8 @@ async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "dashboard" });
   loadVersion();
+  loadStream();
+  setInterval(loadStream, 10000);
   loadBans();
   loadInvites();
   loadGuestPasses();

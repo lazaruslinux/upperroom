@@ -262,7 +262,10 @@ Notes:
 Chat is live for everyone signed in. Messages appear instantly through a
 WebSocket, with no page reloads. The last fifty messages stay on screen, each
 with a small local timestamp like `19:42`, and the whole chat is wiped
-automatically when a broadcast ends, so the next stream starts clean.
+automatically when a broadcast ends, so the next stream starts clean. When that
+happens the room does not just fall silent: a short line, "Stream ended. Chat
+clears between broadcasts.", is shown so a viewer mid-conversation sees why the
+messages went rather than assuming something broke.
 
 Everyone can pick their own name and message colors from the gear on the watch
 page. The server checks the choice rather than trusting it: a color too dark to

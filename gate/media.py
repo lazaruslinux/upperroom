@@ -114,7 +114,7 @@ async def stream_watcher():
                 await _recorder_watchdog()
             if was_online and not online:
                 logger.info("stream offline")
-                await hub.wipe()
+                await hub.wipe(reason="stream_ended")
                 await stop_recording()
             was_online = online
         except Exception:
@@ -301,6 +301,20 @@ _restart_lock = asyncio.Lock()
 WATCHDOG_NONE = "none"        # recording looks healthy; do nothing
 WATCHDOG_WAIT = "wait"        # failed, but still inside the backoff window
 WATCHDOG_RESTART = "restart"  # failed and clear to restart now
+
+
+def recording_status():
+    """The recorder's health for the dashboard's stream strip, read straight from
+    the state the stream watcher already tracks. 'off' when nothing is being
+    recorded, 'restarting' while a failure streak is being cycled (the recorder
+    died or the scratch file stalled and the watchdog is backing off and retrying),
+    and 'ok' while the scratch file is growing normally. It keeps no state of its
+    own, so it can never disagree with the watcher about what is happening."""
+    if not _rec["active"]:
+        return "off"
+    if _watch["attempts"] > 0:
+        return "restarting"
+    return "ok"
 
 
 def watchdog_action(proc_alive, no_growth_polls, stall_threshold,
