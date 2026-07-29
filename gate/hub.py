@@ -97,6 +97,21 @@ class Hub:
         for socket in dead_watchers:
             self._watchers.discard(socket)
 
+    async def send_overlays(self, message):
+        """Send one message to the overlay sockets ONLY, never to a viewer's chat
+        socket. Used by the dashboard's test-fire buttons and the ticker: a test
+        line or an operator's ticker belongs on the OBS overlay, and must never
+        reach a real viewer's chat or land in the chat log."""
+        dead = []
+        for socket in list(self._watchers):
+            try:
+                await socket.send_json(message)
+            except Exception:
+                dead.append(socket)
+                logger.debug("dropping a dead overlay socket", exc_info=True)
+        for socket in dead:
+            self._watchers.discard(socket)
+
     def add_watcher(self, socket):
         """Seat a read-only overlay socket. It receives future broadcasts but is
         absent from presence, the watching count, and every viewer list."""

@@ -194,6 +194,19 @@
         <button type="button" id="overlay-copy" class="solid-btn">Copy URL</button>
         <button type="button" id="overlay-regen" class="danger-btn">Regenerate</button>
       </div>
+      <label>Ticker message <span class="muted">(optional; scrolls along the bottom of the overlay)</span>
+        <input id="overlay-ticker" type="text" maxlength="200" autocomplete="off" placeholder="Leave blank for no ticker">
+      </label>
+      <div class="edit-actions">
+        <button type="button" id="overlay-ticker-save" class="solid-btn">Save ticker</button>
+      </div>
+      <p class="settings-note muted">Send a test to any connected overlay, to check your OBS browser source:</p>
+      <div class="edit-actions">
+        <button type="button" class="ghost-btn" data-overlay-test="chat">chat</button>
+        <button type="button" class="ghost-btn" data-overlay-test="join">join</button>
+        <button type="button" class="ghost-btn" data-overlay-test="clip">clip</button>
+        <button type="button" class="ghost-btn" data-overlay-test="highlight">highlight</button>
+      </div>
       <p id="overlay-msg" class="notify-msg" hidden></p>
     </div>
 
@@ -387,6 +400,6 @@
   </div>
 
   <script src="/assets/nav.js?v=6"></script>
-  <script src="/assets/admin.js?v=31"></script>
+  <script src="/assets/admin.js?v=32"></script>
 </body>
 </html>

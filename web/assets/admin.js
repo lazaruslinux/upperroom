@@ -599,12 +599,58 @@ function setOverlayUrl(key) {
   overlayUrlInput.value = `${window.location.origin}/overlay?key=${key}`;
 }
 
+const overlayTicker = document.getElementById("overlay-ticker");
+
 async function loadOverlay() {
   try {
     const data = await (await fetch("/api/admin/overlay")).json();
     if (data.key) setOverlayUrl(data.key);
+    if (typeof data.ticker === "string") overlayTicker.value = data.ticker;
   } catch { /* leave the field blank */ }
 }
+
+// Save the ticker over the channel-settings route; the server cleans it and
+// pushes the new line to any connected overlay at once.
+document.getElementById("overlay-ticker-save").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  overlayMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overlay_ticker: overlayTicker.value }),
+    });
+    if (reply.ok) {
+      showOverlayMsg("Ticker saved.", true);
+    } else {
+      showOverlayMsg("Could not save the ticker.", false);
+    }
+  } catch { showOverlayMsg("Could not reach the server.", false); }
+  btn.disabled = false;
+});
+
+// Test-fire buttons: send one synthetic event to any connected overlay so the
+// operator can confirm their OBS browser source is wired up. The event goes to
+// overlay sockets only; it never touches real chat or the chat log.
+document.querySelectorAll("[data-overlay-test]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const kind = btn.dataset.overlayTest;
+    overlayMsg.hidden = true;
+    try {
+      const reply = await fetch("/api/admin/overlay/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      if (reply.ok) {
+        showOverlayMsg(`Sent a test ${kind} to the overlay.`, true);
+      } else {
+        showOverlayMsg("Could not send the test.", false);
+      }
+    } catch { showOverlayMsg("Could not reach the server.", false); }
+  });
+});
 
 document.getElementById("overlay-copy").addEventListener("click", async (e) => {
   try {

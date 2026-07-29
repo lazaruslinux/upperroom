@@ -20,17 +20,49 @@
       overflow: hidden;
     }
 
-    /* Bottom-left column: a safe, unobtrusive default for a 1080p canvas. */
+    /* A font-size multiplier the overlay.js scale= param sets; 1 reproduces the
+       original sizes exactly, so leaving it alone changes nothing. */
+    :root { --ov-scale: 1; }
+
+    /* The chat column. Its corner is chosen by the pos= param, which overlay.js
+       stamps onto data-pos; bottom-left is the default and reproduces the
+       original layout exactly. */
     #overlay {
       position: fixed;
-      left: 24px;
-      bottom: 24px;
       width: 34rem;
       max-width: calc(100vw - 48px);
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
       gap: 8px;
+    }
+    /* Bottom-left is the original: a safe, unobtrusive default for a 1080p canvas. */
+    #overlay[data-pos="bl"] { left: 24px; bottom: 24px; justify-content: flex-end; }
+    #overlay[data-pos="br"] {
+      right: 24px; bottom: 24px; justify-content: flex-end; align-items: flex-end;
+    }
+    #overlay[data-pos="tl"] { left: 24px; top: 24px; justify-content: flex-start; }
+    #overlay[data-pos="tr"] {
+      right: 24px; top: 24px; justify-content: flex-start; align-items: flex-end;
+    }
+
+    /* The ticker owns a band along the very bottom while it is up, so
+       bottom-anchored chat sits above that band instead of behind it. overlay.js
+       measures the band into --ov-ticker-h and sets data-ticker while it shows,
+       so with no ticker these rules do not apply at all and the column keeps its
+       original 24px. */
+    html[data-ticker] #overlay[data-pos="bl"],
+    html[data-ticker] #overlay[data-pos="br"] {
+      bottom: calc(24px + var(--ov-ticker-h, 0px));
+    }
+
+    /* The status chip owns a band along the top while it is visible, so
+       top-anchored chat starts below it with 8px of clearance rather than running
+       underneath. The band is the same height in either top corner, so one rule
+       covers pos=tl and pos=tr. Bottom-anchored chat cannot be pushed down like
+       this, so overlay.js drops its oldest lines instead. */
+    html[data-chipvis] #overlay[data-pos="tl"],
+    html[data-chipvis] #overlay[data-pos="tr"] {
+      top: calc(24px + var(--ov-chip-h, 0px) + 8px);
     }
 
     /* A dark translucent chip so text reads over any video. Square corners and a
@@ -41,7 +73,7 @@
       padding: 8px 12px;
       color: var(--text);
       /* Larger than the site: readable at 1080p from a couch. */
-      font-size: 22px;
+      font-size: calc(22px * var(--ov-scale));
       line-height: 1.35;
       word-break: break-word;
     }
@@ -49,7 +81,7 @@
     .ov-chat .ov-name {
       font-family: var(--mono);
       font-weight: 700;
-      font-size: 20px;
+      font-size: calc(20px * var(--ov-scale));
       color: var(--text);
       margin-right: 8px;
     }
@@ -60,7 +92,7 @@
     /* Role tag chip, same square mono look as the site, sized up for the canvas. */
     .ov-tag {
       font-family: var(--mono);
-      font-size: 15px;
+      font-size: calc(15px * var(--ov-scale));
       font-weight: 600;
       letter-spacing: 0.5px;
       text-transform: uppercase;
@@ -78,7 +110,7 @@
     /* Joins: smaller and muted. Clips: accent border to stand out. */
     .ov-join {
       font-family: var(--mono);
-      font-size: 17px;
+      font-size: calc(17px * var(--ov-scale));
       color: var(--muted);
     }
     .ov-clip { border-color: var(--accent); }
@@ -101,6 +133,143 @@
     }
     .ov-highlight .ov-highlight-body { font-family: var(--sans); }
 
+    /* Status chip: a small translucent chip, top-right by default, matching the
+       .ov-item look. Shown only while the stream is live. When the chat column is
+       anchored top-right (pos=tr) the chip yields to the top-LEFT corner instead,
+       so chat lines never render through it (overlay.js sets data-chip). */
+    #ov-status {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+    }
+    #ov-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      font-family: var(--mono);
+      font-size: calc(16px * var(--ov-scale));
+      color: var(--text);
+      line-height: 1.2;
+    }
+    html[data-chip="tl"] #ov-status {
+      right: auto;
+      left: 24px;
+    }
+    /* A steady red dot, no pulse: it reads as LIVE without the animation excess. */
+    #ov-status .ov-status-dot {
+      width: 9px;
+      height: 9px;
+      background: var(--live-red);
+      display: inline-block;
+    }
+    #ov-status .ov-status-live { font-weight: 700; letter-spacing: 0.5px; }
+    #ov-status .ov-status-count { color: var(--muted); }
+
+    /* Ticker: a single muted line along the very bottom. It scrolls only when the
+       text is wider than the screen (overlay.js adds .scrolling and sets the
+       duration); a message that fits sits still. */
+    #ov-ticker {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      /* Above the scene card: the ticker is the operator's own line and stays
+         readable even while a Starting Soon / BRB card covers the screen. */
+      z-index: 2;
+      background: rgba(0, 0, 0, 0.55);
+      border-top: 1px solid var(--border);
+      padding: 6px 12px;
+      overflow: hidden;
+      white-space: nowrap;
+      font-family: var(--mono);
+      font-size: calc(16px * var(--ov-scale));
+      color: var(--muted);
+    }
+    .ov-ticker-inner { display: inline-block; }
+    #ov-ticker.scrolling .ov-ticker-inner {
+      animation: ov-ticker-scroll var(--ov-ticker-dur, 20s) linear infinite;
+    }
+    @keyframes ov-ticker-scroll {
+      from { transform: translateX(100%); }
+      to { transform: translateX(-100%); }
+    }
+
+    /* Scene mode (Starting Soon / BRB / Ending): a full-screen centered card. The
+       normal chat column is hidden while it is up; the ticker still shows. */
+    #ov-scene {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+      padding: 6vh 6vw;
+      background: rgba(11, 12, 11, 0.92);
+    }
+    #ov-scene .ov-scene-site {
+      font-family: var(--mono);
+      font-size: calc(26px * var(--ov-scale));
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    #ov-scene .ov-scene-rule {
+      width: 120px;
+      height: 2px;
+      background: var(--accent);
+      /* A flex item in a column that can overflow a short browser source, so
+         without this the 2px rule is the first thing squeezed to nothing. */
+      flex-shrink: 0;
+    }
+    #ov-scene .ov-scene-title {
+      font-family: var(--sans);
+      font-size: calc(48px * var(--ov-scale));
+      font-weight: 700;
+      color: var(--text);
+    }
+    #ov-scene .ov-scene-count {
+      font-family: var(--mono);
+      font-size: calc(34px * var(--ov-scale));
+      color: var(--muted);
+    }
+    /* The quiet "live" note that replaces the countdown once the stream is up. */
+    #ov-scene .ov-scene-count.live {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--live-red);
+      font-weight: 700;
+    }
+    #ov-scene .ov-scene-count.live::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      background: var(--live-red);
+      display: inline-block;
+    }
+    /* The card still covers the whole source (the backdrop is inset: 0), but its
+       centered content clears the ticker band, so a countdown is never half
+       hidden behind the operator's own line. */
+    html[data-ticker] #ov-scene {
+      padding-bottom: calc(6vh + var(--ov-ticker-h, 0px));
+    }
+    /* A short browser source, such as a strip along the bottom of a 1080p canvas,
+       cannot fit the card at full size: the column overflows and the text ends up
+       clipped. Tighten the card instead, keeping the calc(Npx * var(--ov-scale))
+       form so the scale= param still applies on top. */
+    @media (max-height: 300px) {
+      #ov-scene { gap: 8px; }
+      #ov-scene .ov-scene-site { font-size: calc(18px * var(--ov-scale)); }
+      #ov-scene .ov-scene-title { font-size: calc(30px * var(--ov-scale)); }
+      #ov-scene .ov-scene-count { font-size: calc(22px * var(--ov-scale)); }
+    }
+
     /* Restrained slide-in, in the site's 120-200ms band. */
     @keyframes ov-in {
       from { opacity: 0; transform: translateY(6px); }
@@ -109,11 +278,16 @@
     .ov-item { animation: ov-in 0.16s ease-out; }
     @media (prefers-reduced-motion: reduce) {
       .ov-item { animation: none; }
+      /* Never scroll the ticker for a viewer who asked motion to stop. */
+      #ov-ticker.scrolling .ov-ticker-inner { animation: none; }
     }
   </style>
 </head>
 <body>
   <div id="overlay"></div>
-  <script src="/assets/overlay.js?v=5"></script>
+  <div id="ov-status" hidden></div>
+  <div id="ov-ticker" hidden><span class="ov-ticker-inner"></span></div>
+  <div id="ov-scene" hidden></div>
+  <script src="/assets/overlay.js?v=6"></script>
 </body>
 </html>

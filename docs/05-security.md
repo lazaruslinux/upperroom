@@ -106,6 +106,24 @@ check can read it without a session. This is accepted rather than hidden: the
 source is public under the AGPL, so the version is not a secret, and knowing it
 buys an attacker nothing they could not already read in the code.
 
+## The overlay key
+
+The OBS chat overlay cannot sign in, so it authenticates with a long random key in
+its URL (see `docs/08-overlay.md`). It is worth being clear about what that key
+does and does not unlock:
+
+- It is **read-only**. The overlay receives chat, join notices, clip and highlight
+  alerts, and your ticker line. It can never send chat or run a command.
+- The **ticker** you set on the dashboard travels **only** over this key-authed
+  connection. It is deliberately kept off `/api/status` and every other public
+  endpoint, so a logged-out visitor cannot read your ticker before it is on the
+  broadcast.
+- The overlay **test buttons** (which send a fake chat, join, clip or highlight so
+  you can line up your browser source) are **admin only**, and the fake events go
+  to the overlay alone. A test never reaches real chat or the chat history.
+- None of this adds anything a stranger can reach. The key is a bearer secret:
+  treat the URL like a password, and regenerate it from the dashboard if it leaks.
+
 ## What this does not do
 
 - It does not hide your server's IP. The firewall and the login are the

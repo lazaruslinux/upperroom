@@ -367,6 +367,12 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        # An operator message line the overlay scrolls along the bottom. Empty by
+        # default so an existing channel shows nothing new until it is set, and
+        # NOT NULL so a reader never has to guard for a missing value.
+        _ensure_column(
+            conn, "channel_settings", "overlay_ticker", "TEXT NOT NULL DEFAULT ''"
+        )
         # 1, matching a new install: before this switch existed the channel sent
         # go-live email whenever SMTP was configured, so defaulting it on is what
         # keeps an existing channel behaving exactly as it did yesterday.
@@ -807,6 +813,27 @@ def regenerate_overlay_key():
             "UPDATE channel_settings SET overlay_key = ? WHERE id = 1", (key,)
         )
     return key
+
+
+def get_overlay_ticker():
+    """The operator's overlay ticker message, or "" if none is set. Deliberately
+    kept off any public endpoint: it rides only the key-authed overlay socket, so
+    a logged-out stranger cannot read it before it goes on the broadcast."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT overlay_ticker FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return (row["overlay_ticker"] if row else "") or ""
+
+
+def set_overlay_ticker(text):
+    """Store the overlay ticker message. The caller cleans it (plain text, length
+    capped, control characters stripped); this just writes what it is given."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET overlay_ticker = ? WHERE id = 1",
+            (text or "",),
+        )
 
 
 # ---- Stream key -----------------------------------------------------------

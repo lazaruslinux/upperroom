@@ -107,6 +107,7 @@ MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
+MAX_OVERLAY_TICKER = 200        # the operator's overlay message line, kept short
 
 # Channel points. Viewers earn this many points per minute while the stream is
 # live and they are connected to the watch page. Deliberately a fixed constant,

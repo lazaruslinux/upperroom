@@ -15,9 +15,9 @@ import db
 from auth import _clean_username, admin_user
 from config import (
     GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
-    MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_SCHEDULE_NOTE, MAX_SITE_NAME,
-    MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL,
-    SMTP_FROM, SMTP_HOST,
+    MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_OVERLAY_TICKER, MAX_SCHEDULE_NOTE,
+    MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE,
+    MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from media import (
@@ -26,6 +26,18 @@ from media import (
 from notify import notify_live
 
 router = APIRouter()
+
+
+def _clean_ticker(raw):
+    """Reduce an overlay ticker to a single line of safe plain text: control
+    characters (newlines, tabs, and the like) become single spaces so pasted
+    multi-line text keeps its word breaks instead of gluing words together, runs
+    of whitespace collapse to one space, then trimmed and length capped. The
+    overlay renders it with textContent, so this is about shape, not escaping."""
+    text = "".join(
+        ch if ord(ch) >= 32 and ord(ch) != 127 else " " for ch in str(raw or "")
+    )
+    return " ".join(text.split())[:MAX_OVERLAY_TICKER]
 
 
 @router.post("/api/stream-info")
@@ -90,6 +102,14 @@ async def set_stream_info(request: Request):
         clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
         clip_cooldown_admin=cd_admin, clip_seconds=clip_seconds, accent=accent,
     )
+    # The overlay ticker rides this channel-settings route too, but is saved and
+    # pushed separately: cleaned to a single safe line, stored, then broadcast to
+    # the overlay sockets ONLY so a live source updates without a reconnect. It is
+    # never returned by /api/status or any public payload.
+    if "overlay_ticker" in body:
+        ticker = _clean_ticker(body.get("overlay_ticker"))
+        db.set_overlay_ticker(ticker)
+        await hub.send_overlays({"type": "ticker", "text": ticker})
     return {"ok": True}
 
 
@@ -549,7 +569,9 @@ def admin_overlay_get(request: Request):
     key = db.get_overlay_key()
     if not key:
         key = db.regenerate_overlay_key()
-    return {"key": key}
+    # The ticker rides back here (admin only) so the dashboard's overlay panel can
+    # show the current message; it is never on a public endpoint.
+    return {"key": key, "ticker": db.get_overlay_ticker()}
 
 
 @router.post("/api/admin/overlay/regenerate")
@@ -557,6 +579,53 @@ def admin_overlay_regenerate(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     return {"key": db.regenerate_overlay_key()}
+
+
+# The synthetic events the test-fire buttons send. Each is clearly labelled as a
+# test and carries no real account: the point is to let an operator confirm their
+# OBS browser source is wired up without waiting for a real viewer to act. They go
+# to the overlay sockets only (hub.send_overlays), so a test can never appear in
+# real chat or the chat log.
+def _test_overlay_event(kind, now):
+    if kind == "chat":
+        return {
+            "type": "chat", "id": None, "user": "test", "name": "test",
+            "admin": False, "mod": False, "avatar": 0,
+            "name_color": "", "msg_color": "",
+            "text": "This is a test chat line.", "ts": now,
+        }
+    if kind == "join":
+        # The overlay surfaces a join from a system line ending in " joined".
+        return {"type": "system", "text": "test joined", "ts": now}
+    if kind == "clip":
+        return {"type": "clip", "by": "test", "name": "a test clip"}
+    if kind == "highlight":
+        return {
+            "type": "highlight", "id": None, "user": "test", "name": "test",
+            "admin": False, "mod": False, "avatar": 0, "name_color": "",
+            "message": "This is a test highlight.", "cost": 0, "ts": now,
+        }
+    if kind == "ticker":
+        return {"type": "ticker", "text": "This is a test ticker message."}
+    return None
+
+
+@router.post("/api/admin/overlay/test")
+async def admin_overlay_test(request: Request):
+    # Fire one synthetic event at the overlay so the operator can see their OBS
+    # browser source is working. Admin only, like the rest of /api/admin/*.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    body = await request.json()
+    kind = str(body.get("kind") or "")
+    event = _test_overlay_event(kind, int(time.time()))
+    if event is None:
+        return JSONResponse(
+            {"error": "Unknown test kind."}, status_code=400
+        )
+    # Overlay sockets only: never a real chat socket, never the chat log.
+    await hub.send_overlays(event)
+    return {"ok": True, "kind": kind}
 
 
 # ---- Stream key -----------------------------------------------------------
