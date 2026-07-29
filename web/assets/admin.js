@@ -183,22 +183,33 @@ const chClipSeconds = document.getElementById("ch-clip-seconds");
 const chMsg = document.getElementById("ch-msg");
 
 // ---- accent flavor (channel-wide brand color) ----
-// The chosen flavor is applied to the whole document (data-accent) so every
-// visitor sees it. It is remembered in localStorage for the next no-flash paint.
+// Picking a swatch is not the same as changing the channel: clicking one only
+// marks it selected, and the accent is applied to the document (and remembered
+// in localStorage for the next no-flash paint) only once Save actually
+// succeeds. That keeps a browsed-but-abandoned pick from restyling the page and
+// leaking into the saved localStorage value.
 const ACCENTS = ["green", "amber", "blue", "ghost"];
 const swatches = document.querySelectorAll("#accent-swatches .accent-swatch");
 let accent = "green";
 
-function applyAccent(value) {
+// Mark a swatch as the current pick. No side effects on the document or storage:
+// this is only the in-form selection, which Save commits.
+function selectAccent(value) {
   if (!ACCENTS.includes(value)) return;
   accent = value;
-  document.documentElement.dataset.accent = value;
-  try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
   swatches.forEach((s) => s.classList.toggle("selected", s.dataset.accent === value));
 }
 
+// Commit an accent to the whole document and remember it. Called on load (to
+// reflect the saved value) and on a successful save, never on a bare click.
+function applyAccentToDocument(value) {
+  if (!ACCENTS.includes(value)) return;
+  document.documentElement.dataset.accent = value;
+  try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
+}
+
 swatches.forEach((s) => {
-  s.addEventListener("click", () => applyAccent(s.dataset.accent));
+  s.addEventListener("click", () => selectAccent(s.dataset.accent));
 });
 
 function showChMsg(text, ok) {
@@ -218,7 +229,9 @@ async function loadChannel() {
   chCdMod.value = data.clip_cooldown_mod != null ? data.clip_cooldown_mod : 5;
   chCdAdmin.value = data.clip_cooldown_admin != null ? data.clip_cooldown_admin : 1;
   chClipSeconds.value = data.clip_seconds != null ? data.clip_seconds : 60;
-  applyAccent(data.accent || "green");
+  // On load the saved value is the real one, so both mark it and apply it.
+  selectAccent(data.accent || "green");
+  applyAccentToDocument(data.accent || "green");
 }
 
 document.getElementById("ch-save").addEventListener("click", async () => {
@@ -250,6 +263,9 @@ document.getElementById("ch-save").addEventListener("click", async () => {
       return;
     }
   } catch { showChMsg("Could not reach the server.", false); return; }
+  // Only now that the save landed does the accent take effect on the document
+  // and in localStorage.
+  applyAccentToDocument(accent);
   showChMsg("Saved.", true);
 });
 
@@ -508,7 +524,7 @@ function renderRetention(data) {
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const parts = [
     `${formatBytes(usage.total_bytes)} used`,
-    `${plural(counts.vods || 0, "recording")}, ${plural(counts.clips || 0, "clip")}`,
+    `${plural(counts.vods || 0, "broadcast")}, ${plural(counts.clips || 0, "clip")}`,
   ];
   if (counts.pinned) parts.push(`${counts.pinned} pinned`);
   if (usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);

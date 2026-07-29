@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=41">
+  <link rel="stylesheet" href="/assets/style.css?v=42">
 </head>
 <body class="home">
   <div id="site-nav"></div>
@@ -30,6 +30,16 @@
       <span id="next-when" class="next-when"></span>
       <span id="next-note" class="next-note"></span>
     </p>
+
+    <!-- Divider above the stream area: a rule with a centered mono label. -->
+    <div class="stream-divider"><span>live stream</span></div>
+
+    <!-- Shown in place of the stream card while the broadcaster is offline. The
+         card is hidden entirely rather than shown as a dead "no signal" tile. -->
+    <div id="offline-block" class="offline-block" hidden>
+      The broadcaster is currently offline.
+      <a href="/watch">Enter chat</a> or view past broadcasts &amp; clips below.
+    </div>
 
     <button id="stream-card" type="button" class="stream-card" aria-label="Join the stream">
       <div class="thumb-wrap">
@@ -58,7 +68,7 @@
     <!-- Past broadcasts and viewer clips. -->
     <section class="library">
       <div class="lib-tabs">
-        <button type="button" class="lib-tab selected" data-tab="vods">VODs</button>
+        <button type="button" class="lib-tab selected" data-tab="vods">Broadcasts</button>
         <button type="button" class="lib-tab" data-tab="clips">Clips</button>
       </div>
       <label id="clip-filter" class="switch lib-filter" hidden>
@@ -69,7 +79,7 @@
     </section>
   </main>
 
-  <script src="/assets/nav.js?v=3"></script>
-  <script src="/assets/home.js?v=18"></script>
+  <script src="/assets/nav.js?v=4"></script>
+  <script src="/assets/home.js?v=19"></script>
 </body>
 </html>

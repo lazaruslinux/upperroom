@@ -127,8 +127,17 @@ function applySiteName(value) {
 const statusBox = document.getElementById("status");
 const statusLabel = document.getElementById("status-label");
 const statusTime = document.getElementById("status-time");
+const statusWatching = document.getElementById("status-watching");
 let liveSince = null;
 let tick = null;
+
+// While live, the status row also shows how many people are watching, taken from
+// the public status poll. Hidden entirely when offline so the row stays clean.
+function renderWatching(count) {
+  const n = typeof count === "number" ? count : 0;
+  statusWatching.textContent = n === 1 ? "1 watching" : `${n} watching`;
+  statusWatching.hidden = false;
+}
 
 function formatStarted(seconds) {
   // Keep a friendly "just started" for the first ten minutes, then count up.
@@ -183,10 +192,12 @@ function renderNext() {
 async function refreshStatus() {
   let online = false;
   let since = null;
+  let watching = 0;
   try {
     const data = await (await fetch("/api/status")).json();
     online = !!data.online;
     since = data.since;
+    watching = data.watching;
     applyAccent(data.accent);
     applySiteName(data.site_name);
     // Once the stream is actually on, a countdown to it is just noise.
@@ -201,11 +212,13 @@ async function refreshStatus() {
     statusLabel.textContent = "Live";
     liveSince = since || Math.floor(Date.now() / 1000);
     renderLive();
+    renderWatching(watching);
     if (!tick) tick = setInterval(renderLive, 30000);
   } else {
     statusBox.className = "status status-offline";
     statusLabel.textContent = "Offline";
     statusTime.textContent = "";
+    statusWatching.hidden = true;
     liveSince = null;
     if (tick) { clearInterval(tick); tick = null; }
   }

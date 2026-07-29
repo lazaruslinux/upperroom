@@ -6,6 +6,7 @@ sign ups. The admin creates every account with manage.py. Passwords are never
 stored directly, only a scrypt hash with a per account salt.
 """
 
+import datetime
 import hashlib
 import hmac
 import os
@@ -200,7 +201,12 @@ CREATE TABLE IF NOT EXISTS replay_chat (
     moderator INTEGER NOT NULL DEFAULT 0,
     text TEXT NOT NULL,
     offset_s INTEGER NOT NULL,
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    -- The author's chat colors as they stood when the snapshot was taken, frozen
+    -- alongside their name and avatar so the replay looks like the live chat did.
+    -- Each is a validated "#rrggbb" or empty for the theme default.
+    name_color TEXT NOT NULL DEFAULT '',
+    msg_color TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_replay ON replay_chat (kind, ref_id, offset_s);
 
@@ -332,6 +338,12 @@ def init_db():
         _ensure_column(conn, "users", "is_guest", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "guest_expires_at", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
+        # Older databases snapshotted replay chat before per-viewer colors rode
+        # along, so their replay rows have no color to carry. Add the columns in
+        # place; old snapshots simply read as the theme default, which is exactly
+        # how they already looked.
+        _ensure_column(conn, "replay_chat", "name_color", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "replay_chat", "msg_color", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(
             conn, "channel_settings", "site_name", "TEXT NOT NULL DEFAULT 'upperroom'"
         )
@@ -1645,6 +1657,79 @@ def recent_chat(limit=200, exclude_admins=False):
         return [dict(r) for r in rows]
 
 
+def activity_by_day(days=30, now=None):
+    """Daily activity buckets for the analytics charts, oldest first.
+
+    One entry per day over the last `days` days, each carrying:
+      date          - "YYYY-MM-DD" (UTC)
+      watch_minutes - total watch time that day, summing every session's overlap
+                      with the day. A session still open (left_at NULL) is capped
+                      at `now`, so an in-progress watch counts up to the present.
+      viewers       - distinct accounts with a session touching that day
+      messages      - chat_log rows stamped that day. chat_log is purged on the
+                      retention schedule, so days before the kept window read 0
+                      honestly rather than being reported wrong.
+
+    Buckets are UTC calendar days. `now` is injectable so the bucketing math can
+    be tested without waiting on the clock."""
+    days = max(1, min(365, int(days)))
+    if now is None:
+        now = int(time.time())
+    # Midnight UTC of the current day, then one day boundary per bucket back.
+    midnight = int(
+        datetime.datetime.fromtimestamp(now, datetime.timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+    )
+    day_starts = [midnight - i * 86400 for i in range(days - 1, -1, -1)]
+    window_start = day_starts[0]
+    window_end = midnight + 86400   # the end of today
+
+    watch_seconds = [0] * days
+    viewer_sets = [set() for _ in range(days)]
+    messages = [0] * days
+
+    with connect() as conn:
+        # Every session that touches the window, split across the days it spans.
+        sessions = conn.execute(
+            "SELECT username, joined_at, left_at FROM watch_sessions "
+            "WHERE joined_at < ? AND (left_at IS NULL OR left_at > ?)",
+            (window_end, window_start),
+        ).fetchall()
+        for s in sessions:
+            start = s["joined_at"]
+            end = s["left_at"] if s["left_at"] is not None else now
+            if end <= start:
+                continue
+            for i, day_start in enumerate(day_starts):
+                lo = max(start, day_start)
+                hi = min(end, day_start + 86400)
+                if hi > lo:
+                    watch_seconds[i] += hi - lo
+                    viewer_sets[i].add(s["username"])
+        # chat_log rows land in the bucket their timestamp falls in. The day
+        # starts are consecutive, so the index is a plain division.
+        for row in conn.execute(
+            "SELECT ts FROM chat_log WHERE ts >= ? AND ts < ?",
+            (window_start, window_end),
+        ):
+            i = int((row["ts"] - window_start) // 86400)
+            if 0 <= i < days:
+                messages[i] += 1
+
+    return [
+        {
+            "date": datetime.datetime.fromtimestamp(
+                day_start, datetime.timezone.utc
+            ).strftime("%Y-%m-%d"),
+            "watch_minutes": watch_seconds[i] // 60,
+            "viewers": len(viewer_sets[i]),
+            "messages": messages[i],
+        }
+        for i, day_start in enumerate(day_starts)
+    ]
+
+
 # ---- VODs, clips, chat replay, and views ----------------------------------
 
 def _media_table(kind):
@@ -1792,12 +1877,13 @@ def snapshot_chat(kind, ref_id, start_ts, end_ts):
             """
             INSERT INTO replay_chat
                 (kind, ref_id, username, display_name, avatar_version, font,
-                 admin, moderator, text, offset_s, deleted)
+                 admin, moderator, text, offset_s, deleted, name_color, msg_color)
             SELECT ?, ?, c.username, c.display_name,
                    COALESCE(u.avatar_version, 0), COALESCE(u.chat_font, 'system'),
                    COALESCE(u.is_admin, 0), COALESCE(u.is_moderator, 0),
                    c.text, MAX(0, c.ts - ?),
-                   CASE WHEN c.deleted_by IS NOT NULL THEN 1 ELSE 0 END
+                   CASE WHEN c.deleted_by IS NOT NULL THEN 1 ELSE 0 END,
+                   COALESCE(u.name_color, ''), COALESCE(u.msg_color, '')
             FROM chat_log c LEFT JOIN users u ON u.username = c.username
             WHERE c.ts >= ? AND c.ts <= ?
             """,
@@ -1809,7 +1895,7 @@ def get_replay(kind, ref_id):
     with connect() as conn:
         rows = conn.execute(
             "SELECT username, display_name, avatar_version, font, admin, moderator, "
-            "text, offset_s, deleted FROM replay_chat "
+            "text, offset_s, deleted, name_color, msg_color FROM replay_chat "
             "WHERE kind = ? AND ref_id = ? ORDER BY offset_s, id",
             (kind, ref_id),
         ).fetchall()

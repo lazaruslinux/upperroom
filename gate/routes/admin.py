@@ -367,6 +367,17 @@ def admin_activity(username: str, request: Request):
     return db.user_activity(username)
 
 
+@router.get("/api/admin/activity")
+def admin_activity_over_time(request: Request, days: int = 30):
+    # Daily buckets for the analytics charts: watch minutes, unique viewers, and
+    # chat messages per day. Admin only, like the rest of /api/admin/*. The chat
+    # series only goes back as far as the chat retention keeps rows, which the
+    # page labels honestly rather than pretending older days were silent.
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    return {"days": db.activity_by_day(days)}
+
+
 @router.get("/api/admin/chat")
 def admin_chat(request: Request):
     if not admin_user(request):

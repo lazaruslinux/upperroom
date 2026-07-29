@@ -15,6 +15,7 @@ const thumbFallback = document.getElementById("thumb-fallback");
 const streamBadge = document.getElementById("stream-badge");
 const badgeLabel = document.getElementById("badge-label");
 const statusPill = document.getElementById("status-pill");
+const offlineBlock = document.getElementById("offline-block");
 
 let me = null;
 let channel = null;          // the streamer shown on the card
@@ -183,6 +184,13 @@ function showLive(isLive, watching) {
   online = isLive;
   card.classList.toggle("is-live", isLive);
 
+  // While live the stream card is shown; while offline it is hidden entirely and
+  // a compact "broadcaster is offline" block takes its place, pointing at chat
+  // and the library below. The status poll runs on an interval, so this flips
+  // on its own the moment a stream starts or ends, without a reload.
+  card.hidden = !isLive;
+  offlineBlock.hidden = isLive;
+
   // One badge that toggles state: red LIVE with a blinking dot when live, muted
   // Offline otherwise.
   streamBadge.classList.toggle("is-live", isLive);
@@ -349,7 +357,7 @@ async function renderLibrary() {
   if (!display.length) {
     libEmpty.hidden = false;
     if (libTab === "vods") {
-      libEmpty.textContent = "No past broadcasts yet. Recordings appear here after a stream ends.";
+      libEmpty.textContent = "No past broadcasts yet. They appear here after a stream ends.";
     } else if (mineOnly) {
       libEmpty.textContent = "You haven't made any clips yet.";
     } else {

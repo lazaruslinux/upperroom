@@ -58,6 +58,14 @@ async def redeem(request: Request):
             {"error": "Too many highlights. Wait a minute and try again."},
             status_code=429,
         )
+    # A highlight lights up the live stream, so there has to be a live stream to
+    # light up. Refused before the word filter or the spend when the channel is
+    # offline, so a viewer never burns points on a highlight nobody would see.
+    if not hub.is_live():
+        return JSONResponse(
+            {"error": "Highlights show on stream, and the stream is offline right now."},
+            status_code=400,
+        )
     body = await request.json()
     # The highlight text follows the same length rule the chat socket enforces:
     # strip, then truncate to the chat limit. An empty message after stripping is

@@ -177,19 +177,40 @@ body {
 }
 .site-title {
   font-family: var(--mono);
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: var(--text);
   margin: 0;
-  line-height: 1.15;
+  line-height: 1.1;
   word-break: break-word;
 }
 .powered {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--muted);
   margin: 0;
 }
+/* The little u logo sits inline in the credit at text height. Decorative only;
+   the markup marks it aria-hidden with an empty alt. */
+.u-logo {
+  height: 0.95em;
+  width: auto;
+  vertical-align: -0.13em;
+}
+/* "powered by" stays muted and normal weight; only the wordmark is bold. */
+.powered .wordmark { font-weight: 700; }
+.powered-sep { color: var(--border); }
+/* The source link doubles as the AGPL section-13 written offer. Kept subtle:
+   a muted mono link that only picks up the accent on hover. */
+.source-line { margin: 4px 0 0; text-align: center; }
+.source-link {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.source-link:hover { color: var(--accent); }
 /* Compact masthead for the top bars (home, media): the site name keeps the
    inherited .brand size, the platform credit sits small underneath. */
 .brand-column {
@@ -428,15 +449,18 @@ form { display: flex; flex-direction: column; gap: 12px; }
 }
 .status .dot { width: 7px; height: 7px; background: var(--muted); flex: none; }
 .status-time { color: var(--muted); }
+/* The watching count rides the same row while live, kept muted so the red LIVE
+   dot and label stay the focus. Hidden outright when offline. */
+.status-watching { color: var(--muted); }
 .status-live { border-color: var(--accent); }
 .status-live #status-label { color: var(--accent); }
 .status-live .dot { background: var(--accent); animation: blink 0.9s steps(1) infinite; }
 .status-offline #status-label { color: var(--muted); }
 
-/* setup wizard intro line + the "have an invite?" / "back to sign in" toggles */
+/* setup wizard intro line + the invite / guest-pass / back-to-sign-in toggles */
 .setup-intro { margin: 0 0 16px; font-family: var(--sans); font-size: 13px; line-height: 1.45; }
 .alt-toggle { margin: 16px 0 0; text-align: center; }
-.alt-toggle button {
+.alt-toggle button, .alt-toggle .guest-alt {
   height: auto;
   padding: 0;
   border: none;
@@ -448,7 +472,21 @@ form { display: flex; flex-direction: column; gap: 12px; }
   text-decoration: underline;
   cursor: pointer;
 }
-.alt-toggle button:hover { color: var(--accent); }
+.alt-toggle button:hover, .alt-toggle .guest-alt:hover { color: var(--accent); }
+/* The invite and guest-pass entries sit side by side under the sign-in form,
+   parted by a thin divider so they read as two distinct doors. */
+#invite-alt { display: flex; gap: 14px; justify-content: center; align-items: center; }
+#invite-alt .guest-alt { position: relative; }
+#invite-alt .guest-alt::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  height: 11px;
+  width: 1px;
+  background: var(--border);
+  transform: translateY(-50%);
+}
 
 /* =========================================================================
    Shared top bar (home / media / mod / admin)
@@ -466,24 +504,32 @@ form { display: flex; flex-direction: column; gap: 12px; }
 }
 .home-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; }
 
-/* Header nav items are plain dim mono text - no border, no box - so they stay
-   on one line even at 390px. Primary actions (e.g. admin's "+ new user") keep
-   their bordered accent button look and are exempt from this rule. */
+/* Header nav items are real bordered buttons: square, mono, lowercase, picking
+   up the accent on hover. Padding and gap are trimmed so even the admin's five
+   items still fit on one line at 390px without overflow. */
+.home-bar .home-actions { gap: 6px; }
 .home-bar .home-actions .ghost-btn {
-  height: auto;
-  border: none;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
   background: none;
-  padding: 4px 0;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   text-transform: lowercase;
   white-space: nowrap;
 }
-.home-bar .home-actions .ghost-btn:hover { border: none; color: var(--accent); }
-/* The nav is the same on every page, so the page you are on is marked rather
-   than dropped from the bar. */
-.home-bar .home-actions .ghost-btn.is-current { color: var(--text); }
+.home-bar .home-actions .ghost-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* The nav is the same on every page, so the page you are on is marked with an
+   accent-filled border rather than dropped from the bar. */
+.home-bar .home-actions .ghost-btn.is-current {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
 
 /* =========================================================================
    Home (card landing) + library
@@ -502,6 +548,41 @@ form { display: flex; flex-direction: column; gap: 12px; }
   margin: 0 0 16px;
 }
 .home-greeting b { color: var(--accent); font-weight: 400; }
+
+/* Divider above the stream area: a centered mono label flanked by 1px rules. */
+.stream-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 14px;
+  color: var(--muted);
+}
+.stream-divider::before,
+.stream-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.stream-divider span {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Compact notice shown in place of the stream card between broadcasts. */
+.offline-block {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.offline-block a { color: var(--accent); text-decoration: none; }
+.offline-block a:hover { text-decoration: underline; }
 
 .stream-card {
   width: 100%;
@@ -1077,8 +1158,45 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; background: var(--bg); }
 
 .admin-main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 40px; }
+/* The dashboard's small version footer. Its style lived inline on the element;
+   it belongs here with the rest of the admin chrome. */
+.admin-foot {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 16px 32px;
+  font-size: 11px;
+}
 
 .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+
+/* ---- analytics over-time charts (hand-rolled inline SVG) ---- */
+.charts-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.chart {
+  margin: 0;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px;
+}
+.chart figcaption {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-top: 6px;
+}
+.chart-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin: 20px 0;
+  text-align: center;
+}
 .stat-card {
   color: var(--text);
   text-align: left;

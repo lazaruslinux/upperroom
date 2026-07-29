@@ -33,6 +33,11 @@ admin chat log with a message id, so a moderator can delete it with `/del`,
 never a way past moderation. Highlighting is also rate limited per address, ten a
 minute, so it cannot be used to flood chat.
 
+A highlight lights up the live stream, so it is refused while the stream is
+offline: the composer's send is disabled between broadcasts with a note saying
+why, and the server refuses an offline redeem before any points are spent, so a
+viewer can never burn points on a highlight nobody would see.
+
 There is no admin configuration. The cost and the earn rate are both fixed in the
 code, and there is nothing to set up.
 

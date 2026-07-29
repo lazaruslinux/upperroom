@@ -98,10 +98,13 @@
         return `<a href="${item.href}" class="ghost-btn${current}">${item.label}</a>`;
       })
       .join("\n      ");
+    // The little u logo leads the credit at text height (decorative, so
+    // aria-hidden with an empty alt). The source link doubles as the AGPL
+    // section-13 written offer and stays subtle beside the wordmark.
     return `
     <div class="brand brand-column">
       <span id="site-title">upperroom</span>
-      <span class="powered">powered by <span class="wordmark">upper<span class="wm-accent">room</span></span></span>
+      <span class="powered">powered by <img class="u-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true"> <span class="wordmark">upper<span class="wm-accent">room</span></span> <span class="powered-sep">·</span> <a class="source-link" href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener">source</a></span>
     </div>
     <nav class="home-actions">
       ${links}

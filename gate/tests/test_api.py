@@ -391,6 +391,7 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
     [
         ("GET", "/api/admin/users", None),
         ("POST", "/api/stream-info", {"title": "x"}),
+        ("GET", "/api/admin/activity", None),
         ("GET", "/api/admin/chat", None),
         ("GET", "/api/admin/notify", None),
         ("GET", "/api/admin/overlay", None),
@@ -985,10 +986,14 @@ class _CaptureSocket:
 
 
 def _viewer_with_points(client, points):
-    """Sign a fresh viewer client in and give the account a starting balance."""
+    """Sign a fresh viewer client in and give the account a starting balance.
+
+    The stream is marked live, because a highlight is refused while the channel
+    is offline; a case that wants the offline path sets hub._live back to False."""
     setup_admin(client, username="owner")
     add_user("viewer")
     db.credit_points(["viewer"], points)
+    hub._live = True
     viewer = make_client()
     login(viewer, "viewer")
     return viewer
@@ -1128,6 +1133,18 @@ def test_redeem_is_rate_limited_per_address(client):
         headers={"X-Forwarded-For": "203.0.113.41"},
     )
     assert other.status_code == 200
+
+
+def test_redeem_while_offline_is_refused_and_nothing_spent(client):
+    # A highlight only makes sense while the stream is live, so redeeming one
+    # against an offline channel is a 400 and the balance is untouched: the
+    # refusal comes before the spend.
+    viewer = _viewer_with_points(client, 120)
+    hub._live = False
+    resp = viewer.post("/api/redeem", json={"message": "hi"})
+    assert resp.status_code == 400
+    assert "offline" in resp.json()["error"].lower()
+    assert db.get_points("viewer") == 120
 
 
 def test_highlight_carries_an_id_and_a_moderator_can_delete_it(client):

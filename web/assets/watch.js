@@ -62,6 +62,12 @@ function showOffline(isOffline) {
   // Clipping only makes sense while the stream is live (and being recorded).
   clipBtn.hidden = isOffline;
   setViewerLabel();
+  // A highlight needs a live stream to show on, so the composer's send follows
+  // the live state too. Guarded because the highlight controls do not exist for
+  // a guest (setUpGuest removes the points chip).
+  if (typeof updateHighlightSend === "function" && pointsChip && pointsChip.isConnected) {
+    updateHighlightSend();
+  }
 }
 
 function startVideo() {
@@ -846,8 +852,16 @@ function setPoints(n) {
 }
 
 // Send stays disabled until the balance covers the cost and there is something
-// to say.
+// to say. A highlight only shows on the live stream, so while the stream is
+// offline the send is disabled outright with an explaining title, matching the
+// server, which refuses an offline redeem before any spend.
 function updateHighlightSend() {
+  if (!streamOnline) {
+    highlightSend.disabled = true;
+    highlightSend.title = "Highlights show on stream, and the stream is offline right now.";
+    return;
+  }
+  highlightSend.title = "";
   highlightSend.disabled = myPoints < highlightCost || !highlightInput.value.trim();
 }
 
@@ -904,6 +918,11 @@ pointsChip.addEventListener("click", () => {
   highlightMsg.hidden = true;
   openModal(highlightModal);
   loadPoints();   // fetch a fresh balance and cost each time it opens
+  // Opening it between streams should say why the send is greyed out rather
+  // than leave a dead button with no explanation.
+  if (!streamOnline) {
+    showHighlightMsg("Highlights show on stream, and the stream is offline right now.", false);
+  }
 });
 
 // ---- guest passes ---------------------------------------------------------

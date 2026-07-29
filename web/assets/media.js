@@ -106,6 +106,10 @@ function appendReplayLine(msg) {
   const name = document.createElement("span");
   name.className = msg.admin ? "name admin" : "name";
   name.textContent = msg.display_name;
+  // The author's chat colors were frozen into the snapshot, so the replay looks
+  // the way the live chat did: their name color on the name, their message color
+  // on the text. Colors were guarded for readability when they were chosen.
+  if (msg.name_color) name.style.color = msg.name_color;
   const time = document.createElement("span");
   time.className = "msg-time";
   time.textContent = clock(msg.offset_s);
@@ -118,6 +122,7 @@ function appendReplayLine(msg) {
   } else {
     body.textContent = msg.text;
     body.style.fontFamily = FONTS[msg.font] || "";
+    if (msg.msg_color) body.style.color = msg.msg_color;
   }
   wrap.append(head, body);
   line.appendChild(wrap);

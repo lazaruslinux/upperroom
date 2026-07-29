@@ -68,9 +68,10 @@ See `docs/06-accounts-and-chat.md` for the details.
 
 Everything you run the place with is on the dashboard at `/admin`: people
 (accounts, bans and invites), branding, the schedule, chat rules, the stream
-key, the overlay, notifications, storage and the recorded library. `/analytics`
-sits beside it and holds the numbers: watch time, broadcasts, library and
-invite use.
+key, the overlay, notifications, storage and the library of past broadcasts
+(the recordings). `/analytics` sits beside it and holds the numbers: watch time,
+broadcasts, library and invite use, plus line charts of watch time, unique
+viewers and chat messages per day over the last thirty days.
 
 If you ever need to bootstrap or recover an account from the command line (for
 example if you are locked out), `manage.py` still works; it is described in
@@ -121,7 +122,7 @@ rules, so someone banned from chat cannot comment instead.
 Recording recovers on its own. If the recorder ever dies or its file stops
 growing mid-broadcast (for example, a rough reconnect on a long session), the
 gate finalizes whatever it captured, starts a fresh recording while you stay
-live, and backs off if failures repeat. You may see more than one VOD for a
+live, and backs off if failures repeat. You may see more than one recording for a
 single broadcast when this happens; nothing is lost.
 
 Nothing is deleted automatically unless you ask for it. The admin dashboard's

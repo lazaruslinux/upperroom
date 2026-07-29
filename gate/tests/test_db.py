@@ -569,3 +569,65 @@ def test_clear_schedule_if_past_leaves_a_future_one_alone(fresh_db):
     assert db.clear_schedule_if_past(now) is True
     schedule = db.get_schedule()
     assert schedule["next_stream_at"] == 0 and schedule["next_stream_note"] == ""
+
+
+# ---- chat replay colors ---------------------------------------------------
+
+def test_snapshot_carries_chat_colors_into_replay(fresh_db):
+    # A viewer's chosen name and message colors are frozen into the replay
+    # snapshot alongside their name and avatar, so a saved broadcast's chat looks
+    # the way it did live.
+    now = int(time.time())
+    db.add_user("carol", "Carol", "password1")
+    db.set_chat_colors("carol", name_color="#88cc88", msg_color="#3366aa")
+    db.log_chat("carol", "Carol", "hello", now)
+    db.add_user("dave", "Dave", "password1")            # no colors set
+    db.log_chat("dave", "Dave", "hi", now)
+
+    db.snapshot_chat("vod", 1, now - 5, now + 5)
+    rows = {r["username"]: r for r in db.get_replay("vod", 1)}
+    assert rows["carol"]["name_color"] == "#88cc88"
+    assert rows["carol"]["msg_color"] == "#3366aa"
+    # Someone with no colors set snapshots as the theme default (empty strings).
+    assert rows["dave"]["name_color"] == "" and rows["dave"]["msg_color"] == ""
+
+
+# ---- activity buckets for the analytics charts ----------------------------
+
+def test_activity_by_day_buckets_watch_time_viewers_and_messages(fresh_db):
+    import datetime
+
+    # A fixed "now" (noon UTC on a known day) so the day buckets are deterministic.
+    now = int(datetime.datetime(2026, 3, 15, 12, 0, 0,
+                                tzinfo=datetime.timezone.utc).timestamp())
+    today0 = int(datetime.datetime(2026, 3, 15,
+                                   tzinfo=datetime.timezone.utc).timestamp())
+    day = 86400
+
+    # alice watched from yesterday 23:00 to today 00:30: 60 minutes fall in
+    # yesterday's bucket, 30 in today's.
+    sid = db.start_watch_session("alice", today0 - day + 23 * 3600)
+    db.end_watch_session(sid, today0 + 1800)
+    # bob is still watching (left_at NULL), started today 11:00: 60 minutes today,
+    # capped at now.
+    db.start_watch_session("bob", today0 + 11 * 3600)
+
+    # Chat: two lines yesterday, one today.
+    db.log_chat("alice", "Alice", "a", today0 - day + 100)
+    db.log_chat("bob", "Bob", "b", today0 - day + 200)
+    db.log_chat("alice", "Alice", "c", today0 + 300)
+
+    days = db.activity_by_day(days=3, now=now)
+    assert [d["date"] for d in days] == ["2026-03-13", "2026-03-14", "2026-03-15"]
+
+    # Day before yesterday: nothing.
+    assert days[0] == {"date": "2026-03-13", "watch_minutes": 0,
+                       "viewers": 0, "messages": 0}
+    # Yesterday: 60 watch minutes from alice, one viewer, two messages.
+    assert days[1]["watch_minutes"] == 60
+    assert days[1]["viewers"] == 1
+    assert days[1]["messages"] == 2
+    # Today: alice's 30 plus bob's 60 minutes, two distinct viewers, one message.
+    assert days[2]["watch_minutes"] == 90
+    assert days[2]["viewers"] == 2
+    assert days[2]["messages"] == 1

@@ -143,7 +143,7 @@ function renderLibrary(vods, clips, retention) {
   const views = [...vods, ...clips].reduce((sum, m) => sum + (m.views || 0), 0);
   const usage = retention && retention.usage ? retention.usage : {};
   fillStrip("library-strip", [
-    [vods.length, vods.length === 1 ? "recording" : "recordings"],
+    [vods.length, vods.length === 1 ? "broadcast" : "broadcasts"],
     [clips.length, clips.length === 1 ? "clip" : "clips"],
     [views, "views"],
     [formatBytes(usage.total_bytes || 0), "stored"],
@@ -162,15 +162,133 @@ function renderInvites(invites) {
   ]);
 }
 
+// ---- over-time line charts ------------------------------------------------
+// Hand-rolled inline SVG, no chart library (the repo is self-contained). Each
+// chart is theme-aware through the same CSS variables the rest of the chrome
+// uses (accent line, border baseline, muted axis), scales to its column via a
+// responsive viewBox, carries a per-point <title> tooltip, and keeps square
+// corners throughout.
+
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS(SVGNS, name);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function lineChart(title, series, unit) {
+  const figure = document.createElement("figure");
+  figure.className = "chart";
+  const caption = document.createElement("figcaption");
+  caption.textContent = title;
+  figure.appendChild(caption);
+
+  const values = series.map((d) => d.value);
+  const max = values.length ? Math.max(...values) : 0;
+  // A flat run of zeros is "nothing yet", not a chart of a straight line, so keep
+  // the muted empty pattern the rest of the page uses.
+  if (!series.length || max <= 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted chart-empty";
+    empty.textContent = "Nothing yet.";
+    figure.appendChild(empty);
+    return figure;
+  }
+
+  const W = 600, H = 200;
+  const padL = 6, padR = 6, padT = 12, padB = 10;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const n = series.length;
+  const x = (i) => (n === 1 ? W / 2 : padL + (i / (n - 1)) * innerW);
+  const y = (v) => padT + (1 - v / max) * innerH;
+  const baseY = y(0);
+
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${W} ${H}`, class: "chart-svg", role: "img",
+    "aria-label": title,
+  });
+
+  // Baseline (x axis), muted 1px.
+  svg.appendChild(svgEl("line", {
+    x1: padL, y1: baseY, x2: W - padR, y2: baseY,
+    stroke: "var(--border)", "stroke-width": 1,
+  }));
+
+  // The data line: accent, mitered and butt-capped for the square aesthetic, and
+  // a non-scaling stroke so it stays crisp at any rendered width.
+  const d = series
+    .map((pt, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(pt.value).toFixed(1)}`)
+    .join(" ");
+  svg.appendChild(svgEl("path", {
+    d, fill: "none", stroke: "var(--accent)", "stroke-width": 2,
+    "stroke-linejoin": "miter", "stroke-linecap": "butt",
+    "vector-effect": "non-scaling-stroke",
+  }));
+
+  // Square marks, each carrying a native tooltip.
+  series.forEach((pt, i) => {
+    const s = 4;
+    const rect = svgEl("rect", {
+      x: (x(i) - s / 2).toFixed(1), y: (y(pt.value) - s / 2).toFixed(1),
+      width: s, height: s, fill: "var(--accent)",
+    });
+    const tip = document.createElementNS(SVGNS, "title");
+    tip.textContent = `${pt.date} · ${pt.value === 1 ? `1 ${unit}` : `${pt.value} ${unit}s`}`;
+    rect.appendChild(tip);
+    svg.appendChild(rect);
+  });
+
+  figure.appendChild(svg);
+
+  // First and last dates only, so the axis does not crowd; the rest is on the
+  // per-point tooltips.
+  const axis = document.createElement("div");
+  axis.className = "chart-axis muted";
+  const first = document.createElement("span");
+  first.textContent = series[0].date;
+  const last = document.createElement("span");
+  last.textContent = series[series.length - 1].date;
+  axis.append(first, last);
+  figure.appendChild(axis);
+
+  return figure;
+}
+
+function renderCharts(days) {
+  const host = document.getElementById("charts");
+  host.innerHTML = "";
+  if (!days || !days.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Nothing yet.";
+    host.appendChild(empty);
+    return;
+  }
+  host.appendChild(lineChart(
+    "Watch time per day (minutes)",
+    days.map((d) => ({ date: d.date, value: d.watch_minutes })), "minute"));
+  host.appendChild(lineChart(
+    "Unique viewers per day",
+    days.map((d) => ({ date: d.date, value: d.viewers })), "viewer"));
+  // Chat is purged after the retention window (7 days by default), so older days
+  // legitimately read zero; the title says so rather than implying chat stopped.
+  host.appendChild(lineChart(
+    "Chat messages per day (last 7 days kept)",
+    days.map((d) => ({ date: d.date, value: d.messages })), "message"));
+}
+
 async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "analytics" });
-  const [users, vods, clips, invites, retention] = await Promise.all([
+  const [users, vods, clips, invites, retention, activity] = await Promise.all([
     getJSON("/api/admin/users"),
     getJSON("/api/vods"),
     getJSON("/api/clips"),
     getJSON("/api/admin/invites"),
     getJSON("/api/admin/retention"),
+    getJSON("/api/admin/activity?days=30"),
   ]);
   renderPeople((users && users.users) || []);
   const vodList = (vods && vods.vods) || [];
@@ -178,6 +296,7 @@ async function boot() {
   renderBroadcasts(vodList);
   renderLibrary(vodList, clipList, retention);
   renderInvites((invites && invites.invites) || []);
+  renderCharts((activity && activity.days) || []);
 }
 
 boot();

@@ -69,4 +69,7 @@ def client(tmp_path, monkeypatch):
     hub._timeouts.clear()
     hub._banned.clear()
     hub._last_post.clear()
+    # The live flag is process-global too, and now gates highlight redemption, so
+    # reset it between tests. A case that wants a live stream sets it explicitly.
+    hub._live = False
     return make_client()

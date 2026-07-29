@@ -22,7 +22,8 @@ only repackages the video and stays light.
   roughly two to five seconds behind live.
 - Serves one watch page. No video leaves the server without a valid session.
 - Live chat, a list of who is watching, and a count.
-- Records every broadcast as a VOD, and lets viewers clip the recent stream.
+- Records every broadcast (a recording you can replay later), and lets viewers
+  clip the recent stream. Past broadcasts and clips show in the library.
   Clip length is a channel setting (sixty seconds by default). A clip captures
   the moment the viewer pressed the button, not the moment they finished naming
   it. Both carry a view count.
@@ -94,7 +95,10 @@ only repackages the video and stays light.
 - A transparent chat overlay you add to OBS as a browser source, so the
   broadcast itself shows chat, joins, clips and highlights.
 - Channel points, earned a point a minute for watching live, spent to highlight
-  a short message on stream and on the overlay.
+  a short message on stream and on the overlay. Highlights show only while you
+  are live.
+- An analytics page with the running totals plus line charts of watch time,
+  unique viewers and chat messages per day over the last thirty days.
 - When you go live it can post to a Discord webhook, send email, or do neither.
   Email is opt in per account, and you are never mailed about your own stream.
 - Set the time of your next stream and visitors see a countdown before they even
@@ -253,7 +257,9 @@ In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people to use, you must share your modifications
 under the same license. That last part is the point of the AGPL rather than the
 plain GPL, and it matters here because this is software people reach over a
-network.
+network. Every page carries a small `source` link back to this repository in the
+"powered by upperroom" credit, which stands as the AGPL section 13 written offer
+of source to anyone using the running service.
 
 Two carve-outs, both third-party and both unchanged by the above: the vendored
 copy of hls.js in `web/assets/vendor/` is Apache-2.0 (see the README there), and
