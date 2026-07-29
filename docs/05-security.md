@@ -100,6 +100,12 @@ served without a session", so it is worth knowing exactly how big it is:
 
 If you never press Share, nothing on your site is reachable without signing in.
 
+One smaller thing is also public, and it is harmless: `/api/status` reports the
+running version of the app, so the dashboard footer can show it and an external
+check can read it without a session. This is accepted rather than hidden: the
+source is public under the AGPL, so the version is not a secret, and knowing it
+buys an attacker nothing they could not already read in the code.
+
 ## What this does not do
 
 - It does not hide your server's IP. The firewall and the login are the
@@ -121,6 +127,18 @@ You do not have to configure any of this; it is on by default.
   passwords cannot be alternated for two budgets.
 - **Issuing a guest challenge question has its own, larger allowance**, since a
   visitor legitimately asks for several while filling the form in.
+- **Highlighting a message is rate limited per address**, ten a minute on its
+  own budget. A highlight spends points and posts to chat, so it is a write path
+  worth capping, but it draws on its own allowance rather than the sign-in one.
+- **Changing your password is rate limited per address**, five a minute on its
+  own budget. A valid session is needed to reach that endpoint, but that is
+  exactly the case worth guarding: the limit stops a borrowed session from brute
+  forcing the current-password check on its way to setting a new one.
+- **A highlighted message can be moderated like any other.** A highlight is a
+  chat message with a spotlight: it goes in the same admin chat log and carries
+  a message id, so a moderator can delete it, and it obeys the same word filter,
+  bans and timeouts. Spending points is never a way to post something a
+  moderator cannot remove.
 - **Only the address your own proxy observed is trusted.** `X-Forwarded-For` is
   something a caller can write, so the rate limiter and the country gate read
   the entry Caddy added, never one that arrived from outside.
@@ -172,4 +190,6 @@ Then `systemctl restart fail2ban` and check it with
 This deliberately matches only 429 (a rate limit the app already enforced) and
 413 (a body larger than anything here accepts). It never matches a plain failed
 login, so somebody fumbling their password is not banned; they would have to
-exhaust the rate limiter ten times over to qualify.
+exhaust the rate limiter ten times over to qualify. Every rate limit emits the
+same 429, so the highlight and password-change limits are caught by this filter
+exactly like the sign-in one, with no change to the rule.

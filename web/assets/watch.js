@@ -327,6 +327,10 @@ function renderSystem(msg) {
 function renderHighlight(msg) {
   const line = document.createElement("div");
   line.className = "msg highlight";
+  // A highlight now carries a message id (it is logged like a chat line), so tag
+  // the line with it the same way renderChat does. That is what lets applyDelete
+  // find and blank this line when a moderator deletes the highlight.
+  if (msg.id != null) line.dataset.msgid = msg.id;
   line.appendChild(avatarNode(msg.user, msg.name, msg.avatar || 0, false, true));
   const badge = roleBadgeNode(msg.admin, msg.mod, false);
   if (badge) line.appendChild(badge);

@@ -8,6 +8,9 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
+Current version: **0.1.0**. Releases are tagged in git, and the running version
+also shows in the dashboard footer and at `/api/status`.
+
 ## What it does
 
 It does not transcode. Your computer does the encoding inside OBS, so the server

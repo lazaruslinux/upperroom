@@ -1389,9 +1389,22 @@ document.getElementById("gp-clear-used").addEventListener("click", async (e) => 
   loadGuestPasses();
 });
 
+// The dashboard footer shows the running release, read from /api/status rather
+// than baked into the markup so a version bump changes it in exactly one place
+// (config.VERSION) and can never drift here. Left blank if status is unreachable.
+async function loadVersion() {
+  const line = document.getElementById("version-line");
+  if (!line) return;
+  try {
+    const data = await (await fetch("/api/status")).json();
+    if (data.version) line.textContent = `upperroom v${data.version}`;
+  } catch { /* leave the footer blank rather than show a stale guess */ }
+}
+
 async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "dashboard" });
+  loadVersion();
   loadBans();
   loadInvites();
   loadGuestPasses();

@@ -147,7 +147,10 @@ handled privately and never shown to other viewers:
 A moderator cannot act on an admin's messages, and cannot grant moderators.
 
 Single messages can also be removed without typing anything: hover a line in
-chat and a small delete control appears.
+chat and a small delete control appears. A highlighted message deletes the same
+way, by either route: a highlight is a chat message with a spotlight, so it sits
+in the admin log with a message id and `/del`, `/purge` and the hover control
+all reach it like any other line.
 
 ### Slow mode and banned words
 

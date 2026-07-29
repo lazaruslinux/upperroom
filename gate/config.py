@@ -35,6 +35,12 @@ def _setup_logging():
 
 _setup_logging()
 
+# The running release. Bumped by hand per tagged release (releases are annotated
+# git tags), and surfaced in one place: /api/status reads it so the dashboard
+# footer and any external check report the version without a number baked into
+# the markup.
+VERSION = "0.1.0"
+
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
 MEDIAMTX_API = os.environ.get("MEDIAMTX_API", "http://mediamtx:9997")

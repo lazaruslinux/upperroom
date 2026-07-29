@@ -119,6 +119,21 @@ _CHALLENGE_LIMITER = RateLimiter(60, "challenge")
 _SOCKET_LIMITER = RateLimiter(MAX_SOCKET_CONNECTS, "socket")
 
 
+# Redeeming a highlight. Its own budget: a highlight spends points and posts to
+# chat, so it is a write path a stranger should not be able to hammer, but it
+# must not draw on the login allowance. Ten a minute is generous for a real
+# viewer (a highlight costs roughly fifty minutes of watching, so nobody earns
+# ten in a minute) and well below what an abuse loop wants.
+_REDEEM_LIMITER = RateLimiter(10, "redeem")
+
+
+# Changing a password. Its own, tighter budget: the point is to keep a stolen
+# session from brute forcing the current-password check the change must clear.
+# Five a minute per address caps that guessing regardless of how many valid
+# sessions the attacker holds, since the limit is on the address, not the login.
+_PASSWORD_LIMITER = RateLimiter(5, "password")
+
+
 def too_many_attempts(ip):
     return _LOGIN_LIMITER.hit(ip)
 
@@ -127,13 +142,24 @@ def too_many_socket_connects(ip):
     return _SOCKET_LIMITER.hit(ip)
 
 
+def too_many_redeems(ip):
+    return _REDEEM_LIMITER.hit(ip)
+
+
+def too_many_password_changes(ip):
+    return _PASSWORD_LIMITER.hit(ip)
+
+
 def reset_limiters():
     """Clear every limiter. For the tests, which share one process: state
     carried between cases makes them order-dependent. They are reset together
     rather than one by one, because adding a fourth limiter and forgetting to
     reset it is exactly the kind of thing that produces a test that passes
     alone and fails in the suite."""
-    for limiter in (_LOGIN_LIMITER, _CHALLENGE_LIMITER, _SOCKET_LIMITER):
+    for limiter in (
+        _LOGIN_LIMITER, _CHALLENGE_LIMITER, _SOCKET_LIMITER,
+        _REDEEM_LIMITER, _PASSWORD_LIMITER,
+    ):
         limiter.clear()
 
 

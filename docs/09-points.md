@@ -27,7 +27,11 @@ chat, framed by the channel's accent color. The same message appears as a
 prominent chip on the OBS overlay, with a soft chime, so it shows on the
 broadcast too. The message obeys the same length limit as normal chat and is checked
 against the same word filter, and a viewer who is timed out or banned from chat
-cannot highlight either.
+cannot highlight either. A highlight is a moderated chat message: it lands in the
+admin chat log with a message id, so a moderator can delete it with `/del`,
+`/purge` or the hover control exactly like any other line, and spending points is
+never a way past moderation. Highlighting is also rate limited per address, ten a
+minute, so it cannot be used to flood chat.
 
 There is no admin configuration. The cost and the earn rate are both fixed in the
 code, and there is nothing to set up.

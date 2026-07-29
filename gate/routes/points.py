@@ -15,7 +15,9 @@ from fastapi.responses import JSONResponse
 
 import db
 import wordfilter
-from auth import GUEST_REFUSED, member_user, session_user
+from auth import (
+    GUEST_REFUSED, client_ip, member_user, session_user, too_many_redeems,
+)
 from config import HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
 from hub import hub
 
@@ -47,6 +49,15 @@ async def redeem(request: Request):
     if not user:
         return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
     username = user["username"]
+    # A highlight spends points and posts to chat, so it is a write path and gets
+    # its own per-address rate limit, checked before any work so a flood cannot
+    # lean on the spend and broadcast machinery. Its own budget, not the login
+    # one, so highlighting never eats the allowance that protects sign in.
+    if too_many_redeems(client_ip(request)):
+        return JSONResponse(
+            {"error": "Too many highlights. Wait a minute and try again."},
+            status_code=429,
+        )
     body = await request.json()
     # The highlight text follows the same length rule the chat socket enforces:
     # strip, then truncate to the chat limit. An empty message after stripping is
@@ -81,24 +92,39 @@ async def redeem(request: Request):
     balance = db.spend_points(username, HIGHLIGHT_COST)
     if balance is None:
         return JSONResponse({"error": "Not enough points."}, status_code=400)
+    user = db.get_user(username)
+    display_name = user["display_name"] if user else username
+    ts = int(time.time())
+    # Log the highlight to the admin chat history and reuse the row id as the
+    # message id, exactly as a normal chat line does (hub.chat calls db.log_chat
+    # and carries the id back). A highlight is a chat message with a spotlight,
+    # so it belongs in the log the admin reviews, and giving it an id is what
+    # lets a moderator delete one: the hover-delete, /delete and /purge paths all
+    # match on that id or on "user". Best effort: a logging failure must never
+    # undo the spend that already went through, so the id is simply absent then.
+    msg_id = None
+    try:
+        msg_id = db.log_chat(username, display_name, message, ts)
+    except Exception:
+        logger.debug("log_chat for highlight failed", exc_info=True)
     # Announce the highlight to every watch page and the overlay, and keep it in
     # the backlog so a viewer joining later still sees it. Best effort: a
     # broadcast failure must never undo a spend that already went through. The
     # payload carries the sender's identity in the same shape a chat line does,
     # so a highlight can render with their avatar, name, color, and role.
-    user = db.get_user(username)
     try:
         await hub.highlight({
             "type": "highlight",
+            "id": msg_id,
             "user": username,
-            "name": user["display_name"] if user else username,
+            "name": display_name,
             "admin": bool(user["is_admin"]) if user else False,
             "mod": bool(user["is_moderator"]) if user else False,
             "avatar": user["avatar_version"] if user else 0,
             "name_color": user["name_color"] if user else "",
             "message": message,
             "cost": HIGHLIGHT_COST,
-            "ts": int(time.time()),
+            "ts": ts,
         })
     except Exception:
         logger.debug("highlight broadcast failed", exc_info=True)

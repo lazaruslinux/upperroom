@@ -20,6 +20,7 @@ import db
 from auth import (
     GUEST_REFUSED, _clean_username, client_ip, country_allowed, guest_expired,
     issue_token, member_user, read_session, session_user, too_many_attempts,
+    too_many_password_changes,
 )
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
@@ -348,6 +349,16 @@ async def change_password(request: Request):
     if not member:
         return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
     username = member["username"]
+    # Rate limit per address before the current-password check runs. A valid
+    # session is required to reach here, but that is exactly the case worth
+    # guarding: a borrowed session should not get unlimited guesses at the
+    # current password on its way to setting a new one. Its own budget, so this
+    # never touches the login allowance.
+    if too_many_password_changes(client_ip(request)):
+        return JSONResponse(
+            {"error": "Too many attempts. Wait a minute and try again."},
+            status_code=429,
+        )
     body = await request.json()
     current = body.get("current_password", "")
     new = body.get("new_password", "")

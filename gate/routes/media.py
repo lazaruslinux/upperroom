@@ -21,7 +21,7 @@ from auth import (
 )
 from config import (
     CLIP_DIR, COOKIE_NAME, MAX_COMMENT_LENGTH, SCHEDULE_GRACE, THUMB_PATH,
-    VOD_DIR,
+    VERSION, VOD_DIR,
 )
 from hub import hub
 from media import (
@@ -473,6 +473,9 @@ async def status():
             "watching": watching,
             "accent": accent,
             "site_name": site_name,
+            # The running release, public here so the dashboard footer and any
+            # external check can read it without a number baked into the markup.
+            "version": VERSION,
             # So the watch page can label the clip button with the real length
             # rather than a number baked into the markup, which is how the old
             # "last 30 seconds" strings outlived the setting they described.
@@ -483,6 +486,7 @@ async def status():
         "watching": watching,
         "accent": accent,
         "site_name": site_name,
+        "version": VERSION,
     }
     # The time of the next announced broadcast is public, so the login page can
     # count down to it. The note that goes with it is not: it says what the

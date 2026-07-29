@@ -122,6 +122,33 @@ def test_change_password_happy_path_and_new_password_signs_in(client):
     login(fresh, "owner", "newpassword1")
 
 
+def test_change_password_is_rate_limited_per_address(client):
+    # A valid session is needed to change a password, but that is the case worth
+    # guarding: a borrowed session must not get unlimited guesses at the current
+    # password on its way to setting a new one. Five wrong tries a minute from one
+    # address exhaust that address's allowance, and the sixth is a 429 refused
+    # before the current-password check even runs.
+    setup_admin(client, username="owner", password="password1")
+    ip = "203.0.113.50"
+    for _ in range(5):
+        r = client.post(
+            "/api/password",
+            json={"current_password": "wrong-guess", "new_password": "newpassword1"},
+            headers={"X-Forwarded-For": ip},
+        )
+        assert r.status_code == 403        # wrong current password, not yet limited
+    blocked = client.post(
+        "/api/password",
+        json={"current_password": "wrong-guess", "new_password": "newpassword1"},
+        headers={"X-Forwarded-For": ip},
+    )
+    assert blocked.status_code == 429
+    # The limit is its own budget: it does not touch the sign-in allowance, so the
+    # owner can still log in on a fresh client from the same address.
+    fresh = make_client()
+    login(fresh, "owner", "password1", ip=ip)
+
+
 def test_rate_limiter_is_shared_across_auth_setup_and_register(client):
     # Five failed logins from one address exhaust that address's allowance.
     ip = "203.0.113.7"
@@ -708,6 +735,17 @@ def test_status_exposes_accent(client):
     assert body["accent"] == "ghost"
 
 
+def test_status_reports_the_running_version(client):
+    # /api/status discloses the running version so the dashboard footer can show
+    # it without a number baked into the markup. Public on purpose: the source is
+    # AGPL, so the version is not a secret. MediaMTX is unreachable in tests, so
+    # this reads the offline body, which must carry the version too.
+    from config import VERSION
+
+    body = client.get("/api/status").json()
+    assert body["version"] == VERSION
+
+
 # ---- 7c. Site name (the operator's brand) ---------------------------------
 
 def test_stream_info_accepts_and_validates_site_name(client):
@@ -1065,6 +1103,67 @@ def test_redeem_banned_viewer_is_forbidden(client):
     resp = viewer.post("/api/redeem", json={"message": "hi"})
     assert resp.status_code == 403
     assert db.get_points("viewer") == 120
+
+
+def test_redeem_is_rate_limited_per_address(client):
+    # Highlighting spends points and posts to chat, so it is a write path with its
+    # own per-address budget: ten a minute. The eleventh from one address is a 429,
+    # and a different address still has its full allowance.
+    viewer = _viewer_with_points(client, 600)   # covers ten highlights at 50 each
+    ip = "203.0.113.40"
+    for _ in range(10):
+        r = viewer.post(
+            "/api/redeem", json={"message": "hi"},
+            headers={"X-Forwarded-For": ip},
+        )
+        assert r.status_code == 200
+    blocked = viewer.post(
+        "/api/redeem", json={"message": "hi"},
+        headers={"X-Forwarded-For": ip},
+    )
+    assert blocked.status_code == 429
+    # A different address is unaffected (proving it is per-address, not global).
+    other = viewer.post(
+        "/api/redeem", json={"message": "hi"},
+        headers={"X-Forwarded-For": "203.0.113.41"},
+    )
+    assert other.status_code == 200
+
+
+def test_highlight_carries_an_id_and_a_moderator_can_delete_it(client):
+    # A highlight is a chat message with a spotlight: it is logged with a message
+    # id, so a moderator can delete it exactly like a chat line. After the delete,
+    # a viewer who joins later sees it marked deleted in the backlog rather than
+    # the original message.
+    viewer = _viewer_with_points(client, 120)   # client is signed in as the admin
+    assert viewer.post(
+        "/api/redeem", json={"message": "spotlight me"}
+    ).status_code == 200
+
+    # The highlight is in the backlog with an id, the same as a chat line.
+    with ws_connect(viewer) as vw:
+        hello = vw.receive_json()
+    highlight = next(m for m in hello["history"] if m.get("type") == "highlight")
+    assert highlight["id"] is not None
+    msg_id = highlight["id"]
+
+    # The admin deletes it by id through the same moddelete path a chat line uses.
+    with ws_connect(client) as ow:
+        drain_join(ow)
+        ow.send_json({"type": "moddelete", "id": msg_id})
+        deleted = None
+        for _ in range(5):
+            frame = ow.receive_json()
+            if frame.get("type") == "delete":
+                deleted = frame
+                break
+    assert deleted is not None and deleted["id"] == msg_id
+
+    # A viewer joining now sees the highlight marked deleted in the backlog.
+    with ws_connect(viewer) as fresh:
+        hello2 = fresh.receive_json()
+    hl = next(m for m in hello2["history"] if m.get("type") == "highlight")
+    assert hl.get("deleted") is True
 
 
 def test_profile_reports_points(client):
