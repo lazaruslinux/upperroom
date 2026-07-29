@@ -98,13 +98,14 @@
         return `<a href="${item.href}" class="ghost-btn${current}">${item.label}</a>`;
       })
       .join("\n      ");
-    // The little u logo leads the credit at text height (decorative, so
-    // aria-hidden with an empty alt). The source link doubles as the AGPL
-    // section-13 written offer and stays subtle beside the wordmark.
+    // In the signed-in chrome the credit is just the u logo: everyone here has
+    // already seen the full wordmark on the sign-in page, so the glyph carries
+    // the name (alt text for screen readers). The source link doubles as the
+    // AGPL section-13 written offer and stays subtle beside it.
     return `
     <div class="brand brand-column">
       <span id="site-title">upperroom</span>
-      <span class="powered">powered by <img class="u-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true"> <span class="wordmark">upper<span class="wm-accent">room</span></span> <span class="powered-sep">·</span> <a class="source-link" href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener">source</a></span>
+      <span class="powered">powered by <img class="u-logo u-logo-solo" src="/assets/icons/icon.svg?v=1" alt="upperroom" title="upperroom"> <span class="powered-sep">·</span> <a class="source-link" href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener">source</a></span>
     </div>
     <nav class="home-actions">
       ${links}

@@ -191,12 +191,17 @@ body {
   color: var(--muted);
   margin: 0;
 }
-/* The little u logo sits inline in the credit at text height. Decorative only;
-   the markup marks it aria-hidden with an empty alt. */
+/* The little u logo sits inline in the credit at text height. In the signed-in
+   chrome it stands alone for the wordmark, so it runs slightly larger there to
+   stay legible at the credit's small size. */
 .u-logo {
   height: 0.95em;
   width: auto;
   vertical-align: -0.13em;
+}
+.u-logo-solo {
+  height: 1.25em;
+  vertical-align: -0.3em;
 }
 /* "powered by" stays muted and normal weight; only the wordmark is bold. */
 .powered .wordmark { font-weight: 700; }
