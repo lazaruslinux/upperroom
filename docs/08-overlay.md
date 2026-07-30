@@ -16,6 +16,12 @@ password: keep it to yourself, and regenerate it if it ever leaks.
 2. Copy the URL shown there with **Copy URL**. It looks like
    `https://your-domain/overlay?key=...`.
 
+The same panel has a collapsed **Set up in OBS** block with ready-made URLs for
+the common browser sources: everything in one source, chat only, the status chip
+alone, the ticker alone, and the three scene screens. Each row copies a finished
+URL with your key already in it, so you do not have to assemble the query options
+described further down by hand.
+
 ## Add it to OBS
 
 1. In OBS, add a new source: **Browser**.

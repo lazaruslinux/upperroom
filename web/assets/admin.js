@@ -594,9 +594,18 @@ function showOverlayMsg(text, ok) {
   overlayMsg.hidden = false;
 }
 
+// The "Set up in OBS" rows are the same overlay URL with extra query options.
+// Each button carries its own suffix in the markup; the key is filled in here so
+// a regenerate refreshes every row along with the field above.
+const overlaySetupBtns = document.querySelectorAll("[data-overlay-query]");
+
 function setOverlayUrl(key) {
   // Origin so the URL is copy-paste ready into OBS on the same network as here.
-  overlayUrlInput.value = `${window.location.origin}/overlay?key=${key}`;
+  const base = `${window.location.origin}/overlay?key=${key}`;
+  overlayUrlInput.value = base;
+  overlaySetupBtns.forEach((btn) => {
+    btn.dataset.url = base + btn.dataset.overlayQuery;
+  });
 }
 
 const overlayTicker = document.getElementById("overlay-ticker");
@@ -662,6 +671,21 @@ document.getElementById("overlay-copy").addEventListener("click", async (e) => {
   } catch {
     overlayUrlInput.select();
     showOverlayMsg("Copy failed; the URL is selected so you can copy it.", false);
+  }
+});
+
+// One delegated handler for the "Set up in OBS" rows, rather than seven copies of
+// the same listener. Same feedback as the Copy URL button above.
+document.getElementById("overlay-setup").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-overlay-query]");
+  if (!btn || !btn.dataset.url) return;
+  try {
+    await navigator.clipboard.writeText(btn.dataset.url);
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    showOverlayMsg("Copy failed; your browser blocked the clipboard.", false);
   }
 });
 

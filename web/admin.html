@@ -207,6 +207,69 @@
         <button type="button" class="ghost-btn" data-overlay-test="clip">clip</button>
         <button type="button" class="ghost-btn" data-overlay-test="highlight">highlight</button>
       </div>
+      <!-- Ready-made browser-source URLs. The overlay takes query options
+           (show=, scene=, at=) that nothing on this page advertised, so the rows
+           below hand over finished URLs instead of asking the operator to build
+           them by hand. Each button carries its own query string; admin.js fills
+           in the key. -->
+      <details id="overlay-setup" style="margin-top:4px;">
+        <summary style="cursor:pointer;">Set up in OBS</summary>
+        <p class="settings-note muted">Each row is a finished URL. Copy one and paste it into an OBS browser source.</p>
+        <div class="settings-rows" style="margin-top:12px;">
+          <div class="setting">
+            <div>
+              <span>Everything</span>
+              <p class="settings-note">One source that draws chat, notices, the status chip, and the ticker.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Chat only</span>
+              <p class="settings-note">Chat, joins, clips, and highlights. Size and place it freely.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&show=chat,joins,clips,highlights">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Status chip</span>
+              <p class="settings-note">The LIVE badge with uptime and viewer count.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&show=status">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Ticker</span>
+              <p class="settings-note">Your ticker line, alone. Make the source wide and short.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&show=ticker">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Starting soon</span>
+              <p class="settings-note">A full-screen card for a dedicated OBS scene.</p>
+              <p class="settings-note muted">Adding <code>&amp;at=HH:MM</code> shows a countdown to that time, which flips to "Live now" when the stream starts.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&scene=starting">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Be right back</span>
+              <p class="settings-note">A full-screen card for a dedicated OBS scene.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&scene=brb">Copy</button>
+          </div>
+          <div class="setting">
+            <div>
+              <span>Ending</span>
+              <p class="settings-note">A full-screen card for a dedicated OBS scene.</p>
+            </div>
+            <button type="button" class="ghost-btn" data-overlay-query="&scene=ending">Copy</button>
+          </div>
+        </div>
+        <p class="settings-note muted" style="margin-top:12px;">More options (pos, scale, max, mute) are in
+          <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/08-overlay.md" target="_blank" rel="noopener">docs/08-overlay.md</a>.</p>
+      </details>
       <p id="overlay-msg" class="notify-msg" hidden></p>
     </div>
 
@@ -400,6 +463,6 @@
   </div>
 
   <script src="/assets/nav.js?v=6"></script>
-  <script src="/assets/admin.js?v=32"></script>
+  <script src="/assets/admin.js?v=33"></script>
 </body>
 </html>
