@@ -8,8 +8,29 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.2.1**. Releases are tagged in git, and the running version
+Current version: **0.3.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
+
+## Screenshots
+
+All taken from the built-in demo mode (`docker compose --profile demo up -d`),
+so what you see here is what a fresh install looks like.
+
+The watch page, with live video, chat, and viewer presence:
+
+![The watch page: live video beside a chat column with viewer messages](docs/screenshots/watch-live.png)
+
+The home page while the channel is live:
+
+![The home page showing the live stream card](docs/screenshots/home-live.png)
+
+Past broadcasts and clips, kept to whatever retention you configure:
+
+![The home page broadcasts grid with past streams](docs/screenshots/home-broadcasts.png)
+
+The analytics page, composed entirely from data the site already has:
+
+![The analytics page with watch time and unique viewer charts](docs/screenshots/analytics.png)
 
 ## What it does
 
