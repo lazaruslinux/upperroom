@@ -15,10 +15,10 @@
 # else. To move to a newer ffmpeg, change the three values below together.
 FROM debian:trixie-slim AS ffmpeg
 ARG TARGETARCH
-ARG FFMPEG_RELEASE=autobuild-2026-07-24-13-32
-ARG FFMPEG_BUILD=n8.1.2-31-g8c9502e9b0
-ARG FFMPEG_SHA256_AMD64=67b4011d82c67586c3703c81d3c967a837319f75e5e61551f22a91588e440660
-ARG FFMPEG_SHA256_ARM64=9674faaeeafd519add630da412e84a1dabaed3759f516b5da41001a1d345d956
+ARG FFMPEG_RELEASE=autobuild-2026-08-18-15-03
+ARG FFMPEG_BUILD=n8.1.2-44-g7c533d0f86
+ARG FFMPEG_SHA256_AMD64=03ccc8a1cb534b97c2bc43f322ddb1b7c23bd325abb7e4c31aa37f4b4c0e648f
+ARG FFMPEG_SHA256_ARM64=2ffec225398cc41047cb3cf2503d2b1f00f8589648fe572fc94dd20d050ed068
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && rm -rf /var/lib/apt/lists/* \
