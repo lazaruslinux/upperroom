@@ -56,8 +56,9 @@ only repackages the video and stays light.
   live, comments are what people say afterwards.
 - Any single clip can be published as a public link that works without an
   account. Private by default, admin only, one clip at a time, and revocable.
-  A public clip is video only: no chat replay, no comments, and it never names
-  who made it.
+  Sharing from the dashboard copies the link, which looks like
+  `https://your-domain/clip/<token>`. A public clip is video only: no chat
+  replay, no comments, and it never names who made it.
 - Optionally restricts the whole site to a list of countries.
 
 ### Accounts
@@ -88,8 +89,8 @@ only repackages the video and stays light.
 ### Chat and moderation
 
 - An admin role and a separate moderator role, each with its own dashboard.
-  Accounts, bans and invites have a page of their own, separate from the channel
-  settings. Only the account holder can change their own display name, and
+  Accounts, bans and invites live under People on the dashboard, alongside the
+  channel settings. Only the account holder can change their own display name, and
   deleting an account makes you type its username first.
 - Chat commands: `/timeout`, `/untimeout`, `/del`, `/purge`, `/ban`, `/unban`
   for moderators, plus `/mod` and `/unmod` for the admin. `/help` lists whatever
@@ -291,7 +292,7 @@ source to anyone using the running service.
 Two carve-outs, both third-party and both unchanged by the above: the vendored
 copy of hls.js in `web/assets/vendor/` is Apache-2.0 (see the README there), and
 the bundled fonts are under the SIL Open Font License (see
-`web/assets/fonts/OFL.txt`).
+`web/assets/fonts/OFL.txt` and `web/assets/fonts/INTER-LICENSE.txt`).
 
 ## A note on how this was built
 

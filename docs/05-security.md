@@ -92,8 +92,14 @@ served without a session", so it is worth knowing exactly how big it is:
 - It is **admin only**, and **off** until you turn it on for a specific clip.
 - **Unsharing takes effect immediately.** The file stops being reachable, not
   just the page.
-- The link is the entire credential: a long random token, and the folder it
+- The link is the entire credential: it looks like
+  `https://your-domain/clip/<token>`, where the token is a long random value,
+  and the video file itself is served at `/shared/<token>.mp4`. The folder it
   lives in cannot be listed, so links cannot be discovered by guessing.
+- Unsharing and re-sharing mints a **new** token, so a link that was ever
+  revoked stays dead even if the clip is shared again.
+- The country gate, if you set one, applies to public clips too: a shared link
+  only works from the allowed countries.
 - A published clip is **video only**. No chat replay, no comments, and it does
   not name who made it. Nobody who spoke in your chat is published by it.
 - Deleting a clip, by hand or by the two day sweep, removes the public copy too.
