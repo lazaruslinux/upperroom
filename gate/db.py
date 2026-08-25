@@ -1848,7 +1848,7 @@ def list_clips():
     with connect() as conn:
         rows = conn.execute(
             "SELECT id, name, filename, creator, start_ts, duration, views, created_at, "
-            "keep FROM clips ORDER BY created_at DESC"
+            "keep, share_token FROM clips ORDER BY created_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 

@@ -61,6 +61,12 @@ def test_publishing_makes_it_reachable_without_any_session(client):
     # And the file itself was linked into the public directory.
     assert os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
 
+    # The listing must say so too: list_clips once dropped share_token, which
+    # left every clip looking unshared on the dashboard.
+    listed = client.get("/api/clips").json()["clips"][0]
+    assert listed["shared"] is True
+    assert listed["share_url"] == url
+
 
 def test_the_public_view_never_carries_a_username(client):
     """The clip row holds the creator's account name. This is the one place it

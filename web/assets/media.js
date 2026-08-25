@@ -274,6 +274,10 @@ async function loadMedia() {
   if (TYPE === "clip" && meta.creator) viewSuffix += ` · clipped by @${meta.creator}`;
   renderViews(meta.views);
   if (TYPE === "vod" && meta.description) descEl.textContent = meta.description;
+  if (TYPE === "clip" && me && me.admin) {
+    shareState = { shared: !!meta.shared, url: meta.share_url, name: meta.name };
+    renderShare();
+  }
   video.poster = meta.poster ? `/media/${TYPE}s/${ID}.jpg` : "";
   video.src = `/media/${TYPE}s/${meta.filename}`;
 
@@ -456,6 +460,94 @@ async function removeComment(id, button) {
     showCommentMsg(data.error || "Could not remove it.", false);
   } catch { showCommentMsg("Could not remove it.", false); }
   button.disabled = false;
+}
+
+// ---- clip sharing (admin only) --------------------------------------------
+// The link is the whole credential, so it has to be re-copyable for as long as
+// the clip is shared, and stopping has to be its own button: unsharing mints a
+// dead token, and a single toggle made that one stray click away. VODs are
+// never shareable, and the public clip page never gets these controls.
+
+const reactionsRow = document.getElementById("reactions");
+let shareState = { shared: false, url: null, name: "" };
+
+function chipButton(label, danger) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "chip-btn" + (danger ? " danger-chip" : "");
+  btn.dataset.share = "1";   // marks it for removal when the state swaps
+  btn.textContent = label;
+  return btn;
+}
+
+function renderShare() {
+  reactionsRow.querySelectorAll("[data-share]").forEach((el) => el.remove());
+  if (!shareState.shared) {
+    const btn = chipButton("Share", false);
+    btn.title = "Make a link anyone can watch, without an account.";
+    btn.addEventListener("click", () => setShare(true, btn));
+    reactionsRow.appendChild(btn);
+    return;
+  }
+  const copy = chipButton("Copy link", false);
+  copy.title = "Copy the public link again.";
+  copy.addEventListener("click", () => copyShareLink(copy));
+  const stop = chipButton("Stop sharing", true);
+  stop.title = "Kill the public link. Sharing again makes a new one.";
+  stop.addEventListener("click", () => setShare(false, stop));
+  reactionsRow.append(copy, stop);
+}
+
+async function copyShareLink(btn) {
+  if (!shareState.url) return;
+  const link = window.location.origin + shareState.url;
+  try {
+    await navigator.clipboard.writeText(link);
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    prompt("Share this link:", link);
+  }
+}
+
+async function setShare(on, btn) {
+  const name = shareState.name;
+  if (on && !confirm(
+    `Share "${name}" publicly?\n\n` +
+    "Anyone with the link can watch it without an account. " +
+    "The chat replay is not included. You can stop sharing at any time.")) return;
+  if (!on && !confirm(
+    `Stop sharing "${name}"?\n\n` +
+    "The public link stops working immediately and permanently. " +
+    "Sharing again later makes a new link.")) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/clips/${ID}/share`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ share: on }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      alert(data.error || "Could not change sharing.");
+    } else {
+      shareState.shared = on;
+      shareState.url = on ? data.url : null;
+      if (on && data.url) {
+        const link = window.location.origin + data.url;
+        try {
+          await navigator.clipboard.writeText(link);
+          alert("Link copied:\n\n" + link);
+        } catch {
+          prompt("Share this link:", link);
+        }
+      }
+      renderShare();   // replaces this button, disabled and all
+      return;
+    }
+  } catch { alert("Could not change sharing."); }
+  btn.disabled = false;
 }
 
 // The operator's site name leads the top bar and names the browser tab, so the

@@ -73,16 +73,31 @@ async function loadContent() {
     // Sharing is per clip and admin only. VODs are deliberately not shareable:
     // a whole broadcast is a much bigger mistake to make public than a minute
     // of it, and a clip's short life bounds the mistake anyway.
-    let share = null;
-    if (kind === "clip") {
-      share = document.createElement("button");
+    // Shared clips get two buttons rather than one toggle: the link has to stay
+    // re-copyable, and unsharing kills it for good, so it cannot be a stray click.
+    const shareBtns = [];
+    if (kind === "clip" && item.shared) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "chip-btn pinned-chip";
+      copy.textContent = "Copy link";
+      copy.title = "Anyone with this link can watch. Click to copy it again.";
+      copy.addEventListener("click", () => copyShareLink(item, copy));
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "chip-btn danger-chip";
+      stop.textContent = "Unshare";
+      stop.title = "Kill the public link. Sharing again makes a new one.";
+      stop.addEventListener("click", () => unshareClip(item, stop));
+      shareBtns.push(copy, stop);
+    } else if (kind === "clip") {
+      const share = document.createElement("button");
       share.type = "button";
-      share.className = "chip-btn" + (item.shared ? " pinned-chip" : "");
-      share.textContent = item.shared ? "Shared" : "Share";
-      share.title = item.shared
-        ? "Anyone with the link can watch this. Click to stop sharing."
-        : "Make a link anyone can watch, without an account.";
-      share.addEventListener("click", () => toggleShare(item, share));
+      share.className = "chip-btn";
+      share.textContent = "Share";
+      share.title = "Make a link anyone can watch, without an account.";
+      share.addEventListener("click", () => shareClip(item, share));
+      shareBtns.push(share);
     }
     const pin = document.createElement("button");
     pin.type = "button";
@@ -99,16 +114,15 @@ async function loadContent() {
     btn.addEventListener("click", () => deleteContent(kind, item.id, title, btn));
     const actions = document.createElement("span");
     actions.className = "row-actions";
-    if (share) actions.appendChild(share);
+    shareBtns.forEach((b) => actions.appendChild(b));
     actions.append(pin, btn);
     row.append(left, actions);
     list.appendChild(row);
   });
 }
 
-async function toggleShare(item, btn) {
-  const turningOn = !item.shared;
-  if (turningOn && !confirm(
+async function shareClip(item, btn) {
+  if (!confirm(
     `Share "${item.name}" publicly?\n\n` +
     "Anyone with the link can watch it without an account. " +
     "The chat replay is not included. You can stop sharing at any time.")) return;
@@ -117,7 +131,7 @@ async function toggleShare(item, btn) {
     const reply = await fetch(`/api/clips/${item.id}/share`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ share: turningOn }),
+      body: JSON.stringify({ share: true }),
     });
     const data = await reply.json().catch(() => ({}));
     if (!reply.ok) {
@@ -134,6 +148,40 @@ async function toggleShare(item, btn) {
   } catch { alert("Could not change sharing."); }
   btn.disabled = false;
   loadContent();
+}
+
+async function unshareClip(item, btn) {
+  if (!confirm(
+    `Stop sharing "${item.name}"?\n\n` +
+    "The public link stops working immediately and permanently. " +
+    "Sharing again later makes a new link.")) return;
+  btn.disabled = true;
+  try {
+    const reply = await fetch(`/api/clips/${item.id}/share`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ share: false }),
+    });
+    if (!reply.ok) {
+      const data = await reply.json().catch(() => ({}));
+      alert(data.error || "Could not change sharing.");
+    }
+  } catch { alert("Could not change sharing."); }
+  btn.disabled = false;
+  loadContent();
+}
+
+async function copyShareLink(item, btn) {
+  if (!item.share_url) return;
+  const link = window.location.origin + item.share_url;
+  try {
+    await navigator.clipboard.writeText(link);
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    prompt("Share this link:", link);
+  }
 }
 
 async function togglePin(kind, id, keep, btn) {

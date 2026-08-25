@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.3.1**. Releases are tagged in git, and the running version
+Current version: **0.3.2**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -56,9 +56,11 @@ only repackages the video and stays light.
   live, comments are what people say afterwards.
 - Any single clip can be published as a public link that works without an
   account. Private by default, admin only, one clip at a time, and revocable.
-  Sharing from the dashboard copies the link, which looks like
-  `https://your-domain/clip/<token>`. A public clip is video only: no chat
-  replay, no comments, and it never names who made it.
+  Sharing from the clip's own page or from the dashboard copies the link, which
+  looks like `https://your-domain/clip/<token>`. You can copy that link again at
+  any time while the clip is shared, and stopping kills it permanently: sharing
+  again mints a new one. A public clip is video only: no chat replay, no
+  comments, and it never names who made it.
 - Optionally restricts the whole site to a list of countries.
 
 ### Accounts

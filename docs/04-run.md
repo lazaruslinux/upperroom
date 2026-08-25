@@ -103,9 +103,14 @@ forever. Change it under **Storage**, or pin a clip to keep it regardless.
 
 ### Sharing a clip publicly
 
-Any single clip can be given a link that works without an account. Press
-**Share** on it in the dashboard's library and the link is copied for you.
-Press it again to stop sharing, and the link stops working immediately.
+Any single clip can be given a link that works without an account. **Share**
+sits on the clip's own page, under the video, and on its row in the dashboard's
+library; pressing it copies the link for you. While the clip is shared, **Copy
+link** hands you that link again in either place, so you never have to remember
+it from the one time it was offered. **Stop sharing** on the clip page, or
+**Unshare** in the library, ends it: the link stops working immediately and
+permanently, and sharing the clip again later makes a new link rather than
+reviving the old one.
 
 This is the only part of the site a stranger can reach. A public clip is video
 only: no chat replay, no comments, and it does not say who made it. Nothing

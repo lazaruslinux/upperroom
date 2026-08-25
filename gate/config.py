@@ -39,7 +39,7 @@ _setup_logging()
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
