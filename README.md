@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.3.2**. Releases are tagged in git, and the running version
+Current version: **0.3.3**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -286,10 +286,12 @@ In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people to use, you must share your modifications
 under the same license. That last part is the point of the AGPL rather than the
 plain GPL, and it matters here because this is software people reach over a
-network. The "powered by upperroom" credit on every page links back to this
-repository, and the dashboard footer carries a spelled-out `source` link beside
-the running version. Together they stand as the AGPL section 13 written offer of
-source to anyone using the running service.
+network. The "powered by upperroom" credit on every page links the developer's
+site, which carries a Source on GitHub link for the project, and the footer on
+every page names the AGPL-3.0 license and links its text. The dashboard footer
+carries a spelled-out `source` link straight to this repository beside the
+running version, and that stands as the AGPL section 13 written offer of source
+to anyone using the running service.
 
 Two carve-outs, both third-party and both unchanged by the above: the vendored
 copy of hls.js in `web/assets/vendor/` is Apache-2.0 (see the README there), and

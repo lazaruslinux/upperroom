@@ -208,9 +208,9 @@ body {
 .powered-sep { color: var(--border); }
 /* The source link doubles as the AGPL section-13 written offer. Kept subtle:
    a muted mono link that only picks up the accent on hover. */
-/* The masthead credit links to the source repository (the AGPL section-13
-   written offer). It reads as part of the credit, not as a link: inherited
-   color, no underline, the accent only on hover or keyboard focus. */
+/* The masthead credit links the developer site. It reads as part of the credit,
+   not as a link: inherited color, no underline, the accent only on hover or
+   keyboard focus. */
 .brand-link { color: inherit; text-decoration: none; }
 .brand-link:hover .wordmark, .brand-link:focus-visible .wordmark { color: var(--accent); }
 .brand-link:hover .u-logo, .brand-link:focus-visible .u-logo { opacity: 0.75; }
@@ -221,6 +221,27 @@ body {
   text-decoration: underline;
 }
 .source-link:hover { color: var(--accent); }
+
+/* Page footer: license and developer credit, in the same small muted mono as
+   the dashboard's version line. It wraps instead of overflowing on narrow
+   phones. The dashboard's own .admin-foot is defined later and keeps its column
+   width, padding, and left alignment on top of this. */
+.site-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px 28px;
+  font-size: 11px;
+}
+.site-foot .foot-logo { height: 14px; width: auto; flex: none; }
+.site-foot a { color: var(--muted); text-decoration: underline; }
+.site-foot a:hover, .site-foot a:focus-visible { color: var(--accent); }
+/* The centred card pages make the body itself the flex container, so a footer
+   after the card would sit beside it. Stack it underneath instead. */
+body.center { flex-direction: column; }
 /* Compact masthead for the top bars (home, media): the site name keeps the
    inherited .brand size, the platform credit sits small underneath. */
 .brand-column {

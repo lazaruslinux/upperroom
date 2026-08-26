@@ -100,13 +100,13 @@
       .join("\n      ");
     // In the signed-in chrome the credit is just the u logo: everyone here has
     // already seen the full wordmark on the sign-in page, so the glyph carries
-    // the name (alt text for screen readers). The credit links to the source
-    // repository, which is the AGPL section-13 written offer; the dashboard
-    // footer carries a spelled-out "source" link beside the version too.
+    // the name (alt text for screen readers). The credit links the developer
+    // site; the dashboard footer keeps the direct source link beside the
+    // version, which is the AGPL section-13 written offer.
     return `
     <div class="brand brand-column">
       <span id="site-title">upperroom</span>
-      <span class="powered">powered by <a class="brand-link" href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener" title="source on GitHub"><img class="u-logo u-logo-solo" src="/assets/icons/icon.svg?v=1" alt="upperroom"></a></span>
+      <span class="powered">powered by <a class="brand-link" href="https://lazaruslinux.com" target="_blank" rel="noopener" title="Lazarus Labs"><img class="u-logo u-logo-solo" src="/assets/icons/icon.svg?v=1" alt="upperroom"></a></span>
     </div>
     <nav class="home-actions">
       ${links}
