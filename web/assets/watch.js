@@ -12,6 +12,8 @@ const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const unmuteButton = document.getElementById("unmute");
 const clipBtn = document.getElementById("clip-btn");
+const theaterInter = document.getElementById("theater-inter");
+const nowShowing = document.getElementById("now-showing");
 
 let me = null;
 let hls = null;
@@ -55,17 +57,36 @@ async function requireAuth() {
 
 // ---- video ----
 
-function showOffline(isOffline) {
-  offline.hidden = !isOffline;
-  video.style.visibility = isOffline ? "hidden" : "visible";
-  streamOnline = !isOffline;
-  // Clipping only makes sense while the stream is live (and being recorded).
-  clipBtn.hidden = isOffline;
-  // The unmute button floats over the video, so it must never sit on the "stream
-  // is offline" card. Hide it while offline; on return, show it again only if the
-  // video is actually muted and playing (the "playing" handler below re-shows it
-  // in the usual case where playback resumes a moment later).
-  unmuteButton.hidden = isOffline || !(video.muted && !video.paused);
+// What the stage is showing. This used to be a boolean (offline or not), which
+// stopped being enough once a theater session could be running: "no video right
+// now" then means intermission, not "the stream is offline", and the two need
+// different cards. streamOnline stays derived from it so everything that was
+// keyed on live/offline (the viewer label, the highlight composer) is unchanged.
+//
+// guest_over is terminal: a pass that has run out does not come back, and
+// nothing the stream does afterwards should take that card down.
+let stage = "offline";
+let theaterActive = false;
+let theaterState = "off";
+let theaterNow = null;
+
+function setStage(next) {
+  if (stage === "guest_over") return;
+  stage = next;
+  const playing = next === "live" || next === "theater_playing";
+  streamOnline = playing;
+  document.body.dataset.stage = next;
+  offline.hidden = next !== "offline";
+  if (theaterInter) theaterInter.hidden = next !== "theater_intermission";
+  video.style.visibility = playing ? "visible" : "hidden";
+  // Clipping only makes sense while the stream is live and being recorded, and
+  // during theater nothing is recorded and nothing on screen is ours to cut.
+  clipBtn.hidden = next !== "live";
+  // The unmute button floats over the video, so it must never sit on one of the
+  // cards. Hide it unless the video is actually muted and playing (the "playing"
+  // handler below re-shows it in the usual case where playback resumes).
+  unmuteButton.hidden = !playing || !(video.muted && !video.paused);
+  if (next !== "theater_playing" && next !== "theater_intermission") hideNowShowing();
   setViewerLabel();
   // A highlight needs a live stream to show on, so the composer's send follows
   // the live state too. Guarded because the highlight controls do not exist for
@@ -74,6 +95,12 @@ function showOffline(isOffline) {
     updateHighlightSend();
   }
 }
+
+// The two stages the video path itself can put us in. Which one depends on
+// whether a theater session is running, so both go through here rather than
+// being written out at each call site.
+function stageForOnline() { return theaterActive ? "theater_playing" : "live"; }
+function stageForOffline() { return theaterActive ? "theater_intermission" : "offline"; }
 
 function startVideo() {
   if (window.Hls && Hls.isSupported()) {
@@ -85,12 +112,14 @@ function startVideo() {
     // down, not on a momentary blip.
     let recoverAttempts = 0;
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      showOffline(false);
+      setStage(stageForOnline());
       video.play().catch(() => {});
     });
     hls.on(Hls.Events.FRAG_BUFFERED, () => {
       recoverAttempts = 0;
-      showOffline(false);
+      setStage(stageForOnline());
+      // Picture has arrived, so the Now Showing card has done its job.
+      armNowShowingHide();
     });
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (!data.fatal) return;
@@ -109,7 +138,7 @@ function startVideo() {
       // the offline card and let the status poll bring it back when it returns.
       hls.destroy();
       hls = null;
-      showOffline(true);
+      setStage(stageForOffline());
       setTimeout(checkStream, 5000);
     });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -117,9 +146,9 @@ function startVideo() {
     // listeners only once; the restart path just re-points the source.
     if (!nativeListenersBound) {
       nativeListenersBound = true;
-      video.addEventListener("loadedmetadata", () => showOffline(false));
+      video.addEventListener("loadedmetadata", () => setStage(stageForOnline()));
       video.addEventListener("error", () => {
-        showOffline(true);
+        setStage(stageForOffline());
         setTimeout(checkStream, 5000);
       });
     }
@@ -145,7 +174,7 @@ async function checkStream() {
   } catch {
     // A failed poll must not end the polling loop: show the offline card and
     // try again, so the page recovers on its own when the server comes back.
-    showOffline(true);
+    setStage(stageForOffline());
     setTimeout(checkStream, 5000);
     return;
   }
@@ -156,9 +185,258 @@ async function checkStream() {
   if (data.online && !hls) {
     startVideo();
   } else if (!data.online) {
-    showOffline(true);
+    setStage(stageForOffline());
     setTimeout(checkStream, 5000);
   }
+}
+
+// ---- theater ----
+// A theater session is the operator playing something from their own library to
+// the room. The video path is the ordinary one, so all this does is decide which
+// card the stage shows between titles and put a Now Showing panel over the first
+// couple of seconds of one.
+
+const nsArt = document.getElementById("ns-art");
+const nsTitle = document.getElementById("ns-title");
+const nsMeta = document.getElementById("ns-meta");
+const nsSynopsis = document.getElementById("ns-synopsis");
+let nowShowingKey = null;     // which title the card is currently showing
+let nowShowingTimer = null;
+
+function hideNowShowing(forget) {
+  if (nowShowingTimer) { clearTimeout(nowShowingTimer); nowShowingTimer = null; }
+  if (nowShowing) nowShowing.hidden = true;
+  // The key survives an ordinary hide so a repeated frame for the same title
+  // cannot re-raise a card that has done its job. It is forgotten only when
+  // the title changes or stops, so the next title gets its own card.
+  if (forget) nowShowingKey = null;
+  if (theaterInter) theaterInter.hidden = stage !== "theater_intermission";
+}
+
+// The card comes down once the picture is actually there, not on a timer from
+// when the title was chosen: the whole point is to cover the wait, and how long
+// that is depends on the viewer's connection.
+function armNowShowingHide() {
+  if (!nowShowing || nowShowing.hidden || nowShowingTimer) return;
+  nowShowingTimer = setTimeout(() => {
+    nowShowingTimer = null;
+    hideNowShowing();
+  }, 2000);
+}
+
+function showNowShowing(now) {
+  if (!nowShowing || !now) return;
+  const key = `${now.title}|${now.art || ""}`;
+  if (key === nowShowingKey) return;
+  nowShowingKey = key;
+  if (nowShowingTimer) { clearTimeout(nowShowingTimer); nowShowingTimer = null; }
+  nsTitle.textContent = now.title || "";
+  const bits = [];
+  if (now.year) bits.push(now.year);
+  if (now.runtime_min) bits.push(`${now.runtime_min} min`);
+  nsMeta.textContent = bits.join(" · ");
+  nsMeta.hidden = bits.length === 0;
+  nsSynopsis.textContent = now.synopsis || "";
+  nsSynopsis.hidden = !now.synopsis;
+  if (now.art) {
+    nsArt.src = now.art;
+    nsArt.hidden = false;
+  } else {
+    nsArt.removeAttribute("src");
+    nsArt.hidden = true;
+  }
+  nowShowing.hidden = false;
+  // Two cards on the stage read as clutter: while this one is up, the
+  // intermission card yields (hideNowShowing restores it per stage).
+  if (theaterInter) theaterInter.hidden = true;
+}
+
+function applyTheater(data) {
+  theaterActive = !!data.active;
+  theaterState = data.state || "off";
+  theaterNow = data.now || null;
+  // Re-run the stage decision with the new session state, keeping whichever of
+  // live/offline the video path last told us.
+  setStage(streamOnline ? stageForOnline() : stageForOffline());
+  // The card covers the whole wait from "title chosen" to "picture arrived":
+  // `now` is set the moment the projector is told to play, while the state is
+  // still intermission, and the buffered handler takes the card down. Keying
+  // on the stage here lost the common ordering where the server's "playing"
+  // frame lands before this client's own player has flipped online.
+  if (theaterActive && theaterNow) showNowShowing(theaterNow);
+  else hideNowShowing(true);
+  renderHostStrip();
+}
+
+async function loadTheater() {
+  try {
+    applyTheater(await (await fetch("/api/theater")).json());
+  } catch {
+    /* keep the last state rather than flapping the stage on a blip */
+  }
+}
+
+// ---- the host strip (admin only) ----
+
+const hostStrip = document.getElementById("host-strip");
+const hostState = document.getElementById("host-state");
+const hostStart = document.getElementById("host-start");
+const hostPlay = document.getElementById("host-play");
+const hostStop = document.getElementById("host-stop");
+const hostEnd = document.getElementById("host-end");
+const hostMsg = document.getElementById("host-msg");
+const searchModal = document.getElementById("theater-search-modal");
+const tsQuery = document.getElementById("ts-query");
+const tsSubs = document.getElementById("ts-subs");
+const tsResults = document.getElementById("ts-results");
+const tsMsg = document.getElementById("ts-msg");
+
+function showHostMsg(text, ok) {
+  if (!hostMsg) return;
+  hostMsg.textContent = text || "";
+  hostMsg.classList.toggle("bad", !ok);
+  hostMsg.hidden = !text;
+}
+
+function renderHostStrip() {
+  if (!hostStrip || !hostStrip.isConnected) return;
+  const label = !theaterActive ? "theater off"
+    : theaterState === "playing" ? "playing" : "intermission";
+  hostState.textContent = theaterNow ? `${label} · ${theaterNow.title}` : label;
+  hostStart.hidden = theaterActive;
+  hostPlay.hidden = !theaterActive;
+  hostStop.hidden = !theaterActive || !theaterNow;
+  hostEnd.hidden = !theaterActive;
+}
+
+// Every host action answers with the same state payload the socket broadcasts,
+// so one path applies it and the strip can never disagree with the stage.
+async function hostAction(path, body) {
+  showHostMsg("", true);
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      showHostMsg(
+        reply.status === 502 ? "projector offline" : (data.error || "could not do that"),
+        false,
+      );
+      return null;
+    }
+    applyTheater(data);
+    return data;
+  } catch {
+    showHostMsg("could not reach the server", false);
+    return null;
+  }
+}
+
+function renderSearchResults(results) {
+  tsResults.textContent = "";
+  if (!results.length) {
+    tsMsg.textContent = "Nothing matched.";
+    tsMsg.hidden = false;
+    return;
+  }
+  results.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "ts-row";
+    const label = document.createElement("div");
+    label.className = "ts-label";
+    const title = document.createElement("span");
+    title.className = "ts-title";
+    title.textContent = item.title;
+    label.appendChild(title);
+    const bits = [];
+    if (item.year) bits.push(item.year);
+    if (item.runtime_min) bits.push(`${item.runtime_min} min`);
+    if (bits.length) {
+      const meta = document.createElement("span");
+      meta.className = "ts-meta";
+      meta.textContent = bits.join(" · ");
+      label.appendChild(meta);
+    }
+    row.appendChild(label);
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "chip-btn";
+    play.textContent = "play";
+    play.addEventListener("click", async () => {
+      play.disabled = true;
+      tsMsg.hidden = true;
+      const done = await hostAction("/api/admin/theater/play", {
+        jf_id: item.jf_id, subtitles: tsSubs.checked,
+      });
+      if (done) closeModal(searchModal);
+      else {
+        tsMsg.textContent = hostMsg.textContent;
+        tsMsg.hidden = false;
+        play.disabled = false;
+      }
+    });
+    row.appendChild(play);
+    tsResults.appendChild(row);
+  });
+}
+
+async function runSearch() {
+  const query = tsQuery.value.trim();
+  if (query.length < 2) {
+    tsMsg.textContent = "Type at least two characters.";
+    tsMsg.hidden = false;
+    return;
+  }
+  tsMsg.textContent = "Searching…";
+  tsMsg.hidden = false;
+  try {
+    const reply = await fetch(
+      `/api/admin/theater/search?q=${encodeURIComponent(query)}`
+    );
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      tsMsg.textContent =
+        reply.status === 502 ? "projector offline" : (data.error || "could not search");
+      return;
+    }
+    tsMsg.hidden = true;
+    renderSearchResults(data.results || []);
+  } catch {
+    tsMsg.textContent = "could not reach the server";
+  }
+}
+
+function setUpHost() {
+  if (!hostStrip) return;
+  // Everything here is admin only, so for everyone else it is removed rather
+  // than hidden, exactly as the guest setup removes what a guest cannot use.
+  if (!me || !me.admin) {
+    hostStrip.remove();
+    if (searchModal) searchModal.remove();
+    return;
+  }
+  hostStrip.hidden = false;
+  hostStart.addEventListener("click", () => hostAction("/api/admin/theater/session"));
+  hostStop.addEventListener("click", () => hostAction("/api/admin/theater/stop"));
+  hostEnd.addEventListener("click", () => {
+    if (!confirm("End the theater session? Chat is wiped when it ends.")) return;
+    hostAction("/api/admin/theater/end");
+  });
+  hostPlay.addEventListener("click", () => {
+    tsQuery.value = "";
+    tsResults.textContent = "";
+    tsMsg.hidden = true;
+    openModal(searchModal);
+    tsQuery.focus();
+  });
+  tsQuery.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runSearch();
+  });
+  document.getElementById("ts-search").addEventListener("click", runSearch);
+  renderHostStrip();
 }
 
 // ---- chat and presence ----
@@ -388,6 +666,10 @@ function connectChat() {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
+  // The theater state rides this socket, so a reconnect may have missed a
+  // transition. Ask once on connect rather than assume the last one still holds.
+  socket.addEventListener("open", () => { loadTheater(); });
+
   // A single per-type render for the message lines, used for both the live feed
   // and the replayed backlog, so a highlight in the history renders as a
   // highlight rather than being forced through the plain-chat renderer.
@@ -411,6 +693,7 @@ function connectChat() {
         renderSystem({ text: "A moderator cleared the chat." });
       }
     }
+    else if (msg.type === "theater") applyTheater(msg);
     else if (msg.type === "hello") {
       me = me || msg.you;
       msg.history.forEach(renderLine);
@@ -685,6 +968,8 @@ document.addEventListener("keydown", (e) => {
 // carries your audio, so once it is playing we offer a button to turn sound on.
 video.addEventListener("playing", () => {
   unmuteButton.hidden = !video.muted;
+  // Safari plays HLS natively, with no FRAG_BUFFERED to hang the card off.
+  armNowShowingHide();
 });
 video.addEventListener("volumechange", () => {
   if (!video.muted) unmuteButton.hidden = true;
@@ -967,8 +1252,10 @@ function endGuestSession() {
     video.pause();
     if (hls) { hls.destroy(); hls = null; }
   } catch (e) { /* nothing to stop */ }
+  // Terminal: setStage refuses to move off guest_over, so nothing the stream
+  // does afterwards puts an offline or intermission card over this one.
+  setStage("guest_over");
   video.hidden = true;
-  offline.hidden = true;
   guestOver.hidden = false;
   // Chat goes with it. The socket is closed from the server side by the reaper,
   // but do not leave a live-looking composer behind in the meantime.
@@ -1024,11 +1311,15 @@ async function boot() {
     chatInput.placeholder = "say something, or /help";
   }
   setUpGuest();
+  setUpHost();
   // The font and color controls belong to a member profile; a guest has none
   // and setUpGuest has already removed those rows, so skip wiring them.
   if (!me.guest) loadMyProfile();
   // A guest has no balance and the endpoint refuses them, so do not ask.
   if (!me.guest) loadPoints();
+  // Before the first status poll, so an intermission never flashes the offline
+  // card on the way in.
+  await loadTheater();
   connectChat();
   checkStream();
 }

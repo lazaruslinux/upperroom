@@ -114,6 +114,9 @@ services:
       - SELFSTREAM_DB=/data/selfstream.db
       - DEMO_ADMIN_USER=${DEMO_ADMIN_USER:-demo}
       - DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD:-demodemo123}
+      # Paired with demo-projector below, so the demo theater works with no
+      # dashboard step. Seeded only while the channel has no projector key.
+      - DEMO_PROJECTOR_KEY=${DEMO_PROJECTOR_KEY:-demo-projector-key}
     volumes:
       - gate_data:/data
     depends_on:
@@ -173,6 +176,31 @@ services:
     networks:
       - selfstream
     depends_on:
+      - mediamtx
+
+  # The projector, in demo mode: three built-in generated titles and no media
+  # library at all, so a theater session can be run end to end with nothing else
+  # set up. In a real install this container does not run here; it runs on the
+  # operator's own media machine and connects in. See docs/11-theater.md.
+  #
+  # It publishes to the same `live` path demo-stream does, so run one or the
+  # other, never both (docs/07-demo.md).
+  demo-projector:
+    profiles: ["demo"]
+    build: ./projector
+    restart: unless-stopped
+    environment:
+      - PROJECTOR_DEMO=1
+      # Inside the compose network, so this hop never leaves the host and needs
+      # no TLS. A real projector uses wss:// to the public domain.
+      - PROJECTOR_GATE_URL=ws://gate:8000/ws/projector
+      - PROJECTOR_KEY=${DEMO_PROJECTOR_KEY:-demo-projector-key}
+      - PROJECTOR_INGEST_URL=rtmp://mediamtx:1935/live
+      - PROJECTOR_STREAM_KEY=${PUBLISH_PASS}
+    networks:
+      - selfstream
+    depends_on:
+      - gate
       - mediamtx
 
 networks:

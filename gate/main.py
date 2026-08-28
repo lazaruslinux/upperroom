@@ -42,6 +42,7 @@ from routes import guest as guest_routes
 from routes import media as media_routes
 from routes import mod as mod_routes
 from routes import points as points_routes
+from routes import theater as theater_routes
 from routes import ws as ws_routes
 
 logger = logging.getLogger("upperroom.gate")
@@ -110,7 +111,7 @@ async def lifespan(_app):
 app = FastAPI(title="upperroom", docs_url=None, redoc_url=None, lifespan=lifespan)
 db.init_db()
 for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR,
-             config.SHARED_DIR):
+             config.SHARED_DIR, config.ART_DIR):
     os.makedirs(_dir, exist_ok=True)
 
 app.include_router(auth_routes.router)
@@ -119,4 +120,5 @@ app.include_router(media_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(mod_routes.router)
 app.include_router(points_routes.router)
+app.include_router(theater_routes.router)
 app.include_router(ws_routes.router)

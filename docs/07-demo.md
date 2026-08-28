@@ -2,16 +2,17 @@
 
 Demo mode brings the whole site up already alive, in one command, so you (or
 someone you are showing it to) can see a working stream without OBS, without
-making accounts, and without waiting for anything. It runs two extra containers,
-both behind a Compose profile named `demo`, so a normal install never touches
-them.
+making accounts, and without waiting for anything. It runs three extra
+containers, all behind a Compose profile named `demo`, so a normal install never
+touches them.
 
 When it is running you get, straight away:
 
 - demo accounts that already exist (no setup wizard to fill in),
 - a synthetic broadcast already streaming, so the watch page shows live video,
 - live chat and presence, and a populated admin dashboard,
-- one unredeemed invite code, so the invite flow works from the login page.
+- one unredeemed invite code, so the invite flow works from the login page,
+- a paired projector, so a theater session can be run without a media library.
 
 ## 7.1 One command up
 
@@ -32,10 +33,36 @@ This starts the normal three services (`mediamtx`, `gate`, `caddy`) plus:
   `PUBLISH_PASS`, which the gate seeds into the stream key on first start, so the
   demo authenticates with no dashboard step. This is what makes the watch page
   show live video.
+- `demo-projector`, the projector in demo mode: three built-in generated titles
+  and no media library at all, so a theater session works end to end. It pairs
+  itself with the gate through `DEMO_PROJECTOR_KEY` (default
+  `demo-projector-key`), which `demo-seed` writes into the channel's projector
+  key **only while the channel has none**, so this can never overwrite a real
+  operator's key.
 
 Give it under a minute for the certificate and the first video segments, then
 open your site. Sign in with a demo account below and you are looking at a live
 stream with chat.
+
+### Run demo-stream or demo-projector, not both
+
+Both publish to the same `live` path, and two publishers contending for one
+channel is a mess to watch and a worse one to diagnose. Stop one before starting
+the other:
+
+```
+docker compose --profile demo stop demo-stream      # then run a theater session
+docker compose --profile demo start demo-stream     # back to the synthetic broadcast
+```
+
+`demo-projector` only publishes while a title is actually playing, so leaving it
+running is harmless as long as `demo-stream` is stopped before you press play.
+
+To try the theater: sign in as the demo admin, open the dashboard, and under
+**Theater** press **Start session**, then **Search** (an empty-ish query like
+`the` finds the demo titles) and **play** a row. Each demo title runs two
+minutes and then ends on its own, so you also see the return to intermission.
+The whole feature is in `docs/11-theater.md`.
 
 ## 7.2 Demo credentials
 

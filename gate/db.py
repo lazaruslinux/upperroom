@@ -291,6 +291,29 @@ CREATE TABLE IF NOT EXISTS guest_passes (
     redeemed_by TEXT,
     redeemed_at INTEGER
 );
+
+-- A theater session: the operator is playing titles from their own library to
+-- the room rather than broadcasting themselves. While one is open the gate does
+-- not record, refuses clips, holds the chat wipe, and announces going live once
+-- at the start instead of once per title.
+--
+-- state is 'intermission' (between titles), 'playing' (a title is on air) or
+-- 'ended'. Anything that is not 'ended' is the active session, and there is at
+-- most one of those (create_theater_session enforces it in SQL). The now_*
+-- columns hold whatever is on air, cleared when it stops.
+CREATE TABLE IF NOT EXISTS theater_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    state TEXT NOT NULL,
+    started_at INTEGER,
+    ended_at INTEGER,
+    notified INTEGER NOT NULL DEFAULT 0,
+    now_jf_id TEXT,
+    now_title TEXT,
+    now_year INTEGER,
+    now_runtime INTEGER,
+    now_synopsis TEXT,
+    now_art TEXT
+);
 """
 
 
@@ -367,6 +390,11 @@ def init_db():
         )
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
+        # The projector's bearer key. Nullable until an operator generates one on
+        # the dashboard, and deliberately never seeded from the environment: with
+        # no key, the projector socket cannot authenticate at all, which is the
+        # right default for a machine that reaches out to this server.
+        _ensure_column(conn, "channel_settings", "projector_key", "TEXT")
         # An operator message line the overlay scrolls along the bottom. Empty by
         # default so an existing channel shows nothing new until it is set, and
         # NOT NULL so a reader never has to guard for a missing value.
@@ -862,6 +890,123 @@ def regenerate_stream_key():
             "UPDATE channel_settings SET stream_key = ? WHERE id = 1", (key,)
         )
     return key
+
+
+# ---- Projector key --------------------------------------------------------
+# The bearer key the projector service authenticates its socket with. Same shape
+# as the overlay key, and for the same reason: the projector runs on the
+# operator's own media machine and cannot sign in. It is never seeded from the
+# environment, so a channel that has not generated one refuses every projector.
+
+def get_projector_key():
+    """The current projector key, or None if one has never been generated."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT projector_key FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return row["projector_key"] if row else None
+
+
+def regenerate_projector_key():
+    """Mint a fresh projector key, replacing any previous one, and return it.
+    This revokes the old one: a projector connected with it stops matching."""
+    key = secrets.token_urlsafe(32)
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET projector_key = ? WHERE id = 1", (key,)
+        )
+    return key
+
+
+def seed_projector_key(key):
+    """Set the projector key only while it is still unset. For the demo stack,
+    which pairs its own projector container without a dashboard step. Returns
+    True if it was written. Same rule as the PUBLISH_PASS seed: once a key
+    exists, this never overwrites it."""
+    if not key:
+        return False
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE channel_settings SET projector_key = ? "
+            "WHERE id = 1 AND projector_key IS NULL",
+            (key,),
+        )
+        return cur.rowcount > 0
+
+
+# ---- Theater sessions -----------------------------------------------------
+# One session at a time, enforced in SQL rather than by reading first and then
+# inserting: two admins pressing start at the same moment would both read "none
+# active" and both insert. "Active" means state is not 'ended'.
+
+def create_theater_session(started_at):
+    """Open a theater session, unless one is already open. Returns its id, or
+    None when there was already an active session (nothing was written)."""
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO theater_sessions (state, started_at) "
+            "SELECT 'intermission', ? WHERE NOT EXISTS "
+            "(SELECT 1 FROM theater_sessions WHERE state != 'ended')",
+            (started_at,),
+        )
+        if cur.rowcount <= 0:
+            return None
+        return cur.lastrowid
+
+
+def get_active_theater_session():
+    """The open session, or None. Newest first, so a database that somehow holds
+    two answers with the current one rather than an ancient row."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM theater_sessions WHERE state != 'ended' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def set_theater_state(session_id, state):
+    """Move an open session between 'intermission' and 'playing'. Ending is
+    end_theater_session's job, and an already ended session never moves back."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE theater_sessions SET state = ? WHERE id = ? AND state != 'ended'",
+            (state, session_id),
+        )
+
+
+def set_theater_now(session_id, title=None, year=None, runtime=None,
+                    synopsis=None, art=None, jf_id=None):
+    """Record what is on air, or clear it when called with nothing (the title
+    stopped). Written as one statement so a half-set title cannot be read."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE theater_sessions SET now_jf_id = ?, now_title = ?, "
+            "now_year = ?, now_runtime = ?, now_synopsis = ?, now_art = ? "
+            "WHERE id = ?",
+            (jf_id, title, year, runtime, synopsis, art, session_id),
+        )
+
+
+def mark_theater_notified(session_id):
+    """Stamp that this session's go-live announcement has gone out, so it fires
+    once for the session rather than once per title."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE theater_sessions SET notified = 1 WHERE id = ?", (session_id,)
+        )
+
+
+def end_theater_session(session_id, ended_at):
+    """Close a session for good and clear whatever it was showing."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE theater_sessions SET state = 'ended', ended_at = ?, "
+            "now_jf_id = NULL, now_title = NULL, now_year = NULL, "
+            "now_runtime = NULL, now_synopsis = NULL, now_art = NULL "
+            "WHERE id = ?",
+            (ended_at, session_id),
+        )
 
 
 def count_user_clips_since(username, since):

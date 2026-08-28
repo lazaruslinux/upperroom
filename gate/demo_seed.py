@@ -42,6 +42,10 @@ logger = logging.getLogger("upperroom.demo_seed")
 ADMIN_USER = os.environ.get("DEMO_ADMIN_USER", "demo").strip().lower()
 ADMIN_PASSWORD = os.environ.get("DEMO_ADMIN_PASSWORD", "demodemo123")
 ADMIN_DISPLAY = "Demo Admin"
+# The key the demo projector container connects with. Written only while the
+# channel has none, exactly like the publish key seed, so this can never
+# overwrite a key a real operator generated.
+PROJECTOR_KEY = os.environ.get("DEMO_PROJECTOR_KEY", "demo-projector-key")
 
 # Two generic viewer accounts so the watching list and dashboard look populated.
 VIEWERS = (
@@ -123,6 +127,13 @@ def seed():
         site_name=SITE_NAME, title=STREAM_TITLE, description=STREAM_DESCRIPTION
     )
     logger.info("set site name %r and stream title %r", SITE_NAME, STREAM_TITLE)
+
+    # Pair the demo projector, so a theater session can be started from the
+    # dashboard with no key to copy anywhere.
+    if db.seed_projector_key(PROJECTOR_KEY):
+        logger.info("seeded the projector key for the demo projector")
+    else:
+        logger.info("a projector key already exists; leaving it as is")
 
     # One unredeemed invite so the login-page invite flow is demonstrable. Only
     # mint a fresh code if no active (unredeemed, unrevoked) "try me" code exists.

@@ -826,6 +826,241 @@ document.getElementById("stream-key-regen").addEventListener("click", async (e) 
 });
 
 
+// ---- theater and the projector --------------------------------------------
+// The session controls, and the key the projector authenticates with. The key
+// panel is the stream key panel's shape on purpose: it is the same kind of
+// secret, so it should be handled with the same three buttons.
+
+const theaterStatus = document.getElementById("theater-status");
+const theaterStart = document.getElementById("theater-start");
+const theaterEnd = document.getElementById("theater-end");
+const theaterStop = document.getElementById("theater-stop");
+const theaterQuery = document.getElementById("theater-query");
+const theaterSubs = document.getElementById("theater-subs");
+const theaterResults = document.getElementById("theater-results");
+const theaterMsg = document.getElementById("theater-msg");
+const projectorStatus = document.getElementById("projector-status");
+const projectorKeyInput = document.getElementById("projector-key");
+const projectorMsg = document.getElementById("projector-msg");
+
+let theaterActive = false;
+
+function showTheaterMsg(text, ok) {
+  theaterMsg.textContent = text;
+  theaterMsg.classList.toggle("good", !!ok);
+  theaterMsg.classList.toggle("bad", !ok);
+  theaterMsg.hidden = false;
+}
+
+function showProjectorMsg(text, ok) {
+  projectorMsg.textContent = text;
+  projectorMsg.classList.toggle("good", !!ok);
+  projectorMsg.classList.toggle("bad", !ok);
+  projectorMsg.hidden = false;
+}
+
+function renderTheater(data) {
+  theaterActive = !!data.active;
+  const now = data.now;
+  if (!theaterActive) {
+    theaterStatus.textContent = "No session running.";
+  } else if (now) {
+    const bits = [now.title];
+    if (now.year) bits.push(now.year);
+    theaterStatus.textContent =
+      `${data.state === "playing" ? "Playing" : "Starting"}: ${bits.join(" · ")}`;
+  } else {
+    theaterStatus.textContent = "Session running · intermission.";
+  }
+  theaterStart.hidden = theaterActive;
+  theaterEnd.hidden = !theaterActive;
+  theaterStop.hidden = !theaterActive || !now;
+}
+
+function renderProjector(data) {
+  if (!data.has_key) {
+    projectorStatus.textContent =
+      "No key yet. Regenerate to make one, then give it to the projector.";
+  } else if (data.connected) {
+    projectorStatus.textContent = "Connected.";
+  } else if (data.last_seen) {
+    projectorStatus.textContent = `Not connected. Last seen ${formatStamp(data.last_seen)}.`;
+  } else {
+    projectorStatus.textContent = "Not connected.";
+  }
+  if (data.key !== undefined) projectorKeyInput.value = data.key || "";
+}
+
+async function loadProjector() {
+  try {
+    const reply = await fetch("/api/admin/theater/projector");
+    if (reply.ok) renderProjector(await reply.json());
+  } catch { /* leave the last state rather than flashing disconnected */ }
+}
+
+async function loadTheater() {
+  try {
+    const reply = await fetch("/api/theater");
+    if (reply.ok) renderTheater(await reply.json());
+  } catch { /* same */ }
+}
+
+// Every control answers with the same state payload, so one path applies it.
+async function theaterAction(path, body) {
+  theaterMsg.hidden = true;
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      showTheaterMsg(
+        reply.status === 502
+          ? "The projector is not connected."
+          : (data.error || "Could not do that."),
+        false,
+      );
+      return null;
+    }
+    renderTheater(data);
+    loadProjector();
+    return data;
+  } catch {
+    showTheaterMsg("Could not reach the server.", false);
+    return null;
+  }
+}
+
+function renderTheaterResults(results) {
+  theaterResults.textContent = "";
+  results.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "ts-row";
+    const label = document.createElement("div");
+    label.className = "ts-label";
+    const title = document.createElement("span");
+    title.className = "ts-title";
+    title.textContent = item.title;
+    label.appendChild(title);
+    const bits = [];
+    if (item.year) bits.push(item.year);
+    if (item.runtime_min) bits.push(`${item.runtime_min} min`);
+    if (item.has_subtitles) bits.push("subtitles");
+    if (bits.length) {
+      const meta = document.createElement("span");
+      meta.className = "ts-meta";
+      meta.textContent = bits.join(" · ");
+      label.appendChild(meta);
+    }
+    row.appendChild(label);
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "chip-btn";
+    play.textContent = "play";
+    play.addEventListener("click", async () => {
+      play.disabled = true;
+      const done = await theaterAction("/api/admin/theater/play", {
+        jf_id: item.jf_id, subtitles: theaterSubs.checked,
+      });
+      if (done) showTheaterMsg(`Playing "${item.title}".`, true);
+      play.disabled = false;
+    });
+    row.appendChild(play);
+    theaterResults.appendChild(row);
+  });
+}
+
+document.getElementById("theater-search").addEventListener("click", async () => {
+  const query = theaterQuery.value.trim();
+  if (query.length < 2) {
+    showTheaterMsg("Search for at least two characters.", false);
+    return;
+  }
+  theaterMsg.hidden = true;
+  try {
+    const reply = await fetch(
+      `/api/admin/theater/search?q=${encodeURIComponent(query)}`
+    );
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      showTheaterMsg(
+        reply.status === 502
+          ? "The projector is not connected."
+          : (data.error || "Could not search."),
+        false,
+      );
+      return;
+    }
+    renderTheaterResults(data.results || []);
+    if (!(data.results || []).length) showTheaterMsg("Nothing matched.", false);
+  } catch { showTheaterMsg("Could not reach the server.", false); }
+});
+
+theaterQuery.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("theater-search").click();
+});
+
+theaterStart.addEventListener("click", async () => {
+  if (await theaterAction("/api/admin/theater/session")) {
+    showTheaterMsg("Session started. Viewers see the intermission card.", true);
+  }
+});
+
+theaterStop.addEventListener("click", () => theaterAction("/api/admin/theater/stop"));
+
+theaterEnd.addEventListener("click", async () => {
+  if (!confirm(
+    "End the theater session? Whatever is playing stops, and the chat is wiped " +
+    "the way it is at the end of any broadcast."
+  )) return;
+  if (await theaterAction("/api/admin/theater/end")) {
+    showTheaterMsg("Session ended.", true);
+  }
+});
+
+document.getElementById("projector-show").addEventListener("click", (e) => {
+  const btn = e.currentTarget;
+  const hidden = projectorKeyInput.type === "password";
+  projectorKeyInput.type = hidden ? "text" : "password";
+  btn.textContent = hidden ? "Hide" : "Show";
+});
+
+document.getElementById("projector-copy").addEventListener("click", async (e) => {
+  try {
+    await navigator.clipboard.writeText(projectorKeyInput.value);
+    const btn = e.currentTarget;
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    projectorKeyInput.select();
+    showProjectorMsg("Copy failed; the key is selected so you can copy it.", false);
+  }
+});
+
+document.getElementById("projector-regen").addEventListener("click", async (e) => {
+  if (!confirm(
+    "Regenerate the projector key? The projector disconnects at once and will " +
+    "not come back until it has the new key."
+  )) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  projectorMsg.hidden = true;
+  try {
+    const reply = await fetch("/api/admin/theater/projector/key", { method: "POST" });
+    if (reply.ok) {
+      renderProjector(await reply.json());
+      showProjectorMsg("New key generated. Update the projector's settings.", true);
+    } else {
+      showProjectorMsg("Could not regenerate the key.", false);
+    }
+  } catch { showProjectorMsg("Could not reach the server.", false); }
+  btn.disabled = false;
+});
+
+
 // ---- people: accounts, bans and invites -----------------------------------
 // Ported from the old /accounts page. The endpoints are unchanged; only where
 // the UI lives has moved. The list, the forms and the activity view share one
@@ -1605,6 +1840,16 @@ async function boot() {
   loadChannel();
   loadModeration();
   loadStreamKey();
+  loadTheater();
+  loadProjector();
+  // Only while a session is open: the state moves on its own then (a title
+  // ending puts the room back to intermission), and between sessions the
+  // operator's own actions are the only thing that changes it.
+  setInterval(() => {
+    if (!theaterActive) return;
+    loadTheater();
+    loadProjector();
+  }, 10000);
   loadOverlay();
   loadNotify();
   loadRetention();

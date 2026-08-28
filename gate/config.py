@@ -39,7 +39,7 @@ _setup_logging()
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.3.3"
+VERSION = "0.4.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -161,6 +161,11 @@ CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
 # drift from the real one. The bytes go when the last name goes, which is why
 # deleting a clip has to remove both.
 SHARED_DIR = os.path.join(MEDIA_DIR, "shared")
+# Poster art for whatever a theater session is showing. It sits under the media
+# dir so Caddy serves it behind the same session check as the recordings, and
+# deliberately NOT under VOD_DIR or CLIP_DIR: retention and the orphan sweeps
+# walk those two folders, and a poster is not a recording to be pruned.
+ART_DIR = os.path.join(MEDIA_DIR, "art")
 # Retention lives in the dashboard now (channel_settings), not here: the limits
 # are per-channel state the operator changes without a restart, and they ship at
 # zero so a fresh install never deletes a recording on its own. The old
@@ -198,6 +203,18 @@ CLIP_LAG = 2
 # it runs long rather than short. Two seconds matches a typical OBS keyframe
 # interval; a source with longer keyframes just gets a slightly softer edge.
 CLIP_KEYFRAME_SLACK = 2
+
+# ---- Theater --------------------------------------------------------------
+# A theater session plays titles from the operator's own library to the room.
+# Search bounds keep a stray keystroke from asking the library for everything;
+# the art cap bounds what the projector can push through the socket, which is
+# the one place it hands the gate bytes rather than text.
+MIN_THEATER_QUERY = 2
+MAX_THEATER_QUERY = 64
+MAX_THEATER_RESULTS = 25
+MAX_THEATER_ART_BYTES = 2 * 1024 * 1024
+# Posters are shown at a few hundred pixels; anything larger is re-encoded down.
+THEATER_ART_MAX = (600, 900)
 
 # Comments on a recording or a clip. Longer than a chat line because this is
 # written after the fact rather than in the moment, but still a comment and not

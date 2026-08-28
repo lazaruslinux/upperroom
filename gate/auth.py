@@ -134,6 +134,12 @@ _REDEEM_LIMITER = RateLimiter(10, "redeem")
 _PASSWORD_LIMITER = RateLimiter(5, "password")
 
 
+# Opening the projector socket. One machine reconnecting after a network blip
+# needs a handful; ten a minute covers a backoff cycle and leaves nothing for
+# someone guessing the key over that socket.
+_PROJECTOR_LIMITER = RateLimiter(10, "projector")
+
+
 def too_many_attempts(ip):
     return _LOGIN_LIMITER.hit(ip)
 
@@ -150,6 +156,10 @@ def too_many_password_changes(ip):
     return _PASSWORD_LIMITER.hit(ip)
 
 
+def too_many_projector_connects(ip):
+    return _PROJECTOR_LIMITER.hit(ip)
+
+
 def reset_limiters():
     """Clear every limiter. For the tests, which share one process: state
     carried between cases makes them order-dependent. They are reset together
@@ -158,7 +168,7 @@ def reset_limiters():
     alone and fails in the suite."""
     for limiter in (
         _LOGIN_LIMITER, _CHALLENGE_LIMITER, _SOCKET_LIMITER,
-        _REDEEM_LIMITER, _PASSWORD_LIMITER,
+        _REDEEM_LIMITER, _PASSWORD_LIMITER, _PROJECTOR_LIMITER,
     ):
         limiter.clear()
 

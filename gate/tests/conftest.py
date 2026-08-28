@@ -38,6 +38,7 @@ os.environ.pop("PUBLISH_PASS", None)
 import auth  # noqa: E402
 import db  # noqa: E402
 import main  # noqa: E402
+import projector  # noqa: E402
 from hub import hub  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -72,4 +73,9 @@ def client(tmp_path, monkeypatch):
     # The live flag is process-global too, and now gates highlight redemption, so
     # reset it between tests. A case that wants a live stream sets it explicitly.
     hub._live = False
+    # The projector link holds one socket for the whole process. A stub left
+    # attached by one test would answer another test's calls.
+    projector.link._socket = None
+    projector.link._pending.clear()
+    projector.link._last_seen = 0
     return make_client()

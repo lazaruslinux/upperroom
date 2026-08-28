@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=46">
+  <link rel="stylesheet" href="/assets/style.css?v=47">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -26,8 +26,25 @@
       <p>The stream is offline right now.</p>
       <p class="muted">This will start playing on its own when it goes live.</p>
     </div>
+    <!-- Between titles in a theater session. Not the offline card: the session
+         is still running and the next title is coming. -->
+    <div id="theater-inter" class="theater-inter" hidden>
+      <p class="theater-inter-title">Intermission</p>
+      <p class="muted">The next title starts shortly.</p>
+    </div>
     <video id="video" controls autoplay playsinline muted></video>
     <button id="unmute" class="unmute" hidden>Tap for sound</button>
+    <!-- Covers the first couple of seconds of a title while the picture arrives.
+         Static markup, filled in from the theater state. -->
+    <div id="now-showing" class="now-showing" hidden>
+      <img id="ns-art" class="ns-art" alt="" hidden>
+      <div class="ns-text">
+        <p class="ns-label">Now showing</p>
+        <p id="ns-title" class="ns-title"></p>
+        <p id="ns-meta" class="ns-meta" hidden></p>
+        <p id="ns-synopsis" class="ns-synopsis" hidden></p>
+      </div>
+    </div>
     <!-- Shown over the stage when a guest pass runs out. The video is stopped
          before this appears, so there is nothing playing behind it. -->
     <div id="guest-over" class="guest-over" hidden>
@@ -60,6 +77,16 @@
         </svg>
       </button>
     </header>
+    <!-- The host's theater controls. Admin only: watch.js removes the strip and
+         its modal outright for everyone else, rather than hiding them. -->
+    <div id="host-strip" class="host-strip" hidden>
+      <span id="host-state" class="host-state">theater off</span>
+      <button id="host-start" type="button" class="chip-btn">theater</button>
+      <button id="host-play" type="button" class="chip-btn" hidden>play</button>
+      <button id="host-stop" type="button" class="chip-btn" hidden>stop</button>
+      <button id="host-end" type="button" class="chip-btn danger-chip" hidden>end</button>
+      <span id="host-msg" class="host-msg" hidden></span>
+    </div>
     <div id="settings-panel" class="settings-panel" hidden>
       <p class="settings-heading muted">Stream &amp; chat</p>
       <div class="setting">
@@ -139,6 +166,22 @@
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=28"></script>
+  <!-- Search the library and put something on. Static markup, like every other
+       modal here: the close and Escape wiring binds once at load. -->
+  <div id="theater-search-modal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3>Play a title</h3>
+      <div class="ts-search">
+        <input id="ts-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
+        <button id="ts-search" type="button" class="pill primary">Search</button>
+      </div>
+      <label class="checkrow"><input id="ts-subs" type="checkbox" checked> Burn in subtitles</label>
+      <p id="ts-msg" class="pw-msg" hidden></p>
+      <div id="ts-results" class="ts-results"></div>
+    </div>
+  </div>
+
+  <script src="/assets/watch.js?v=29"></script>
 </body>
 </html>

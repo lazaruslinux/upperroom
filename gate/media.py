@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 import httpx
 
 import db
+import theater
 from config import (
     CLIP_DIR, CLIP_KEYFRAME_SLACK, CLIP_LAG, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
     SHARED_DIR,
@@ -97,10 +98,19 @@ async def stream_watcher():
                 # Fresh broadcast: clear any leftover failure-streak backoff.
                 _watch.update(last_size=-1, no_growth=0, attempts=0,
                               next_retry_at=0.0)
-                await start_recording()
+                plan = theater.stream_transition(True, theater.is_active())
+                if plan["record"]:
+                    await start_recording()
+                else:
+                    logger.info(
+                        "theater session running: not recording this stream"
+                    )
                 # Announce in the background so a slow webhook or mail relay never
                 # delays the status poll. notify_live enforces its own cooldown.
-                asyncio.create_task(notify_live())
+                if plan["notify"]:
+                    asyncio.create_task(notify_live())
+                if plan["state"]:
+                    await theater.set_stage(plan["state"])
                 # This is the broadcast people were waiting for, so retire the
                 # announcement. Only one that is due around now: a schedule for
                 # next week survives an unannounced stream today.
@@ -114,7 +124,11 @@ async def stream_watcher():
                 await _recorder_watchdog()
             if was_online and not online:
                 logger.info("stream offline")
-                await hub.wipe(reason="stream_ended")
+                plan = theater.stream_transition(False, theater.is_active())
+                if plan["wipe"]:
+                    await hub.wipe(reason="stream_ended")
+                if plan["state"]:
+                    await theater.set_stage(plan["state"])
                 await stop_recording()
             was_online = online
         except Exception:
@@ -1059,6 +1073,11 @@ async def make_clip(user, name, at=None):
 
     `at` is the wall-clock instant the viewer pressed Clip, in epoch seconds.
     See clip_window() for why that matters."""
+    # Refused outright during a theater session, and said plainly rather than
+    # left to fail as "the stream is not live": the stream may well be live, it
+    # is simply somebody else's film and nothing about it is ours to cut.
+    if theater.is_active():
+        return None, "Clips are off during theater."
     if not _rec["active"]:
         return None, "The stream is not live."
     username = user["username"]

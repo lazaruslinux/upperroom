@@ -17,10 +17,11 @@ import db
 import wordfilter
 from auth import (
     country_allowed, guest_expired, read_session, resolve_client_ip,
-    too_many_socket_connects,
+    too_many_projector_connects, too_many_socket_connects,
 )
 from config import COOKIE_NAME, MAX_MESSAGE_LENGTH, MAX_SOCKETS_PER_USER
 from hub import hub
+from projector import link as projector_link
 
 logger = logging.getLogger("upperroom.ws")
 
@@ -275,6 +276,54 @@ async def overlay_socket(websocket: WebSocket, key):
                 break
     finally:
         hub.remove_watcher(websocket)
+
+
+@router.websocket("/ws/projector")
+async def projector_socket(websocket: WebSocket):
+    """The projector's link to the gate.
+
+    It authenticates with a bearer key in the URL, the same way the overlay does
+    and for the same reason: it is a service on the operator's own machine, not
+    a person with a session. Accepted before the checks so a refusal carries its
+    close code (see the note on the chat socket below).
+
+    Only one projector is connected at a time and the newest wins, so restarting
+    it or moving it to another machine takes effect at once."""
+    await websocket.accept()
+    ip = resolve_client_ip(
+        websocket.headers.get("x-forwarded-for", ""),
+        websocket.client.host if websocket.client else "",
+    )
+    # Before the key read, so a guessing loop costs a dictionary probe rather
+    # than a database query and a constant-time compare each.
+    if too_many_projector_connects(ip):
+        await websocket.close(code=4429)
+        return
+    stored = db.get_projector_key()
+    key = websocket.query_params.get("key")
+    # Refuse when no key has ever been generated, so an absent or empty key can
+    # never authenticate against an unset one.
+    if not stored or key is None or not secrets.compare_digest(str(key), stored):
+        await websocket.close(code=4401)
+        return
+    await projector_link.attach(websocket)
+    logger.info("projector connected")
+    try:
+        while True:
+            try:
+                message = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                # Not JSON, or the socket is going away. Neither is worth
+                # dropping a working projector over; the disconnect frame ends
+                # the loop through receive_json raising above.
+                logger.debug("ignoring an unreadable projector frame", exc_info=True)
+                break
+            await projector_link.handle(message)
+    finally:
+        projector_link.detach(websocket)
+        logger.info("projector disconnected")
 
 
 @router.websocket("/ws")

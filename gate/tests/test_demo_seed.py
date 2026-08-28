@@ -61,6 +61,9 @@ def test_seed_empty_creates_everything(fresh_db):
     # One viewer gets a starting balance so the highlight redemption is usable.
     assert db.get_points("viewer_one") == 120
 
+    # And the demo projector is paired, so the theater works with no key to copy.
+    assert db.get_projector_key() == demo_seed.PROJECTOR_KEY
+
 
 def test_seed_is_idempotent(fresh_db):
     demo_seed.seed()
@@ -68,6 +71,14 @@ def test_seed_is_idempotent(fresh_db):
     assert db.count_users() == 3                            # no duplicate accounts
     assert len(_active_invites("try me")) == 1              # no duplicate invite
     assert db.get_points("viewer_one") == 120               # balance not re-added
+
+
+def test_seed_never_overwrites_an_existing_projector_key(fresh_db):
+    # Same rule as the publish key: once a key exists, the seed is a no-op, so
+    # running the demo profile can never revoke a real operator's projector.
+    mine = db.regenerate_projector_key()
+    demo_seed.seed()
+    assert db.get_projector_key() == mine
 
 
 def test_seed_refuses_real_install(fresh_db):

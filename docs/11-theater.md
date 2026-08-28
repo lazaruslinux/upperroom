@@ -1,0 +1,158 @@
+# 11. Theater
+
+Theater is watching something together. Instead of broadcasting yourself, you
+put on a title from your own media library and everyone in the room watches it
+at the same time, with the same chat they always have.
+
+It is not a second video path. What plays reaches your viewers over exactly the
+same ingest, the same MediaMTX, and the same watch page as an OBS broadcast, so
+nothing about the delivery changes. What changes is the frame around it.
+
+## 11.1 What a session does
+
+While a theater session is open:
+
+- **Nothing is recorded.** A session is somebody else's film, and building a
+  library of it is not what this is for.
+- **Clips are refused**, and say so, for the same reason.
+- **Chat is not wiped between titles.** Ordinarily the room clears when a
+  broadcast ends. During a session the gap between one title and the next is an
+  intermission, not an ending, so the wipe is held until you end the session.
+- **Going live announces once**, at the start of the session, rather than once
+  per title. Nobody wants a Discord ping per film.
+
+Your viewers see an **Intermission** card between titles instead of the offline
+card, a **Now showing** panel over the first couple of seconds of a title, and a
+slightly dimmed page while the session runs. Nothing else about the watch page
+moves.
+
+## 11.2 The projector
+
+The playing is done by a separate small service called the **projector**, in
+`projector/`. It runs on whatever machine your library is on, not on your
+server.
+
+```
+Your media machine                     Your server
+------------------                     -----------
+projector  --- WebSocket (outbound) --->  gate       "search", "play", "stop"
+    |
+    |     --- RTMP publish (outbound) --> mediamtx    the video itself
+    v
+your library (Jellyfin)
+```
+
+Both connections are made **by the projector, outward**. Your media machine
+needs no open port, no certificate, no name in DNS, and nothing about it is
+reachable from the internet. If you unplug it, the gate simply reports that the
+projector is not connected.
+
+### Setting it up
+
+1. On your server's dashboard, open **Projector** and press **Regenerate** to
+   mint a key. Copy it.
+2. Copy your **stream key** and server address out of the **Stream key** panel
+   above it, exactly as you would for OBS.
+3. On your media machine:
+
+   ```
+   cd projector
+   cp .env.example .env       # fill in the values below
+   docker build -t upperroom-projector .
+   docker run -d --restart unless-stopped --name upperroom-projector \
+     --env-file .env upperroom-projector
+   ```
+
+   Without Docker: Python 3.12, `pip install -r requirements.txt`, an `ffmpeg`
+   on the path, then `python main.py`.
+
+4. Back on the dashboard, **Projector** should say *Connected*.
+
+### The settings
+
+| Variable | What it is |
+|---|---|
+| `PROJECTOR_GATE_URL` | Your gate's projector socket, `wss://your-domain/ws/projector`. Use `ws://` only on a link you already trust end to end. |
+| `PROJECTOR_KEY` | The key from the dashboard's Projector panel. |
+| `PROJECTOR_INGEST_URL` | Where to publish, `rtmp://your-domain:1935/live`. Same host and path OBS uses. |
+| `PROJECTOR_STREAM_KEY` | The channel's stream key, from the dashboard. |
+| `JELLYFIN_URL` | Your Jellyfin server, e.g. `http://media-box:8096`. Not needed in demo mode. |
+| `JELLYFIN_API_KEY` | An API key from Jellyfin's own dashboard. Read only is enough. |
+| `PROJECTOR_VAAPI_DEVICE` | A render node, e.g. `/dev/dri/renderD128`, to encode on the GPU. Unset means libx264 on the CPU. |
+| `PROJECTOR_VIDEO_BITRATE` | Publish bitrate, default `6000k`. |
+| `PROJECTOR_MAX_HEIGHT` | Cap the picture at this height, default `1080`. It never upscales. |
+| `PROJECTOR_DEMO` | `1` plays three built-in generated titles and never touches a library. |
+
+### Hardware encoding
+
+Transcoding a film to h264 in real time is the expensive part. Point
+`PROJECTOR_VAAPI_DEVICE` at a render node and the encode moves to the GPU; the
+scale and any subtitle burn stay on the CPU, which is cheap. With Docker you
+have to pass the device in as well:
+
+```
+docker run -d --device /dev/dri/renderD128 --env-file .env upperroom-projector
+```
+
+The pinned ffmpeg build the image ships carries VAAPI, so nothing else is
+needed. Leave the variable unset and it encodes with libx264 at `veryfast`,
+which one modern core can hold at 1080p.
+
+### Subtitles
+
+The **Burn in subtitles** box is on by default. Subtitles are burned into the
+picture rather than sent alongside it, because the viewer's player has no
+separate track to switch on: everyone is watching one video.
+
+Only titles that actually carry a subtitle track are burned; for the rest the
+box does nothing. Text subtitles (SRT, ASS) work. If the burn fails, the
+projector notices within a few seconds and restarts the title without it rather
+than leaving you with nothing playing.
+
+## 11.3 Running a session
+
+Two places, the same controls:
+
+- **The dashboard**, under **Theater**. Start the session, search your library,
+  press play on a row, stop the title, end the session.
+- **The watch page**, on a strip above chat, visible to admins only. Same
+  buttons, so you can run the evening from the page you are watching on.
+
+A normal evening:
+
+1. **Start session.** Viewers see the intermission card, and the go-live
+   announcement goes out once.
+2. **Play** a title. Search, pick a row, press play. The Now showing card covers
+   the few seconds before the picture arrives.
+3. When it ends, or when you press **stop**, the room returns to intermission.
+   Chat is untouched. Play the next one.
+4. **End session** when the evening is over. Whatever is playing stops, and the
+   chat is wiped exactly as it is at the end of any broadcast.
+
+One session runs at a time, and starting a second is refused rather than
+quietly ignored.
+
+## 11.4 What your viewers can see
+
+The theater state rides the chat socket every viewer already holds, so the
+intermission and Now showing cards change without a poll. What it carries is the
+title, year, runtime and synopsis of what is on, and the poster.
+
+What it does not carry is anything about your library: no item ids, no paths, no
+server address, and nothing at all when no session is running. `/api/status`,
+which anyone signed in reads, is unchanged and says nothing about theater.
+
+Posters are stored under the media directory in `art/`, served behind the same
+session check as your recordings, and re-encoded on the way in so only pixels
+are written. They are deliberately not in the recordings or clips folders, so
+retention never treats a poster as something to prune.
+
+## 11.5 Demo mode
+
+`PROJECTOR_DEMO=1` gives the projector three built-in titles with generated
+picture, sound and posters, and never contacts a library. That is what the demo
+stack uses (`docs/07-demo.md`), and it is the quickest way to see a session work
+before setting up a library.
+
+Each demo title runs two minutes and then ends on its own, which also shows the
+return to intermission without pressing anything.

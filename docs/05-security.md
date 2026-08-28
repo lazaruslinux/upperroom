@@ -130,6 +130,38 @@ does and does not unlock:
 - None of this adds anything a stranger can reach. The key is a bearer secret:
   treat the URL like a password, and regenerate it from the dashboard if it leaks.
 
+## The projector key
+
+Theater (see `docs/11-theater.md`) adds one more service and one more key. The
+projector runs on your own media machine and cannot sign in, so it authenticates
+with a long random key the same way the overlay does.
+
+- **It only ever connects outward.** The projector opens the connection to your
+  gate and the publish to your ingest. Your media machine listens on nothing,
+  needs no open port, and is not reachable from the internet. There is no
+  inbound path this feature adds to the machine your library is on.
+- **It is not seeded from anything.** Unlike the publish key, which is seeded
+  from `PUBLISH_PASS` on an upgrade, the projector key exists only once you press
+  Regenerate. Until then the socket refuses every connection, including one that
+  sends an empty key.
+- **One projector at a time**, and the newest wins. Regenerating the key
+  disconnects the connected projector immediately rather than waiting for it to
+  reconnect and fail.
+- **Connections to it are rate limited** per address, on their own budget, so
+  guessing the key over that socket cannot spend the allowance that protects
+  password guessing.
+- **Nothing about your library is public.** What a session puts on a public
+  endpoint is the title, year, runtime, synopsis and poster of what is playing,
+  and only to signed-in viewers (guests included, since watching is what a guest
+  pass is for). Item ids, paths and your media server's address never leave the
+  gate. `/api/status`, the one payload every visitor's page polls, is unchanged.
+- **A session suppresses two write paths.** While it is open nothing is
+  recorded and clips are refused outright, so a film you put on for the room
+  cannot be turned into a file or a shareable cut by anyone, including you.
+
+The key is a bearer secret: treat it like a password, and regenerate it from the
+dashboard if it leaks.
+
 ## What this does not do
 
 - It does not hide your server's IP. The firewall and the login are the

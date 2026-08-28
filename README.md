@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.3.3**. Releases are tagged in git, and the running version
+Current version: **0.4.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -61,6 +61,13 @@ only repackages the video and stays light.
   any time while the clip is shared, and stopping kills it permanently: sharing
   again mints a new one. A public clip is video only: no chat replay, no
   comments, and it never names who made it.
+- A theater mode for watching something together: put on a title from your own
+  media library and everyone in the room watches it at once, with an
+  intermission card between titles and a Now showing panel as each one starts.
+  A small separate service (`projector/`) does the playing from whatever machine
+  your library is on, and connects outward only, so that machine needs no open
+  port. While a session runs nothing is recorded and clips are off. See
+  `docs/11-theater.md`.
 - Optionally restricts the whole site to a list of countries.
 
 ### Accounts
@@ -171,7 +178,11 @@ Three containers:
 - `caddy` terminates TLS, serves the pages, and guards the video and the
   recordings.
 
-Demo mode adds two more, behind a Compose profile.
+A fourth, `projector`, is optional and does not run here: it runs on whatever
+machine holds your media library, connects outward to `gate` and `mediamtx`, and
+plays titles into the channel for theater mode.
+
+Demo mode adds three more, behind a Compose profile.
 
 ## Quick start
 
@@ -277,6 +288,7 @@ The full set, in reading order:
 8. The chat overlay: `docs/08-overlay.md`
 9. Channel points: `docs/09-points.md`
 10. Backing up and restoring: `docs/10-backup.md`
+11. Theater and the projector: `docs/11-theater.md`
 
 ## License
 
