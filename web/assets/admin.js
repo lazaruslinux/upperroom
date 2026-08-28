@@ -292,7 +292,7 @@ document.getElementById("ch-save").addEventListener("click", async () => {
   const a = parseInt(chCdAdmin.value, 10);
   if ([u, m, a].some(Number.isNaN)) { showChMsg("Cooldowns must be whole numbers.", false); return; }
   const clipSeconds = parseInt(chClipSeconds.value, 10);
-  if (Number.isNaN(clipSeconds)) { showChMsg("Clip length must be a whole number of seconds.", false); return; }
+  if (Number.isNaN(clipSeconds)) { showChMsg("Longest clip must be a whole number of seconds.", false); return; }
   chMsg.hidden = true;
   try {
     const reply = await fetch("/api/stream-info", {
