@@ -54,6 +54,13 @@
 			reverse_proxy gate:8000
 		}
 
+		# The projector's socket, for the same reason and so it must sit here
+		# too. It authenticates with a key in the URL rather than a login
+		# cookie, and the gate rate-limits the attempts before reading it.
+		handle /ws/projector {
+			reverse_proxy gate:8000
+		}
+
 		# US-only country lock, enforced here on the server so the video never
 		# has to pass through Cloudflare. The gate checks the visitor's country
 		# for every single request. A blocked country gets a 403 and never

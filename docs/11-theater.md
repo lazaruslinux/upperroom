@@ -83,6 +83,16 @@ projector is not connected.
 | `PROJECTOR_MAX_HEIGHT` | Cap the picture at this height, default `1080`. It never upscales. |
 | `PROJECTOR_DEMO` | `1` plays three built-in generated titles and never touches a library. |
 
+### Proxying the socket
+
+Your reverse proxy has to route `/ws/projector` to the gate, and it has to do it
+**before** any auth gate in front of the site. A `forward_auth` refuses a
+WebSocket upgrade, so a projector behind one never connects; it gets whatever
+the catch-all serves instead, usually a page. The bundled `Caddyfile` already
+does this, next to the chat socket. If you run your own proxy, route both
+sockets the same way. The projector still authenticates: the gate checks its key
+and rate-limits the attempts.
+
 ### Hardware encoding
 
 Transcoding a film to h264 in real time is the expensive part. Point
