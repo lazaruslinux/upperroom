@@ -91,10 +91,16 @@ re-encoding, pulled over the internal docker network), so it never competes with
 the live stream for bandwidth or quality. When the stream ends, the finished
 file is archived to the media store and shown on the home page under **VODs**.
 Viewers can also clip the recent stream while you are live, and those appear
-under **Clips**, each with synced chat replay. How much a clip captures is a
-channel setting (**Clip length** on the dashboard, sixty seconds by default).
-The clip is taken from the moment the viewer pressed the button, so taking your
-time to name it does not move the window.
+under **Clips**, each with synced chat replay. Pressing Clip asks how much to
+take (one minute, 45 seconds or 30 seconds) and saves it straight away; naming
+it comes after, and skipping that leaves it called "Clip". Either way the clip
+is taken from the moment the button was pressed, so nothing that happens next
+moves the window. A clip can be renamed later on its own page, by whoever made
+it or by a moderator.
+
+**Clip length** on the dashboard (sixty seconds by default) is the ceiling
+rather than the length: a viewer cannot ask for more than it allows, and any
+offered length above it is greyed out for them.
 
 Clips are deleted after two days unless you pin them. That is the one retention
 limit a fresh install ships switched on, and it is deliberate: a clip is the

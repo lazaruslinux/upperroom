@@ -124,6 +124,8 @@ red camera instead, so it is always clear who is streaming.
 
 A moderator gets a **Mod** link on the home page leading to `/mod`, a trimmed
 dashboard where they can review watch and chat history and lift bans they set.
+They can also rename any clip, on the clip's own page; everyone else can rename
+only the clips they made themselves.
 They cannot add, edit, or delete accounts, and admin accounts are hidden from
 this area entirely.
 

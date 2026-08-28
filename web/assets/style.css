@@ -1148,6 +1148,9 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 
 .media-info { padding: 14px 2px 0; }
 .media-page-title { font-family: var(--sans); font-weight: 600; font-size: 17px; margin: 0 0 4px; }
+.media-title-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rename-edit { display: flex; gap: 8px; margin: 0 0 6px; }
+.rename-edit input { flex: 1; min-width: 0; }
 .media-desc { font-family: var(--sans); font-size: 14px; color: var(--text); margin: 12px 0 0; line-height: 1.5; white-space: pre-wrap; }
 
 .media-replay {
@@ -1608,10 +1611,21 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #crop-zoom { width: 100%; margin-bottom: 16px; accent-color: var(--accent); }
 .crop-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* clip naming modal */
+/* clip modals: pick a length, then (optionally) a name */
 .clip-h3 { margin: 0 0 12px; }
 #clip-name { width: 100%; margin-bottom: 8px; }
-#clip-msg a { color: var(--accent); margin-left: 4px; }
+#clip-msg a, #clip-name-msg a { color: var(--accent); margin-left: 4px; }
+
+/* Length chips are pills that hold a selected state, like the chat font chips.
+   One over the channel's ceiling is disabled rather than hidden, so the limit
+   is visible instead of leaving a gap nobody can explain. */
+.clip-lens { display: flex; gap: 8px; margin-bottom: 10px; }
+.clip-len.is-on, .clip-len.is-on:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.clip-len:disabled:hover { color: var(--muted); border-color: var(--border); }
+.clip-limit { font-family: var(--mono); font-size: 11px; margin: 0 0 8px; }
 
 /* =========================================================================
    Likes and comments

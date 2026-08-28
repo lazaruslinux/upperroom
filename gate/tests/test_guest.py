@@ -298,6 +298,16 @@ def test_guest_cannot_clip(client):
     assert "Guests" in resp.json()["error"]
 
 
+def test_guest_cannot_name_a_clip(client):
+    guest = signed_in_guest(client)
+    now = int(time.time())
+    clip_id = db.create_clip("Clip", "1.mp4", "owner", None, now - 30, now, 30, now)
+    resp = guest.post(f"/api/clips/{clip_id}/name", json={"name": "nope"})
+    assert resp.status_code == 403
+    assert "Guests" in resp.json()["error"]
+    assert db.get_clip(clip_id)["name"] == "Clip"
+
+
 def test_guest_cannot_touch_points(client):
     guest = signed_in_guest(client)
     assert guest.get("/api/points").status_code == 403

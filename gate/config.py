@@ -39,7 +39,7 @@ _setup_logging()
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -105,6 +105,9 @@ MAX_SITE_NAME = 60
 MAX_STREAM_TITLE = 100
 MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
+# The lengths the watch page offers as chips. The channel's clip_seconds is
+# still the ceiling; these are the only values a client may ask for.
+CLIP_LENGTHS = (60, 45, 30)
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
 MAX_OVERLAY_TICKER = 200        # the operator's overlay message line, kept short

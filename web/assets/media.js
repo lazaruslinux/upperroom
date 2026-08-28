@@ -274,6 +274,7 @@ async function loadMedia() {
   if (TYPE === "clip" && meta.creator) viewSuffix += ` · clipped by @${meta.creator}`;
   renderViews(meta.views);
   if (TYPE === "vod" && meta.description) descEl.textContent = meta.description;
+  if (TYPE === "clip") setUpRename(meta);
   if (TYPE === "clip" && me && me.admin) {
     shareState = { shared: !!meta.shared, url: meta.share_url, name: meta.name };
     renderShare();
@@ -460,6 +461,60 @@ async function removeComment(id, button) {
     showCommentMsg(data.error || "Could not remove it.", false);
   } catch { showCommentMsg("Could not remove it.", false); }
   button.disabled = false;
+}
+
+// ---- renaming a clip ------------------------------------------------------
+// The watch page asks for a name once, straight after the cut, and a skipped or
+// hurried one leaves a clip called "Clip". This is the second chance. The maker
+// may rename their own; a moderator or admin may rename any. VODs are titled by
+// the operator elsewhere and are not renamed here.
+
+const renameBtn = document.getElementById("rename-btn");
+const renameEdit = document.getElementById("rename-edit");
+const renameInput = document.getElementById("rename-input");
+const renameSave = document.getElementById("rename-save");
+const renameCancel = document.getElementById("rename-cancel");
+
+function setUpRename(meta) {
+  if (!me || !(me.admin || me.mod || meta.creator === me.username)) return;
+  renameBtn.hidden = false;
+  renameBtn.addEventListener("click", () => {
+    renameInput.value = titleEl.textContent;
+    renameEdit.hidden = false;
+    renameBtn.hidden = true;
+    renameInput.focus();
+    renameInput.select();
+  });
+  renameCancel.addEventListener("click", closeRename);
+  renameSave.addEventListener("click", saveRename);
+}
+
+function closeRename() {
+  renameEdit.hidden = true;
+  renameBtn.hidden = false;
+}
+
+async function saveRename() {
+  const name = renameInput.value.trim();
+  if (!name) { closeRename(); return; }
+  renameSave.disabled = true;
+  try {
+    const reply = await fetch(`/api/clips/${ID}/name`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      titleEl.textContent = data.name;
+      // The share confirmations name the clip, so keep them honest.
+      shareState.name = data.name;
+      closeRename();
+    } else {
+      alert(data.error || "Could not rename it.");
+    }
+  } catch { alert("Could not rename it."); }
+  renameSave.disabled = false;
 }
 
 // ---- clip sharing (admin only) --------------------------------------------

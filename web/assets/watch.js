@@ -1032,21 +1032,27 @@ chatInput.addEventListener("blur", () => {
 
 // ---- clipping the recent stream ----
 
-const clipModal = document.getElementById("clip-modal");
-const clipName = document.getElementById("clip-name");
+const clipLenModal = document.getElementById("clip-len-modal");
+const clipLenButtons = Array.from(document.querySelectorAll(".clip-len"));
+const clipLimit = document.getElementById("clip-limit");
 const clipSave = document.getElementById("clip-save");
 const clipMsg = document.getElementById("clip-msg");
+const clipNameModal = document.getElementById("clip-name-modal");
+const clipName = document.getElementById("clip-name");
+const clipNameSave = document.getElementById("clip-name-save");
+const clipNameSkip = document.getElementById("clip-name-skip");
+const clipNameMsg = document.getElementById("clip-name-msg");
 
-function showClipMsg(text, ok, link) {
-  clipMsg.className = "pw-msg " + (ok ? "ok" : "bad");
-  clipMsg.textContent = "";
-  clipMsg.append(document.createTextNode(text));
+function showClipMsg(text, ok, link, el = clipMsg) {
+  el.className = "pw-msg " + (ok ? "ok" : "bad");
+  el.textContent = "";
+  el.append(document.createTextNode(text));
   if (link) {
-    clipMsg.append(document.createTextNode(" "));
+    el.append(document.createTextNode(" "));
     const a = document.createElement("a");
     a.href = link;
     a.textContent = "View clip";
-    clipMsg.appendChild(a);
+    el.appendChild(a);
   }
 }
 
@@ -1063,24 +1069,39 @@ function showClipMsg(text, ok, link) {
 // is unavailable (Safari playing HLS natively, or a source without the stamp) we
 // fall back to now minus the measured latency, and failing that send nothing at
 // all and let the server use its own estimate.
-// The clip length is a channel setting, so the button and the modal heading are
-// labelled from what the server reports rather than from a number written into
-// the markup. Called by the status poll.
+// The channel's clip_seconds is a ceiling, not a length any more: the viewer
+// picks from the chips and the server clamps whatever it is sent. So this takes
+// the ceiling from the status poll and settles which chips can be pressed.
 function applyClipLength(seconds) {
   if (!seconds || seconds === clipLength) return;
   clipLength = seconds;
-  const label = seconds % 60 === 0 && seconds >= 60
-    ? `Clip the last ${seconds / 60} minute${seconds === 60 ? "" : "s"}`
-    : `Clip the last ${seconds} seconds`;
-  if (clipBtn) {
-    clipBtn.setAttribute("aria-label", label);
-    clipBtn.setAttribute("title", label);
-  }
-  const heading = document.getElementById("clip-heading");
-  if (heading) heading.textContent = label;
+  let longestAllowed = 0;
+  clipLenButtons.forEach((btn) => {
+    const value = Number(btn.dataset.seconds);
+    const over = value > clipLength;
+    btn.disabled = over;
+    if (!over) longestAllowed = Math.max(longestAllowed, value);
+  });
+  clipLimit.textContent = `channel limit: ${clipLength}s`;
+  clipLimit.hidden = !clipLenButtons.some((btn) => btn.disabled);
+  // A ceiling under the shortest chip leaves nothing to pick. Send no length at
+  // all in that case and let the server cut whatever the setting allows.
+  if (!longestAllowed || clipSeconds > clipLength) selectClipLength(longestAllowed);
 }
 
-let clipLength = 0;
+function selectClipLength(value) {
+  clipSeconds = value;
+  clipLenButtons.forEach((btn) => {
+    btn.classList.toggle("is-on", Number(btn.dataset.seconds) === value);
+  });
+}
+
+clipLenButtons.forEach((btn) => {
+  btn.addEventListener("click", () => selectClipLength(Number(btn.dataset.seconds)));
+});
+
+let clipLength = 0;      // the channel ceiling, from the status poll
+let clipSeconds = 30;    // the chip that is selected, 0 when none can be
 
 function currentFrameInstant() {
   try {
@@ -1097,29 +1118,34 @@ function currentFrameInstant() {
 // Captured on Clip, sent on Save, so typing a name cannot move the window.
 let clipInstant = null;
 
+// The clip the name modal is naming. It already exists by then.
+let savedClipId = null;
+
 clipBtn.addEventListener("click", () => {
   clipInstant = currentFrameInstant();
-  clipName.value = "";
   clipMsg.textContent = "";
   clipMsg.className = "pw-msg";
   clipSave.disabled = false;
-  openModal(clipModal);
-  clipName.focus();
+  openModal(clipLenModal);
 });
 
 clipSave.addEventListener("click", async () => {
   clipSave.disabled = true;
   showClipMsg("Saving…", true);
   try {
+    const body = { at: clipInstant };
+    if (clipSeconds) body.seconds = clipSeconds;
     const reply = await fetch("/api/clip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: clipName.value.trim(), at: clipInstant }),
+      body: JSON.stringify(body),
     });
     const data = await reply.json().catch(() => ({}));
     if (reply.ok) {
-      showClipMsg("Clip saved.", true, `/media?type=clip&id=${data.id}`);
+      closeModal(clipLenModal);
+      openNameModal(data.id);
     } else {
+      // Theater, cooldown, not live: the refusal belongs on the step that asked.
       showClipMsg(data.error || "Could not make the clip.", false);
       clipSave.disabled = false;
     }
@@ -1127,6 +1153,49 @@ clipSave.addEventListener("click", async () => {
     showClipMsg("Could not make the clip.", false);
     clipSave.disabled = false;
   }
+});
+
+function openNameModal(id) {
+  savedClipId = id;
+  clipName.value = "";
+  clipNameSave.disabled = false;
+  clipNameSkip.textContent = "Skip";
+  // Say it is saved up front, link and all: naming is optional and closing this
+  // by any route is a perfectly good ending, so the confirmation cannot wait on
+  // a second button press.
+  showClipMsg("Clip saved.", true, `/media?type=clip&id=${id}`, clipNameMsg);
+  openModal(clipNameModal);
+  clipName.focus();
+}
+
+clipNameSave.addEventListener("click", async () => {
+  const name = clipName.value.trim();
+  if (!name || !savedClipId) {
+    closeModal(clipNameModal);
+    return;
+  }
+  clipNameSave.disabled = true;
+  try {
+    const reply = await fetch(`/api/clips/${savedClipId}/name`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (reply.ok) {
+      showClipMsg(
+        "Clip saved.", true, `/media?type=clip&id=${savedClipId}`, clipNameMsg
+      );
+      // Naming is done, so the way out stops reading as skipping something.
+      // Save stays live: a typo is fixable here rather than only on the clip.
+      clipNameSkip.textContent = "Close";
+    } else {
+      showClipMsg(data.error || "Could not name it.", false, null, clipNameMsg);
+    }
+  } catch {
+    showClipMsg("Could not name it.", false, null, clipNameMsg);
+  }
+  clipNameSave.disabled = false;
 });
 
 // ---- channel points and the highlight redemption ----

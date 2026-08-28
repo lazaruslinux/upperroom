@@ -16,7 +16,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=47">
+  <link rel="stylesheet" href="/assets/style.css?v=48">
 </head>
 <body class="media">
   <div id="site-nav"></div>
@@ -26,7 +26,17 @@
       <video id="video" controls playsinline></video>
       <div id="heatmap" class="heatmap" aria-label="Chat activity. Click to seek." hidden></div>
       <div class="media-info">
-        <h1 id="media-title" class="media-page-title">Loading…</h1>
+        <!-- The title, and for a clip's own maker (or a mod) an inline rename:
+             the watch page only asks for a name once, right after the cut. -->
+        <div class="media-title-row">
+          <h1 id="media-title" class="media-page-title">Loading…</h1>
+          <button id="rename-btn" type="button" class="pill" hidden>rename</button>
+        </div>
+        <div id="rename-edit" class="rename-edit" hidden>
+          <input id="rename-input" type="text" maxlength="80" autocomplete="off">
+          <button id="rename-save" type="button" class="pill primary">Save</button>
+          <button id="rename-cancel" type="button" class="pill">Cancel</button>
+        </div>
         <div id="media-sub" class="media-sub muted"></div>
         <p id="media-desc" class="media-desc"></p>
 
@@ -76,6 +86,6 @@
   </footer>
 
   <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/media.js?v=12"></script>
+  <script src="/assets/media.js?v=13"></script>
 </body>
 </html>

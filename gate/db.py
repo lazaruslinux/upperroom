@@ -1957,6 +1957,11 @@ def create_clip(name, filename, creator, vod_id, start_ts, end_ts, duration, cre
         return cur.lastrowid
 
 
+def rename_clip(clip_id, name):
+    with connect() as conn:
+        conn.execute("UPDATE clips SET name = ? WHERE id = ?", (name, clip_id))
+
+
 def set_clip_filename(clip_id, filename):
     with connect() as conn:
         conn.execute(

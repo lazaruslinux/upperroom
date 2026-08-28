@@ -17,11 +17,12 @@ from fastapi.responses import FileResponse, JSONResponse
 
 import db
 from auth import (
-    GUEST_REFUSED, admin_user, member_user, read_session, session_user,
+    GUEST_REFUSED, admin_user, can_moderate, member_user, read_session,
+    session_user,
 )
 from config import (
-    CLIP_DIR, COOKIE_NAME, MAX_COMMENT_LENGTH, SCHEDULE_GRACE, THUMB_PATH,
-    VERSION, VOD_DIR,
+    CLIP_DIR, CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
+    SCHEDULE_GRACE, THUMB_PATH, VERSION, VOD_DIR,
 )
 from hub import hub
 from media import (
@@ -185,10 +186,45 @@ async def create_clip_endpoint(request: Request):
         at = float(body["at"]) if body.get("at") is not None else None
     except (TypeError, ValueError):
         at = None
-    clip_id, error = await make_clip(user, body.get("name"), at=at)
+    # How much of the live edge to take. Unlike `at`, a bad value is refused
+    # rather than ignored: it means the client and the server disagree about
+    # what may be asked for, and silently cutting a different length than the
+    # viewer picked is worse than saying no. Absent means "use the setting".
+    seconds = body.get("seconds")
+    if seconds is not None and seconds not in CLIP_LENGTHS:
+        return JSONResponse(
+            {"error": "Pick one of the offered clip lengths."}, status_code=400
+        )
+    clip_id, error = await make_clip(
+        user, body.get("name"), at=at, seconds=seconds
+    )
     if error:
         return JSONResponse({"error": error}, status_code=400)
     return {"ok": True, "id": clip_id}
+
+
+@router.post("/api/clips/{clip_id}/name")
+async def rename_clip(clip_id: int, request: Request):
+    """Name a clip after it exists. The watch page saves first and asks for a
+    name second, so the clip is never lost to a slow typist; the clip's own page
+    offers the same edit later."""
+    if not session_user(request):
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
+    user = member_user(request)
+    if not user:
+        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+    clip = db.get_clip(clip_id)
+    if not clip:
+        return JSONResponse({"error": "No such clip."}, status_code=404)
+    if clip["creator"] != user["username"] and not can_moderate(user):
+        return JSONResponse({"error": "Not yours to rename."}, status_code=403)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()[:MAX_CLIP_NAME]
+    # A blank name keeps the one it has. Nothing on the site copes with a clip
+    # called nothing at all, and the default "Clip" is already the floor.
+    if name:
+        db.rename_clip(clip_id, name)
+    return {"ok": True, "name": name or clip["name"]}
 
 
 @router.post("/api/clips/{clip_id}/share")

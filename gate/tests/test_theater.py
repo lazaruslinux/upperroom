@@ -239,6 +239,16 @@ def test_clips_are_refused_during_a_session_and_say_why(client):
     )
 
 
+def test_a_requested_length_does_not_get_a_clip_past_the_refusal(client):
+    # The length is picked before the request, so it must not read as a
+    # different, allowed shape of request.
+    setup_admin(client, username="owner")
+    start(client)
+    resp = client.post("/api/clip", json={"seconds": 30})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "Clips are off during theater."
+
+
 def test_clips_come_back_when_the_session_ends(client):
     setup_admin(client, username="owner")
     start(client)

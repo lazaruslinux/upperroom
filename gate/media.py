@@ -1067,12 +1067,16 @@ def clip_window(started_at, now, clip_seconds, at=None):
     return start, end, duration
 
 
-async def make_clip(user, name, at=None):
+async def make_clip(user, name, at=None, seconds=None):
     """Cut the last stretch of the live stream into a named clip. Returns
     (clip_id, None) on success or (None, error_message).
 
     `at` is the wall-clock instant the viewer pressed Clip, in epoch seconds.
-    See clip_window() for why that matters."""
+    See clip_window() for why that matters.
+
+    `seconds` is how much the viewer asked for. The channel's clip_seconds is
+    the ceiling either way, so a client cannot ask for more than the operator
+    allows; asking for nothing takes the setting, as it always did."""
     # Refused outright during a theater session, and said plainly rather than
     # left to fail as "the stream is not live": the stream may well be live, it
     # is simply somebody else's film and nothing about it is ours to cut.
@@ -1091,6 +1095,8 @@ async def make_clip(user, name, at=None):
             )
     started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
     clip_seconds = db.get_stream_info()["clip_seconds"]
+    if seconds:
+        clip_seconds = min(int(seconds), clip_seconds)
     start, end, duration = clip_window(started_at, int(time.time()), clip_seconds, at)
     if start is None:
         return None, "The stream just started; nothing to clip yet."

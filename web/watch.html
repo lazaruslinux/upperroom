@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=47">
+  <link rel="stylesheet" href="/assets/style.css?v=48">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -123,17 +123,38 @@
     </form>
   </aside>
 
-  <!-- Name and save a clip of the last stretch of stream. The length is a
-       channel setting, so the heading is filled in from it at runtime. -->
-  <div id="clip-modal" class="modal" hidden>
+  <!-- Step one: how much of the stream to take. The clip is cut the moment
+       Save is pressed, so nothing is riding on what happens next. A chip longer
+       than the channel's clip_seconds is disabled at runtime. -->
+  <div id="clip-len-modal" class="modal" hidden>
     <div class="modal-card">
       <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3 class="clip-h3" id="clip-heading">Clip the recent stream</h3>
-      <input id="clip-name" type="text" maxlength="80" placeholder="Name your clip" autocomplete="off">
+      <h3 class="clip-h3">Clip the last:</h3>
+      <div id="clip-lens" class="clip-lens">
+        <button type="button" class="pill clip-len" data-seconds="60">1 min</button>
+        <button type="button" class="pill clip-len" data-seconds="45">45 sec</button>
+        <button type="button" class="pill clip-len is-on" data-seconds="30">30 sec</button>
+      </div>
+      <p id="clip-limit" class="muted clip-limit" hidden></p>
       <p id="clip-msg" class="pw-msg"></p>
       <div class="crop-actions">
         <button type="button" class="pill" data-close>Cancel</button>
         <button id="clip-save" type="button" class="pill primary">Save clip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step two, and entirely optional: the clip already exists by the time this
+       opens. Closing it any way at all leaves the default name. -->
+  <div id="clip-name-modal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+      <h3 class="clip-h3">Name your clip</h3>
+      <input id="clip-name" type="text" maxlength="80" placeholder="Name your clip" autocomplete="off">
+      <p id="clip-name-msg" class="pw-msg"></p>
+      <div class="crop-actions">
+        <button id="clip-name-skip" type="button" class="pill" data-close>Skip</button>
+        <button id="clip-name-save" type="button" class="pill primary">Save</button>
       </div>
     </div>
   </div>
@@ -182,6 +203,6 @@
     </div>
   </div>
 
-  <script src="/assets/watch.js?v=29"></script>
+  <script src="/assets/watch.js?v=30"></script>
 </body>
 </html>
