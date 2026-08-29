@@ -7,13 +7,14 @@ The media files themselves are served straight from disk by Caddy at /media/*
 through this Python service; only metadata and view counting live here.
 """
 
+import html
 import logging
 import os
 import secrets
 import time
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 import db
 from auth import (
@@ -22,7 +23,8 @@ from auth import (
 )
 from config import (
     CLIP_DIR, CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
-    SCHEDULE_GRACE, THUMB_PATH, VERSION, VOD_DIR,
+    SCHEDULE_GRACE, SITE_URL, THUMB_INTERVAL, THUMB_PATH, VERSION, VOD_DIR,
+    WEB_DIR,
 )
 from hub import hub
 from media import (
@@ -50,6 +52,153 @@ def thumbnail(request: Request):
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
+
+
+# ---- Link preview ---------------------------------------------------------
+# Sharing the watch page in a chat app should say who is streaming what, with a
+# frame of it. That means the page and its picture have to answer a fetcher that
+# has no session, because a preview fetcher never has one. Only these two
+# routes are public; the video, the chat socket and the library behind them are
+# unchanged and still need an account.
+
+_OG_START = "<!-- og:start -->"
+_OG_END = "<!-- og:end -->"
+
+# The watch page split around its preview block, cached by modification time.
+# web/ is live mounted, so a front-end deploy changes the file under a running
+# gate; keying on mtime picks that up without a restart and without reading the
+# file on every request.
+_watch_page = {"mtime": None, "head": "", "tail": None}
+
+
+def _watch_template():
+    """(head, tail) of web/watch.html around its preview markers. A tail of None
+    means the markers are missing and the page should be served untouched, rather
+    than guessing where the tags belong."""
+    path = os.path.join(WEB_DIR, "watch.html")
+    stamp = os.path.getmtime(path)
+    if _watch_page["mtime"] != stamp:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        start = text.find(_OG_START)
+        end = text.find(_OG_END)
+        if start == -1 or end == -1:
+            _watch_page.update(mtime=stamp, head=text, tail=None)
+        else:
+            _watch_page.update(
+                mtime=stamp, head=text[:start], tail=text[end + len(_OG_END):],
+            )
+    return _watch_page["head"], _watch_page["tail"]
+
+
+def _absolute(request, path):
+    """An absolute URL for a preview tag. A fetcher is not a browser and will not
+    resolve a relative og:image, so it has to be spelled out. The operator's
+    configured site URL wins; otherwise use the host this request arrived on."""
+    if SITE_URL:
+        return f"{SITE_URL}{path}"
+    host = request.headers.get("host", "")
+    if not host:
+        return path
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{proto}://{host}{path}"
+
+
+def _preview_text():
+    """(site, title, description) for the preview, from the channel's own
+    settings. The streamer is the longest-standing admin, the same account the
+    home card calls the channel owner, so this needs no setting of its own."""
+    info = db.get_stream_info()
+    site = info["site_name"] or "upperroom"
+    owner = db.channel_owner() or {}
+    who = owner.get("display_name") or owner.get("username") or site
+    game = db.get_now_playing()
+    if hub.is_live():
+        title = (
+            f"{site}: {who} is streaming {game}!" if game
+            else f"{site}: {who} is live now!"
+        )
+        description = (
+            info["stream_title"] or info["stream_description"] or "Live now."
+        )
+    else:
+        title = site
+        description = (
+            info["stream_description"] or "The stream is offline right now."
+        )
+    return site, title, description
+
+
+def _og_block(request):
+    """The preview tags themselves. Every value is operator-entered text going
+    into an HTML attribute, so every one of them is escaped."""
+    site, title, description = _preview_text()
+    # A frame the picture worker refreshes on an interval, so the buster moves at
+    # the same rate: fresh enough to be the current picture, stable enough that
+    # two shares in the same window do not both re-fetch.
+    image = _absolute(
+        request, f"/api/og-image.jpg?t={int(time.time()) // max(THUMB_INTERVAL, 1)}"
+    )
+    page = _absolute(request, "/watch")
+
+    def esc(value):
+        return html.escape(str(value), quote=True)
+
+    return "\n    ".join([
+        '<meta property="og:type" content="video.other">',
+        f'<meta property="og:site_name" content="{esc(site)}">',
+        f'<meta property="og:title" content="{esc(title)}">',
+        f'<meta property="og:description" content="{esc(description)}">',
+        f'<meta property="og:url" content="{esc(page)}">',
+        f'<meta property="og:image" content="{esc(image)}">',
+        '<meta property="og:image:width" content="640">',
+        '<meta property="og:image:height" content="360">',
+        # Without this the frame renders as a small square chip beside the text
+        # rather than the wide picture the share is for.
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:title" content="{esc(title)}">',
+        f'<meta name="twitter:description" content="{esc(description)}">',
+        f'<meta name="twitter:image" content="{esc(image)}">',
+    ])
+
+
+@router.api_route("/watch", methods=["GET", "HEAD"])
+def watch_page(request: Request):
+    """The watch page, rendered rather than served from disk, so its preview can
+    name the stream. Public deliberately: a page a fetcher cannot read previews
+    as nothing. What comes back is only the shell. The video, the chat socket and
+    the library each check the session on their own, and watch.js sends a visitor
+    without one to the sign-in page."""
+    try:
+        head, tail = _watch_template()
+    except OSError:
+        # Nothing to serve and nothing to fake. Caddy still has the file, so let
+        # its static handler answer instead of returning a broken page.
+        logger.warning("watch page unreadable under %s", WEB_DIR, exc_info=True)
+        return Response(status_code=404)
+    body = head if tail is None else head + _og_block(request) + tail
+    # No cache header here: Caddy sets one policy for every dynamic path, and a
+    # second one from this end only produces a duplicate to disagree with later.
+    return HTMLResponse(body)
+
+
+@router.api_route("/api/og-image.jpg", methods=["GET", "HEAD"])
+def og_image():
+    """The picture a link preview shows, public for the same reason the page is.
+
+    While a broadcast is running this is the current frame, the same one the home
+    card shows. The picture worker deletes that file when the stream ends, so
+    between broadcasts this falls back to the channel's static card and no frame
+    of anything is reachable."""
+    # Caching is Caddy's policy for both of these, as it is for every other
+    # dynamic path; the timestamp on the og:image URL is what decides how often
+    # a fetcher asks for a new frame.
+    if os.path.exists(THUMB_PATH):
+        return FileResponse(THUMB_PATH, media_type="image/jpeg")
+    fallback = os.path.join(WEB_DIR, "assets", "icons", "og-default.png")
+    if os.path.exists(fallback):
+        return FileResponse(fallback, media_type="image/png")
+    return Response(status_code=404)
 
 
 # ---- VODs and clips -------------------------------------------------------

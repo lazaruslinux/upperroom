@@ -15,9 +15,9 @@ import db
 from auth import _clean_username, admin_user
 from config import (
     GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
-    MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_OVERLAY_TICKER, MAX_SCHEDULE_NOTE,
-    MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC, MAX_STREAM_TITLE,
-    MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
+    MAX_GAME_NAME, MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_OVERLAY_TICKER,
+    MAX_SCHEDULE_NOTE, MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
+    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
 )
 from hub import hub
 from media import (
@@ -76,6 +76,12 @@ async def set_stream_info(request: Request):
     db.set_stream_info(
         site_name=site_name, title=title, description=description, accent=accent,
     )
+    # What is being played rides this route too, but is stored on its own: an
+    # empty string is a real value here (it clears the label), which is exactly
+    # what the fields above refuse, so it cannot share their None-means-unset
+    # handling.
+    if "game" in body:
+        db.set_now_playing(str(body.get("game") or "").strip()[:MAX_GAME_NAME])
     # The overlay ticker rides this channel-settings route too, but is saved and
     # pushed separately: cleaned to a single safe line, stored, then broadcast to
     # the overlay sockets ONLY so a live source updates without a reconnect. It is
@@ -104,6 +110,11 @@ async def admin_stream(request: Request):
         "since": ready_epoch(data.get("readyTime")) if live else None,
         "watching": len(hub.viewers()),
         "recording": recording_status(),
+        # The console's Playing row rides this poll rather than a second
+        # endpoint: it is dashboard-only state and this already runs every ten
+        # seconds while the page is open.
+        "game": db.get_now_playing(),
+        "recent_games": db.recent_games(),
     }
 
 

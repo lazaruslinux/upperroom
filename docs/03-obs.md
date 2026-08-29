@@ -61,6 +61,23 @@ Click Start Streaming in OBS. Within a few seconds the watch page will switch
 from the offline card to your video. If it does not, see the troubleshooting
 section in `docs/04-run.md`.
 
+Then open the dashboard. The top of it is your own watch page: the video, the
+chat and the watching list, so you can keep an eye on the room without a second
+tab. **Video + chat** and **Chat only** switch between the two; the choice is
+remembered on that browser. Everything below the frame is the controls.
+
+The **Playing** row on that panel is what you are streaming. Type it, or pick
+one you have used before, and press Set; **None** clears it. It is the line a
+chat app shows when someone pastes your watch link:
+
+```
+Northwind Live: Nell is streaming Ashfall Delta!
+```
+
+with a frame of the stream beside it while you are live. It stays set until you
+change it, so it is worth clearing when you stop. What that frame means for
+privacy is spelled out in `docs/05-security.md`.
+
 ## A note on latency
 
 This setup runs low latency HLS, which lands around two to five seconds behind

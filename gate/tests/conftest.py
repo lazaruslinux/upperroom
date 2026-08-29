@@ -31,6 +31,12 @@ os.environ["SELFSTREAM_AVATAR_DIR"] = os.path.join(_SCRATCH, "avatars")
 os.environ["SELFSTREAM_MEDIA_DIR"] = os.path.join(_SCRATCH, "media")
 os.environ["SELFSTREAM_RECORD_TMP"] = os.path.join(_SCRATCH, "rec")
 os.environ["SELFSTREAM_THUMB"] = os.path.join(_SCRATCH, "thumb.jpg")
+# The gate renders the watch page (for its link preview tags) out of the static
+# site directory, so point that at the real one in the checkout: the preview
+# tests assert against the page that actually ships.
+os.environ["SELFSTREAM_WEB_DIR"] = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web"
+)
 # The stream key is seeded from PUBLISH_PASS on first init_db, so drop any value
 # a developer has in their shell before it can leak a real key into the tests.
 os.environ.pop("PUBLISH_PASS", None)

@@ -82,11 +82,16 @@ docker compose up -d
 
 That invalidates every existing cookie at once.
 
-## The one thing that is deliberately public
+## What is deliberately public
+
+Two things answer a visitor with no session at all. Both are deliberate, and
+neither is video you have not chosen to publish. Here is exactly how big each
+one is.
+
+### A published clip
 
 A clip you publish is readable by anyone with its link and no session at all.
-That is the whole point of the feature, but it is the only hole in "nothing is
-served without a session", so it is worth knowing exactly how big it is:
+That is the whole point of the feature, so it is worth knowing its shape:
 
 - It is **per clip**. There is no way to publish the library.
 - It is **admin only**, and **off** until you turn it on for a specific clip.
@@ -104,13 +109,55 @@ served without a session", so it is worth knowing exactly how big it is:
   not name who made it. Nobody who spoke in your chat is published by it.
 - Deleting a clip, by hand or by the two day sweep, removes the public copy too.
 
-If you never press Share, nothing on your site is reachable without signing in.
+### The watch page's link preview
+
+Paste your watch link into a chat app and it shows a card: who is streaming
+what, with a picture. That card is built by the app fetching the page, and a
+preview fetcher never carries a cookie, so two things have to answer without
+one.
+
+- **The page itself, `/watch`.** What comes back is only the shell: the markup,
+  the stylesheet, and the preview tags. It contains no video, no chat and no
+  account data. The stream, the chat socket and the library each check the
+  session separately, exactly as before, and a visitor without one is sent to
+  the sign-in page the moment the page runs.
+- **The picture, `/api/og-image.jpg`.** While a broadcast is running this is the
+  current frame of it, the same 640px still the home card shows, refreshed every
+  fifteen seconds. **Be clear on what that means: anyone holding your watch link
+  can fetch that URL and see a frame of your stream without an account.** They
+  cannot watch it. It is one still, at the rate the app captures them, with no
+  sound. Between broadcasts the app deletes the frame, so this falls back to the
+  channel's static card and no frame of anything is reachable.
+- The preview tags carry your site name, your stream title or description, the
+  name of the longest-standing admin account, and what you have said you are
+  playing. Nothing else about the channel, and nothing at all about your
+  viewers.
+- The country gate, if you set one, applies to both. So does the rate limiting
+  and the fail2ban jail below.
+
+If a frame of your live stream reaching whoever holds the link is not a trade
+you want, set what you are playing and leave it at that: there is no switch for
+the picture, but the preview reads correctly without ever being fetched by
+anyone you did not send the link to.
+
+Nothing else is reachable without signing in. Publishing no clips and sharing no
+links leaves the site closed.
 
 One smaller thing is also public, and it is harmless: `/api/status` reports the
 running version of the app, so the dashboard footer can show it and an external
 check can read it without a session. This is accepted rather than hidden: the
 source is public under the AGPL, so the version is not a secret, and knowing it
 buys an attacker nothing they could not already read in the code.
+
+## Framing
+
+Every page except the versioned assets is served with
+`Content-Security-Policy: frame-ancestors 'self'`, so only this site can put
+these pages in a frame. The dashboard does exactly that with the watch page, to
+show the streamer their own broadcast, and the watch page listens for messages
+from whatever framed it (it uses them to hide or show the video). Both halves are
+same-origin checked: the browser refuses the frame, and the page ignores any
+message that did not come from this site.
 
 ## The overlay key
 

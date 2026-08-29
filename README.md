@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.7.0**. Releases are tagged in git, and the running version
+Current version: **0.8.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -124,6 +124,10 @@ only repackages the video and stays light.
 - Four accent colors, applied site wide, including the browser theme color.
 - Your stream key lives in the dashboard. Copy it, or regenerate it if it leaks,
   without touching a config file or restarting anything.
+- The dashboard opens with your own watch page in it: the video, the chat and
+  the list of who is watching, so you can start the broadcast in OBS and keep an
+  eye on the room without a second tab. A switch drops the video and keeps chat
+  alone. Every control sits under it.
 - A transparent chat overlay you add to OBS as a browser source, so the
   broadcast itself shows chat, joins, clips and highlights, with a live status
   chip and an optional operator ticker line. URL options move it to any corner,
@@ -142,6 +146,12 @@ only repackages the video and stays light.
   sign in. An hour beforehand the same announcement goes out as a reminder.
 - Installs to a phone home screen like an app, with a real icon and a link
   preview card.
+- Say what you are playing, and pasting your watch link into a chat app shows
+  it: "Northwind Live: Nell is streaming Ashfall Delta!", with a frame of the
+  stream beside it while you are live. Pick from what you have played before or
+  type something new. Because a preview is fetched without a session, that frame
+  is reachable by anyone holding the link while you are on air; `docs/05-security.md`
+  says exactly how far that goes.
 
 ### Keeping it running
 

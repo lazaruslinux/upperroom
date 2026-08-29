@@ -1349,6 +1349,46 @@ function setUpGuest() {
   guestTick = setInterval(renderGuestTimer, 1000);
 }
 
+// ---- embedded in the dashboard ----
+// The dashboard shows this page in a frame so the streamer sees exactly what the
+// room does, and can ask it to drop the video and keep chat alone. The frame is
+// spoken to with postMessage rather than reloaded, so toggling the view never
+// costs the chat socket. Only our own origin is listened to.
+
+let videoHidden = false;
+
+function setVideoShown(show) {
+  if (show === !videoHidden) return;    // already there; ignore repeat asks
+  videoHidden = !show;
+  document.body.classList.toggle("chat-only", videoHidden);
+  if (show) {
+    // Rebuilds the player at the live edge, rather than resuming seconds behind
+    // where it was paused.
+    checkStream();
+    return;
+  }
+  // Hidden means hidden: tear the player down so it is not still pulling the
+  // stream behind an element nobody can see.
+  try {
+    video.pause();
+    if (hls) { hls.destroy(); hls = null; }
+  } catch (e) { /* nothing to stop */ }
+}
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin) return;
+  const msg = event.data;
+  if (!msg || msg.type !== "video") return;
+  setVideoShown(!!msg.show);
+});
+
+// In a frame, the home link would load the home page inside that frame. Send it
+// to the top window instead.
+if (window.top !== window.self) {
+  const framedHome = document.querySelector(".chat-head a[href='/home']");
+  if (framedHome) framedHome.setAttribute("target", "_top");
+}
+
 async function boot() {
   if (!(await requireAuth())) return;
   // Let moderators and admins know the commands exist, without cluttering chat

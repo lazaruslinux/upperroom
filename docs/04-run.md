@@ -195,6 +195,25 @@ docker compose up -d --build
 Your accounts survive updates because they live in a docker volume, not in the
 container.
 
+If you keep your own copy of `docker-compose.yml` or your own Caddy config
+rather than the ones in this repo, updating to 0.8.0 needs two small additions,
+both for the watch page's link preview:
+
+- the gate mounts the static site read only, so it can fill in that page's
+  preview tags: `- ./web:/srv/web:ro` under the gate's `volumes`, and
+  `- SELFSTREAM_WEB_DIR=/srv/web` under its `environment`
+- Caddy sends that one path to the gate instead of serving it off disk:
+
+```
+handle /watch {
+	reverse_proxy gate:8000
+}
+```
+
+put with the other `handle` blocks, above the catch-all that serves the static
+site. Without them the watch page still works; its link preview is just the
+generic one baked into the file.
+
 ## 4.7 Troubleshooting
 
 - The page does not load at all. Check that the DNS record points at the server

@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -140,6 +140,9 @@ MIN_PASSWORD = 8
 MAX_SITE_NAME = 60
 MAX_STREAM_TITLE = 100
 MAX_STREAM_DESC = 500
+# What the streamer is playing, shown in the link preview when the watch
+# page is shared. A category label, not a sentence.
+MAX_GAME_NAME = 80
 MAX_CLIP_NAME = 80
 # The lengths the watch page offers as chips, and the only values a client may
 # ask for. The viewer's pick is the whole rule: there is no channel-wide cap.
@@ -190,6 +193,10 @@ CHAT_RETENTION_SECONDS = int(
 
 # Live preview thumbnail. A background task pulls a single frame from the stream
 # every few seconds while it is live, so the home card can show a real preview.
+# The static site Caddy serves. The gate reads one file out of it, the watch
+# page, so it can render that page's link-preview tags before handing it over.
+WEB_DIR = os.environ.get("SELFSTREAM_WEB_DIR", "/srv/web")
+
 THUMB_PATH = os.environ.get("SELFSTREAM_THUMB", "/data/thumb.jpg")
 THUMB_TMP = THUMB_PATH + ".tmp"
 THUMB_INTERVAL = int(os.environ.get("SELFSTREAM_THUMB_INTERVAL", "15"))

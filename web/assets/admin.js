@@ -267,6 +267,9 @@ async function loadChannel() {
   let data = {};
   try { data = await (await fetch("/api/channel")).json(); } catch { return; }
   chSite.value = data.site_name || "";
+  // The console's example line quotes the site name, so refresh it once the
+  // real one has arrived rather than leaving the placeholder up for a poll.
+  renderGameExample();
   chTitle.value = data.title || "";
   chDesc.value = data.description || "";
   // On load the saved value is the real one, so both mark it and apply it.
@@ -895,28 +898,6 @@ async function loadTheater() {
     const reply = await fetch("/api/theater");
     if (reply.ok) renderTheater(await reply.json());
   } catch { /* same */ }
-}
-
-// The preview beside the controls. Loaded into a detached image first so a slow
-// or missing frame never blanks the one already on screen, which is the same
-// reason the home card does it this way.
-const theaterThumb = document.getElementById("theater-thumb");
-const theaterThumbNone = document.getElementById("theater-thumb-none");
-
-function refreshTheaterThumb() {
-  const next = new Image();
-  next.onload = () => {
-    theaterThumb.src = next.src;
-    theaterThumb.hidden = false;
-    theaterThumbNone.hidden = true;
-  };
-  next.onerror = () => {
-    // No frame: either nothing is on air, or a title is starting and the first
-    // one has not been grabbed yet. Either way, say so rather than show stale.
-    theaterThumb.hidden = true;
-    theaterThumbNone.hidden = false;
-  };
-  next.src = `/api/thumbnail?t=${Date.now()}`;
 }
 
 // Every control answers with the same state payload, so one path applies it.
@@ -1772,6 +1753,122 @@ document.getElementById("gp-clear-used").addEventListener("click", async (e) => 
   loadGuestPasses();
 });
 
+// ---- the live console (top of the dashboard) ----
+// The watch page itself, in a frame, so the streamer sees and hears exactly what
+// the room does without a second tab. The frame is talked to with postMessage
+// rather than by changing its src, because a reload would drop its chat socket
+// and its place in the stream every time the view is toggled.
+
+const liveView = document.getElementById("live-view");
+const liveFrame = document.getElementById("live-frame");
+const VIEW_KEY = "selfstream_dash_video";
+let showVideo = true;
+
+function tellFrame() {
+  if (!liveView || !liveView.contentWindow) return;
+  liveView.contentWindow.postMessage(
+    { type: "video", show: showVideo }, location.origin
+  );
+}
+
+function setView(show, remember) {
+  showVideo = show;
+  if (liveFrame) liveFrame.classList.toggle("is-chat-only", !show);
+  document.querySelectorAll(".live-view-toggle .chip-btn").forEach((btn) => {
+    btn.classList.toggle("is-on", (btn.dataset.view === "chat") !== show);
+  });
+  if (remember) {
+    try { localStorage.setItem(VIEW_KEY, show ? "full" : "chat"); } catch (e) {}
+  }
+  tellFrame();
+}
+
+function setUpConsole() {
+  if (!liveView) return;
+  let saved = "full";
+  try { saved = localStorage.getItem(VIEW_KEY) || "full"; } catch (e) {}
+  setView(saved !== "chat", false);
+  document.querySelectorAll(".live-view-toggle .chip-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.view !== "chat", true));
+  });
+  // The frame starts on the default view, so tell it again once it has loaded
+  // and after any later reload of its own.
+  liveView.addEventListener("load", tellFrame);
+}
+
+// ---- what you are playing ----
+// A label on the broadcast. It is what the link preview says you are streaming,
+// so the example line under the row shows exactly what that will read.
+
+const gameInput = document.getElementById("game-input");
+const gameOptions = document.getElementById("game-options");
+const gameMsg = document.getElementById("game-msg");
+const gameExample = document.getElementById("game-example");
+let savedGame = "";
+
+function showGameMsg(text, ok) {
+  gameMsg.textContent = text;
+  gameMsg.classList.toggle("good", !!ok);
+  gameMsg.classList.toggle("bad", !ok);
+  gameMsg.hidden = !text;
+}
+
+function renderGameExample() {
+  if (!gameExample) return;
+  const site = (chSite && chSite.value.trim()) || "your site";
+  const who = (me && (me.name || me.username)) || "you";
+  const game = gameInput.value.trim();
+  gameExample.textContent = game
+    ? `${site}: ${who} is streaming ${game}!`
+    : `${site}: ${who} is live now!`;
+}
+
+function renderGameOptions(names) {
+  gameOptions.textContent = "";
+  (names || []).forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    gameOptions.appendChild(option);
+  });
+}
+
+async function saveGame(name) {
+  showGameMsg("", true);
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game: name }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      showGameMsg(data.error || "Could not save that.", false);
+      return;
+    }
+    savedGame = name;
+    gameInput.value = name;
+    renderGameExample();
+    showGameMsg(name ? `Playing "${name}".` : "Cleared.", true);
+    loadStream();          // refreshes the remembered list straight away
+  } catch {
+    showGameMsg("Could not reach the server.", false);
+  }
+}
+
+function setUpGame() {
+  if (!gameInput) return;
+  gameInput.addEventListener("input", renderGameExample);
+  gameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveGame(gameInput.value.trim());
+  });
+  document.getElementById("game-save")
+    .addEventListener("click", () => saveGame(gameInput.value.trim()));
+  document.getElementById("game-none").addEventListener("click", () => {
+    gameInput.value = "";
+    saveGame("");
+  });
+}
+
 // ---- live stream strip (top of the dashboard) ----
 // A streamer should never have to read the container logs to know their broadcast
 // is up and being recorded, so the strip polls the admin stream status while the
@@ -1821,11 +1918,28 @@ function renderStream(data) {
   streamRec.hidden = false;
 }
 
+// The game rides the same poll. Only written into the box when the operator is
+// not mid-edit, so a poll landing while they type cannot overwrite it.
+function renderGame(data) {
+  if (!gameInput) return;
+  renderGameOptions(data.recent_games);
+  const value = data.game || "";
+  if (value !== savedGame && document.activeElement !== gameInput) {
+    savedGame = value;
+    gameInput.value = value;
+  }
+  renderGameExample();
+}
+
 async function loadStream() {
   if (!streamStrip) return;
   try {
     const reply = await fetch("/api/admin/stream");
-    if (reply.ok) renderStream(await reply.json());
+    if (reply.ok) {
+      const data = await reply.json();
+      renderStream(data);
+      renderGame(data);
+    }
   } catch { /* keep the last state rather than flashing offline on a blip */ }
 }
 
@@ -1844,6 +1958,8 @@ async function loadVersion() {
 async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "dashboard" });
+  setUpConsole();
+  setUpGame();
   loadVersion();
   loadStream();
   setInterval(loadStream, 10000);
@@ -1856,20 +1972,15 @@ async function boot() {
   loadStreamKey();
   loadTheater();
   loadProjector();
-  refreshTheaterThumb();
   // Only while a session is open: the state moves on its own then (a title
   // ending puts the room back to intermission), and between sessions the
-  // operator's own actions are the only thing that changes it. The preview
-  // refreshes faster than the state, because it is what the operator is
-  // actually looking at while deciding whether the film is up.
+  // operator's own actions are the only thing that changes it. What is actually
+  // on air is the console's job now, and that is a live player, not a poll.
   setInterval(() => {
     if (!theaterActive) return;
     loadTheater();
     loadProjector();
   }, 10000);
-  setInterval(() => {
-    if (theaterActive) refreshTheaterThumb();
-  }, 5000);
   loadOverlay();
   loadNotify();
   loadRetention();

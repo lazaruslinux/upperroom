@@ -845,11 +845,17 @@ def test_admin_stream_reports_the_broadcast_shape(client):
     # offline, no start time, nobody watching, and the recorder off.
     setup_admin(client)
     body = client.get("/api/admin/stream").json()
-    assert set(body) == {"live", "since", "watching", "recording"}
+    assert set(body) == {
+        "live", "since", "watching", "recording", "game", "recent_games",
+    }
     assert body["live"] is False
     assert body["since"] is None
     assert body["watching"] == 0
     assert body["recording"] == "off"
+    # The console's Playing row rides this poll. A fresh channel is playing
+    # nothing and has nothing to offer back.
+    assert body["game"] == ""
+    assert body["recent_games"] == []
 
 
 def test_wipe_broadcast_carries_its_reason(client):

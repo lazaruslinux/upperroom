@@ -48,6 +48,10 @@ services:
       # only once, to seed it when updating an install that predates it.
       - SELFSTREAM_RECORD_TMP=/rec
       - SELFSTREAM_MEDIA_DIR=/media
+      # The static site, read only. The gate serves one page out of it, the
+      # watch page, so it can fill in that page's link-preview tags before
+      # handing it over.
+      - SELFSTREAM_WEB_DIR=/srv/web
       - SELFSTREAM_VOD_KEEP=${SELFSTREAM_VOD_KEEP:-20}
       - SELFSTREAM_VOD_KEEP_DAYS=${SELFSTREAM_VOD_KEEP_DAYS:-0}
       # Go-live notifications (all optional; blank values disable a channel).
@@ -61,6 +65,9 @@ services:
     volumes:
       - gate_data:/data
       - rec_scratch:/rec
+      # Read only, and the same directory Caddy serves: the gate renders the
+      # watch page's preview tags, it never writes here.
+      - ./web:/srv/web:ro
       # The media store (recordings and clips). By default a local docker volume,
       # so a fresh checkout just works. To keep recordings on a big disk or a NAS
       # instead, override the source of this mount in an uncommitted

@@ -985,6 +985,12 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
    layout of .msg (avatar, role mark, name, body) rather than overriding it. */
 .msg.highlight { border: 1px solid var(--accent); padding: 6px 8px; }
 
+/* Chat on its own. The dashboard asks for this over postMessage when the
+   streamer hides the video; the page is otherwise unchanged, so the chat, the
+   watching list and the host strip all still work. */
+.watch.chat-only .stage { display: none; }
+.watch.chat-only .chat { width: 100%; border-left: none; }
+
 /* On portrait phones, stack the video on top and the chat below it. A small
    phone held sideways stays in the side-by-side layout so the video keeps its
    width beside the chat instead of being squeezed into a strip. */
@@ -1206,6 +1212,83 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   padding: 0 16px 32px;
   font-size: 11px;
 }
+
+/* ---- the dashboard's live console ----
+   The watch page in a frame, pinned to the top of the dashboard. It sits outside
+   the 672px admin column on purpose: the watch layout puts a fixed 320px chat
+   beside the video, and inside that column the picture would be squeezed to a
+   strip. */
+.live-console {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 16px 0;
+}
+.live-console-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.live-view-toggle { display: flex; gap: 6px; }
+/* .chip-btn stretches to fill by default (it is built for the watch page's host
+   strip); here the two sit at their own width. */
+.live-view-toggle .chip-btn { flex: none; padding: 0 12px; }
+.live-view-toggle .chip-btn.is-on { color: var(--accent); border-color: var(--accent); }
+.live-console-open {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.live-console-open:hover { text-decoration: underline; }
+/* Sized so the video inside lands close to 16:9 rather than sitting in a deep
+   letterbox: the watch page spends a fixed 320px on chat, so the frame has to be
+   wider than 16:9 by about that much for the picture to fill its half. */
+.live-console-frame {
+  aspect-ratio: 2.45;
+  max-height: 62vh;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  background: black;
+  overflow: hidden;
+}
+.live-console-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Chat alone does not want the full width of the console, and at that width the
+   ratio above would leave a letterbox-shaped chat, so this mode takes a height
+   of its own. */
+.live-console-frame.is-chat-only {
+  max-width: 520px;
+  aspect-ratio: auto;
+  height: min(58vh, 460px);
+}
+.live-console .stream-strip { margin-bottom: 12px; }
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.now-playing label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.now-playing input {
+  flex: 1 1 200px;
+  max-width: 420px;
+  min-width: 0;
+  height: 36px;
+}
+/* The two buttons stay together when the row wraps, rather than leaving None
+   stranded on a line of its own. */
+.now-playing-actions { display: flex; gap: 8px; }
+.live-console-note { margin: 8px 0 0; }
+@media (max-width: 720px) {
+  .live-console-frame { aspect-ratio: auto; height: 68vh; max-height: none; }
+  .live-console-frame.is-chat-only { height: 60vh; }
+}
+.live-console #game-msg { margin: 8px 0 0; }
 
 /* The live-broadcast strip at the top of the dashboard. Same panel chrome as the
    rest of the page; the red dot and label follow the LIVE convention used on the
@@ -1865,29 +1948,6 @@ body[data-stage^="theater"] .chat-form:focus-within {
 .theater-status { font-family: var(--mono); font-size: 12px; margin: 0; }
 .theater-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* The operator's console: what the room sees, beside what changes it. Stacks
-   on a narrow screen so the preview keeps a usable width. */
-.theater-console { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
-.theater-preview {
-  flex: 0 1 320px;
-  min-width: 220px;
-  aspect-ratio: 16 / 9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel-2, #111);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.theater-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.theater-preview p { font-family: var(--mono); font-size: 11px; margin: 0; }
-.theater-console-side {
-  flex: 1 1 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 
 /* =========================================================================
    Self-hosted fonts. Inter is the app-wide UI face; the rest are the optional

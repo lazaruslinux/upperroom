@@ -17,10 +17,11 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <!-- How the site looks when someone pastes the link into a chat. Only this
-       page needs them: every other page is behind the sign in and will never be
-       scraped. A crawler does not run JavaScript, so this says upperroom rather
-       than the operator's own name, which the pages themselves fill in. -->
+  <!-- How the site looks when someone pastes the link into a chat. Static, and
+       so deliberately generic: a crawler does not run JavaScript, and this page
+       is public, so it says upperroom rather than the operator's own name. The
+       watch page is the one that is actually shared, and the gate renders its
+       tags live (see gate/routes/media.py). -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="upperroom">
   <meta property="og:description" content="A private livestream. Sign in to watch.">
@@ -28,7 +29,7 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="/assets/style.css?v=50">
+  <link rel="stylesheet" href="/assets/style.css?v=51">
 </head>
 <body class="center">
   <main class="card">

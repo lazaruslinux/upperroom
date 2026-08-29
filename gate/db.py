@@ -318,6 +318,15 @@ CREATE TABLE IF NOT EXISTS theater_sessions (
     now_synopsis TEXT,
     now_art TEXT
 );
+
+-- What the streamer has said they are playing, kept so the dashboard can offer
+-- it again instead of making them retype it. Only the label is stored, capped
+-- to a short list by set_now_playing; the current one lives on
+-- channel_settings.now_playing_game.
+CREATE TABLE IF NOT EXISTS recent_games (
+    name TEXT PRIMARY KEY,
+    last_used INTEGER NOT NULL
+);
 """
 
 
@@ -469,6 +478,9 @@ def init_db():
         )
         _ensure_column(
             conn, "channel_settings", "last_air_ended_at", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "now_playing_game", "TEXT NOT NULL DEFAULT ''"
         )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
@@ -735,6 +747,62 @@ def set_stream_info(site_name=None, title=None, description=None, accent=None):
         conn.execute(
             f"UPDATE channel_settings SET {', '.join(sets)} WHERE id = 1", values
         )
+
+
+# How many past games the dashboard offers back. Long enough to cover a rotation,
+# short enough that the list stays pickable.
+RECENT_GAMES_KEPT = 12
+
+
+def get_now_playing():
+    """What the streamer has said they are playing, or "" for nothing. Kept out
+    of get_stream_info because that one feeds the public status payload and this
+    is read on its own, by the link preview and the dashboard."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT now_playing_game FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return (row["now_playing_game"] if row else "") or ""
+
+
+def set_now_playing(name):
+    """Set (or clear, with "") what is being played. A real name is also
+    remembered, so the dashboard can offer it back instead of asking the
+    streamer to type a title they have already typed."""
+    name = (name or "").strip()
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET now_playing_game = ? WHERE id = 1", (name,)
+        )
+        if not name:
+            return
+        # The stamp is a clock reading, but forced above every existing one:
+        # two games set inside the same second would otherwise tie, and the tie
+        # decides both which one reads as most recent and which one the trim
+        # below throws away.
+        conn.execute(
+            "INSERT INTO recent_games (name, last_used) VALUES (?, "
+            "MAX(?, (SELECT COALESCE(MAX(last_used), 0) + 1 FROM recent_games))) "
+            "ON CONFLICT(name) DO UPDATE SET last_used = excluded.last_used",
+            (name, int(time.time())),
+        )
+        # Trim the tail rather than let the list grow forever. Deleting by a
+        # subquery of the ones to keep, so the newest RECENT_GAMES_KEPT survive
+        # whatever order they were added in.
+        conn.execute(
+            "DELETE FROM recent_games WHERE name NOT IN ("
+            "SELECT name FROM recent_games ORDER BY last_used DESC LIMIT ?)",
+            (RECENT_GAMES_KEPT,),
+        )
+
+
+def recent_games(limit=RECENT_GAMES_KEPT):
+    """The games most recently played, newest first."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT name FROM recent_games ORDER BY last_used DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [r["name"] for r in rows]
 
 
 def get_chat_moderation():

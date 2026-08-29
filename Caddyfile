@@ -45,6 +45,12 @@
 	header @assets Cache-Control "public, max-age=31536000, immutable"
 	header @dynamic Cache-Control "no-cache"
 
+	# Only this site may put these pages in a frame. The dashboard does exactly
+	# that with the watch page, and the watch page accepts messages from the page
+	# framing it, so the framing itself is pinned to our own origin: a stranger's
+	# site cannot embed the watch page, overlay it, and collect the clicks.
+	header @dynamic Content-Security-Policy "frame-ancestors 'self'"
+
 	route {
 		# The chat and presence WebSocket, handled before the geo gate below. A
 		# forward_auth cannot proxy a WebSocket upgrade (it 403s it), and the
@@ -143,6 +149,17 @@
 			rewrite * /clip.html
 			root * /srv/web
 			file_server
+		}
+
+		# The watch page is served by the gate rather than off disk, so its link
+		# preview can say who is streaming what and carry a current frame. A
+		# preview fetcher has no session, which is why this sits below the geo
+		# gate (still enforced) but takes no forward_auth of its own. The page it
+		# returns is only a shell: the video, the chat socket and the library
+		# each check the session separately. Exact path only, so /watch.html and
+		# everything else stay with the static handler below.
+		handle /watch {
+			reverse_proxy gate:8000
 		}
 
 		# Accounts, bans and invites moved onto the dashboard. Kept so an old
