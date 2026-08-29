@@ -512,10 +512,6 @@ async def status():
             # The running release, public here so the dashboard footer and any
             # external check can read it without a number baked into the markup.
             "version": VERSION,
-            # So the watch page can label the clip button with the real length
-            # rather than a number baked into the markup, which is how the old
-            # "last 30 seconds" strings outlived the setting they described.
-            "clip_seconds": info["clip_seconds"],
         }
     body = {
         "online": False,

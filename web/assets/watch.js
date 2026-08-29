@@ -181,7 +181,6 @@ async function checkStream() {
   applyAccent(data.accent);
   // Name the browser tab after the operator's site, not the platform.
   if (data.site_name && document.title !== data.site_name) document.title = data.site_name;
-  applyClipLength(data.clip_seconds);
   if (data.online && !hls) {
     startVideo();
   } else if (!data.online) {
@@ -1034,7 +1033,6 @@ chatInput.addEventListener("blur", () => {
 
 const clipLenModal = document.getElementById("clip-len-modal");
 const clipLenButtons = Array.from(document.querySelectorAll(".clip-len"));
-const clipLimit = document.getElementById("clip-limit");
 const clipSave = document.getElementById("clip-save");
 const clipMsg = document.getElementById("clip-msg");
 const clipNameModal = document.getElementById("clip-name-modal");
@@ -1069,26 +1067,6 @@ function showClipMsg(text, ok, link, el = clipMsg) {
 // is unavailable (Safari playing HLS natively, or a source without the stamp) we
 // fall back to now minus the measured latency, and failing that send nothing at
 // all and let the server use its own estimate.
-// The channel's clip_seconds is a ceiling, not a length any more: the viewer
-// picks from the chips and the server clamps whatever it is sent. So this takes
-// the ceiling from the status poll and settles which chips can be pressed.
-function applyClipLength(seconds) {
-  if (!seconds || seconds === clipLength) return;
-  clipLength = seconds;
-  let longestAllowed = 0;
-  clipLenButtons.forEach((btn) => {
-    const value = Number(btn.dataset.seconds);
-    const over = value > clipLength;
-    btn.disabled = over;
-    if (!over) longestAllowed = Math.max(longestAllowed, value);
-  });
-  clipLimit.textContent = `channel limit: ${clipLength}s`;
-  clipLimit.hidden = !clipLenButtons.some((btn) => btn.disabled);
-  // A ceiling under the shortest chip leaves nothing to pick. Send no length at
-  // all in that case and let the server cut whatever the setting allows.
-  if (!longestAllowed || clipSeconds > clipLength) selectClipLength(longestAllowed);
-}
-
 function selectClipLength(value) {
   clipSeconds = value;
   clipLenButtons.forEach((btn) => {
@@ -1100,8 +1078,7 @@ clipLenButtons.forEach((btn) => {
   btn.addEventListener("click", () => selectClipLength(Number(btn.dataset.seconds)));
 });
 
-let clipLength = 0;      // the channel ceiling, from the status poll
-let clipSeconds = 30;    // the chip that is selected, 0 when none can be
+let clipSeconds = 30;    // the chip that is selected
 
 function currentFrameInstant() {
   try {

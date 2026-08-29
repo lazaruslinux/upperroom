@@ -1613,23 +1613,14 @@ def test_every_icon_the_manifest_names_is_actually_committed(client):
         assert os.path.exists(os.path.join(web, name)), name
 
 
-def test_clip_length_is_a_channel_setting_with_bounds(client):
-    """It moved out of config.py so it can be changed without a restart, which
-    means it now needs the same clamping its neighbours get."""
+def test_clip_length_is_no_longer_a_channel_setting(client):
+    """The viewer picks from the chips and that is the whole rule, so nothing
+    about clip length is settable any more. A stale client still sending the old
+    field must not resurrect it as a stored value."""
     setup_admin(client)
-    assert client.get("/api/channel").json()["clip_seconds"] == 60
-
+    assert "clip_seconds" not in client.get("/api/channel").json()
     client.post("/api/stream-info", json={"clip_seconds": 90})
-    assert client.get("/api/channel").json()["clip_seconds"] == 90
-    # Clamped rather than refused, the same way the cooldowns are.
-    client.post("/api/stream-info", json={"clip_seconds": 99999})
-    assert client.get("/api/channel").json()["clip_seconds"] == 300
-    client.post("/api/stream-info", json={"clip_seconds": 1})
-    assert client.get("/api/channel").json()["clip_seconds"] == 5
-    # And something that is not a number at all is a clear refusal.
-    assert client.post(
-        "/api/stream-info", json={"clip_seconds": "a minute"}
-    ).status_code == 400
+    assert "clip_seconds" not in client.get("/api/channel").json()
 
 
 def test_the_watch_page_is_told_the_clip_length(client):

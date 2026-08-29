@@ -684,13 +684,13 @@ def channel_owner():
 
 
 def get_stream_info():
-    """The channel settings the streamer controls: the title and description
-    shown on the home card (and stamped onto each VOD), plus the per role clip
-    cooldowns in minutes."""
+    """The channel settings the streamer controls: the site name, the title and
+    description shown on the home card (and stamped onto each VOD), and the
+    accent. Clip lengths and cooldowns are no longer among them; both are fixed
+    in config, so the older columns here are left alone rather than read."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT site_name, stream_title, stream_description, clip_cooldown_user, "
-            "clip_cooldown_mod, clip_cooldown_admin, clip_seconds, accent "
+            "SELECT site_name, stream_title, stream_description, accent "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
@@ -698,18 +698,12 @@ def get_stream_info():
                 "site_name": "upperroom",
                 "stream_title": "Live Stream",
                 "stream_description": "",
-                "clip_cooldown_user": 15,
-                "clip_cooldown_mod": 5,
-                "clip_cooldown_admin": 1,
-                "clip_seconds": 60,
                 "accent": "green",
             }
         return dict(row)
 
 
-def set_stream_info(site_name=None, title=None, description=None,
-                    clip_cooldown_user=None, clip_cooldown_mod=None,
-                    clip_cooldown_admin=None, clip_seconds=None, accent=None):
+def set_stream_info(site_name=None, title=None, description=None, accent=None):
     sets = []
     values = []
     if site_name is not None:
@@ -721,18 +715,6 @@ def set_stream_info(site_name=None, title=None, description=None,
     if description is not None:
         sets.append("stream_description = ?")
         values.append(description)
-    if clip_cooldown_user is not None:
-        sets.append("clip_cooldown_user = ?")
-        values.append(int(clip_cooldown_user))
-    if clip_cooldown_mod is not None:
-        sets.append("clip_cooldown_mod = ?")
-        values.append(int(clip_cooldown_mod))
-    if clip_seconds is not None:
-        sets.append("clip_seconds = ?")
-        values.append(int(clip_seconds))
-    if clip_cooldown_admin is not None:
-        sets.append("clip_cooldown_admin = ?")
-        values.append(int(clip_cooldown_admin))
     if accent is not None:
         # Guard here too, so a bad value can never reach the column even if a
         # caller skips the route-level check.

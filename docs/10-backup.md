@@ -24,8 +24,8 @@ In the archive:
 
 - every account, including password hashes, roles, avatars, bios and points
 - the chat log and the chat replay attached to each recording and clip
-- channel settings: site name, stream title, accent, cooldowns, retention
-  limits, chat moderation, your stream key and overlay key
+- channel settings: site name, stream title, accent, retention limits, chat
+  moderation, your stream key and overlay key
 - invites and bans
 - the list of recordings and clips
 

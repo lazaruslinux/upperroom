@@ -1463,17 +1463,6 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .row-actions { display: inline-flex; gap: 6px; flex: none; }
 .chip-btn.pinned-chip { color: var(--accent); border-color: var(--accent); }
 
-.clip-limit-edit { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
-.clip-limit-edit label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-}
-.clip-limit-edit input { width: 72px; }
-
 /* ---- accent flavor swatches (channel panel) ----
    Four square buttons, each filled with that flavor's dark accent, a mono
    label beneath. The chosen one carries a 1px accent border. */
@@ -1616,16 +1605,12 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 #clip-name { width: 100%; margin-bottom: 8px; }
 #clip-msg a, #clip-name-msg a { color: var(--accent); margin-left: 4px; }
 
-/* Length chips are pills that hold a selected state, like the chat font chips.
-   One over the channel's ceiling is disabled rather than hidden, so the limit
-   is visible instead of leaving a gap nobody can explain. */
+/* Length chips are pills that hold a selected state, like the chat font chips. */
 .clip-lens { display: flex; gap: 8px; margin-bottom: 10px; }
 .clip-len.is-on, .clip-len.is-on:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
-.clip-len:disabled:hover { color: var(--muted); border-color: var(--border); }
-.clip-limit { font-family: var(--mono); font-size: 11px; margin: 0 0 8px; }
 
 /* =========================================================================
    Likes and comments

@@ -39,7 +39,7 @@ _setup_logging()
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -105,9 +105,20 @@ MAX_SITE_NAME = 60
 MAX_STREAM_TITLE = 100
 MAX_STREAM_DESC = 500
 MAX_CLIP_NAME = 80
-# The lengths the watch page offers as chips. The channel's clip_seconds is
-# still the ceiling; these are the only values a client may ask for.
+# The lengths the watch page offers as chips, and the only values a client may
+# ask for. The viewer's pick is the whole rule: there is no channel-wide cap.
 CLIP_LENGTHS = (60, 45, 30)
+# What a viewer takes when they send no length at all, which is the overlay's
+# clip button rather than the watch page.
+DEFAULT_CLIP_LENGTH = CLIP_LENGTHS[0]
+
+# Seconds between one person's clips: the same for viewers and moderators, and
+# shorter for the host, who is running the broadcast. Environment variables so
+# an operator can retune them without editing code.
+CLIP_COOLDOWN_SECONDS = int(os.environ.get("SELFSTREAM_CLIP_COOLDOWN", "300"))
+CLIP_COOLDOWN_HOST_SECONDS = int(
+    os.environ.get("SELFSTREAM_CLIP_COOLDOWN_HOST", "60")
+)
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
 MAX_OVERLAY_TICKER = 200        # the operator's overlay message line, kept short
@@ -190,9 +201,8 @@ SCHEDULE_REMIND_LEAD = 3600        # remind this long before the start time
 SCHEDULE_GRACE = 7200
 SCHEDULE_CHECK_INTERVAL = 60       # how often the reminder worker looks
 MAX_SCHEDULE_NOTE = 120
-# How much of the live edge a clip captures now lives on the channel
-# (channel_settings.clip_seconds), next to the clip cooldowns it belongs with,
-# so it can be changed from the dashboard without a restart.
+# How much of the live edge a clip captures is the viewer's pick, from
+# CLIP_LENGTHS above.
 #
 # CLIP_LAG is only a fallback. The player normally sends the exact instant it
 # was showing when Clip was pressed (MediaMTX stamps the HLS playlist with

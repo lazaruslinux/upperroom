@@ -65,30 +65,6 @@ async def set_stream_info(request: Request):
     if "description" in body:
         description = str(body.get("description") or "").strip()[:MAX_STREAM_DESC]
 
-    def clamp_minutes(value):
-        # 0 disables the cooldown; cap at a day so a typo can't lock clips forever.
-        try:
-            return max(0, min(1440, int(value)))
-        except (TypeError, ValueError):
-            return None
-
-    clip_seconds = None
-    if "clip_seconds" in body:
-        try:
-            # Floor of 5s so a clip is never too short to be worth cutting, and
-            # a ceiling because the cut comes out of the in-progress scratch
-            # file and a huge window would stall the request.
-            clip_seconds = max(5, min(300, int(body["clip_seconds"])))
-        except (TypeError, ValueError):
-            return JSONResponse(
-                {"error": "Clip length must be a whole number of seconds."},
-                status_code=400,
-            )
-
-    cd_user = clamp_minutes(body["clip_cooldown_user"]) if "clip_cooldown_user" in body else None
-    cd_mod = clamp_minutes(body["clip_cooldown_mod"]) if "clip_cooldown_mod" in body else None
-    cd_admin = clamp_minutes(body["clip_cooldown_admin"]) if "clip_cooldown_admin" in body else None
-
     accent = None
     if "accent" in body:
         accent = str(body.get("accent") or "")
@@ -98,9 +74,7 @@ async def set_stream_info(request: Request):
             )
 
     db.set_stream_info(
-        site_name=site_name, title=title, description=description,
-        clip_cooldown_user=cd_user, clip_cooldown_mod=cd_mod,
-        clip_cooldown_admin=cd_admin, clip_seconds=clip_seconds, accent=accent,
+        site_name=site_name, title=title, description=description, accent=accent,
     )
     # The overlay ticker rides this channel-settings route too, but is saved and
     # pushed separately: cleaned to a single safe line, stored, then broadcast to

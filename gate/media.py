@@ -22,8 +22,9 @@ import httpx
 import db
 import theater
 from config import (
-    CLIP_DIR, CLIP_KEYFRAME_SLACK, CLIP_LAG, MAX_CLIP_NAME, MEDIAMTX_API, MEDIA_DIR,
-    SHARED_DIR,
+    CLIP_COOLDOWN_HOST_SECONDS, CLIP_COOLDOWN_SECONDS, CLIP_DIR,
+    CLIP_KEYFRAME_SLACK, CLIP_LAG, DEFAULT_CLIP_LENGTH, MAX_CLIP_NAME,
+    MEDIAMTX_API, MEDIA_DIR, SHARED_DIR,
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
     SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
@@ -1002,27 +1003,21 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
 
 
 def cooldown_for(user):
-    """A user's clip cooldown in seconds (0 disables it). Per-role and
-    admin-configured: admins get the shortest, then moderators, then viewers."""
-    info = db.get_stream_info()
+    """A user's clip cooldown in seconds (0 disables it). The host gets a
+    shorter one than everybody else; moderators wait as long as viewers."""
     if user and user["is_admin"]:
-        minutes = int(info["clip_cooldown_admin"])
-    elif user and user["is_moderator"]:
-        minutes = int(info["clip_cooldown_mod"])
-    else:
-        minutes = int(info["clip_cooldown_user"])
-    return max(0, minutes) * 60
+        return max(0, CLIP_COOLDOWN_HOST_SECONDS)
+    return max(0, CLIP_COOLDOWN_SECONDS)
 
 
 def format_remaining(seconds):
-    """A short 'Xm Ys' / 'Ys' label for the cooldown message."""
+    """How much cooldown is left, in whole words: '4 minutes', '30 seconds'.
+    Rounded up, so it never reads 0 while there is still time to wait."""
     seconds = max(0, int(seconds))
-    minutes, secs = divmod(seconds, 60)
-    if minutes and secs:
-        return f"{minutes}m {secs}s"
-    if minutes:
-        return f"{minutes}m"
-    return f"{secs}s"
+    if seconds >= 60:
+        minutes = -(-seconds // 60)          # ceiling
+        return f"{minutes} minute" + ("" if minutes == 1 else "s")
+    return f"{seconds} second" + ("" if seconds == 1 else "s")
 
 
 def clip_window(started_at, now, clip_seconds, at=None):
@@ -1074,9 +1069,9 @@ async def make_clip(user, name, at=None, seconds=None):
     `at` is the wall-clock instant the viewer pressed Clip, in epoch seconds.
     See clip_window() for why that matters.
 
-    `seconds` is how much the viewer asked for. The channel's clip_seconds is
-    the ceiling either way, so a client cannot ask for more than the operator
-    allows; asking for nothing takes the setting, as it always did."""
+    `seconds` is how much the viewer asked for, and it is taken as given: the
+    route has already checked it against CLIP_LENGTHS. Asking for nothing takes
+    DEFAULT_CLIP_LENGTH, which is the overlay's clip button."""
     # Refused outright during a theater session, and said plainly rather than
     # left to fail as "the stream is not live": the stream may well be live, it
     # is simply somebody else's film and nothing about it is ours to cut.
@@ -1089,14 +1084,9 @@ async def make_clip(user, name, at=None, seconds=None):
     if cooldown:
         elapsed = int(time.time()) - db.last_clip_at(username)
         if elapsed < cooldown:
-            return None, (
-                f"Clip cooldown - you can clip again in "
-                f"{format_remaining(cooldown - elapsed)}."
-            )
+            return None, f"Clip cooldown: {format_remaining(cooldown - elapsed)}"
     started_at, src, vod_id = _rec["started_at"], _rec["tmp_path"], _rec["vod_id"]
-    clip_seconds = db.get_stream_info()["clip_seconds"]
-    if seconds:
-        clip_seconds = min(int(seconds), clip_seconds)
+    clip_seconds = int(seconds) if seconds else DEFAULT_CLIP_LENGTH
     start, end, duration = clip_window(started_at, int(time.time()), clip_seconds, at)
     if start is None:
         return None, "The stream just started; nothing to clip yet."

@@ -98,9 +98,10 @@ is taken from the moment the button was pressed, so nothing that happens next
 moves the window. A clip can be renamed later on its own page, by whoever made
 it or by a moderator.
 
-**Clip length** on the dashboard (sixty seconds by default) is the ceiling
-rather than the length: a viewer cannot ask for more than it allows, and any
-offered length above it is greyed out for them.
+Those three lengths are the whole rule; there is no channel-wide cap to set.
+One person waits five minutes between clips, and the host waits one. Both come
+from `SELFSTREAM_CLIP_COOLDOWN` and `SELFSTREAM_CLIP_COOLDOWN_HOST` in seconds,
+so retuning them is an environment change rather than a dashboard toggle.
 
 Clips are deleted after two days unless you pin them. That is the one retention
 limit a fresh install ships switched on, and it is deliberate: a clip is the

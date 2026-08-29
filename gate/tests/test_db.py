@@ -403,16 +403,14 @@ def test_last_clip_at(fresh_db):
     assert db.last_clip_at("bob") == 0
 
 
-def test_clip_cooldown_settings(fresh_db):
+def test_clip_settings_are_not_channel_settings_any_more(fresh_db):
+    """Clip length and the cooldowns are fixed in config now. The columns are
+    still on the table, deliberately left alone rather than dropped, but nothing
+    reads them and they never reach a caller."""
     info = db.get_stream_info()
-    assert info["clip_cooldown_user"] == 15       # defaults
-    assert info["clip_cooldown_mod"] == 5
-    assert info["clip_cooldown_admin"] == 1
-    db.set_stream_info(clip_cooldown_user=30, clip_cooldown_admin=0)
-    info = db.get_stream_info()
-    assert info["clip_cooldown_user"] == 30
-    assert info["clip_cooldown_admin"] == 0
-    assert info["clip_cooldown_mod"] == 5         # untouched by a partial update
+    for gone in ("clip_seconds", "clip_cooldown_user", "clip_cooldown_mod",
+                 "clip_cooldown_admin"):
+        assert gone not in info
 
 
 def test_accent_defaults_green_and_persists(fresh_db):

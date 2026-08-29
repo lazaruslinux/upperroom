@@ -224,10 +224,6 @@ document.querySelectorAll(".lib-tab[data-content]").forEach((tab) => {
 const chSite = document.getElementById("ch-site");
 const chTitle = document.getElementById("ch-title");
 const chDesc = document.getElementById("ch-desc");
-const chCdUser = document.getElementById("ch-cd-user");
-const chCdMod = document.getElementById("ch-cd-mod");
-const chCdAdmin = document.getElementById("ch-cd-admin");
-const chClipSeconds = document.getElementById("ch-clip-seconds");
 const chMsg = document.getElementById("ch-msg");
 
 // ---- accent flavor (channel-wide brand color) ----
@@ -273,10 +269,6 @@ async function loadChannel() {
   chSite.value = data.site_name || "";
   chTitle.value = data.title || "";
   chDesc.value = data.description || "";
-  chCdUser.value = data.clip_cooldown_user != null ? data.clip_cooldown_user : 15;
-  chCdMod.value = data.clip_cooldown_mod != null ? data.clip_cooldown_mod : 5;
-  chCdAdmin.value = data.clip_cooldown_admin != null ? data.clip_cooldown_admin : 1;
-  chClipSeconds.value = data.clip_seconds != null ? data.clip_seconds : 60;
   // On load the saved value is the real one, so both mark it and apply it.
   selectAccent(data.accent || "green");
   applyAccentToDocument(data.accent || "green");
@@ -287,12 +279,6 @@ document.getElementById("ch-save").addEventListener("click", async () => {
   if (!siteName) { showChMsg("Site name cannot be empty.", false); return; }
   const title = chTitle.value.trim();
   if (!title) { showChMsg("Stream title cannot be empty.", false); return; }
-  const u = parseInt(chCdUser.value, 10);
-  const m = parseInt(chCdMod.value, 10);
-  const a = parseInt(chCdAdmin.value, 10);
-  if ([u, m, a].some(Number.isNaN)) { showChMsg("Cooldowns must be whole numbers.", false); return; }
-  const clipSeconds = parseInt(chClipSeconds.value, 10);
-  if (Number.isNaN(clipSeconds)) { showChMsg("Longest clip must be a whole number of seconds.", false); return; }
   chMsg.hidden = true;
   try {
     const reply = await fetch("/api/stream-info", {
@@ -300,8 +286,6 @@ document.getElementById("ch-save").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         site_name: siteName, title, description: chDesc.value.trim(),
-        clip_cooldown_user: u, clip_cooldown_mod: m, clip_cooldown_admin: a,
-        clip_seconds: clipSeconds,
         accent,
       }),
     });

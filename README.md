@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.5.2**. Releases are tagged in git, and the running version
+Current version: **0.6.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -45,9 +45,10 @@ only repackages the video and stays light.
 - Live chat, a list of who is watching, and a count.
 - Records every broadcast (a recording you can replay later), and lets viewers
   clip the recent stream. Past broadcasts and clips show in the library.
-  The viewer picks how much to take (thirty, forty-five or sixty seconds), up to
-  a channel-wide maximum you set. A clip captures the moment they pressed the
-  button, not the moment they finished naming it. Both carry a view count.
+  The viewer picks how much to take (thirty, forty-five or sixty seconds), and
+  waits a few minutes before the next one. A clip captures the moment they
+  pressed the button, not the moment they finished naming it. Both carry a view
+  count.
 - Recordings and clips replay with the chat that happened at the time, and a bar
   chart under the player shows when chat was busiest, so you can click straight
   to the loud parts.
@@ -248,7 +249,7 @@ explains every value.
 
 Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
-description, accent color, longest clip and clip cooldowns, the stream key, the
+description, accent color, the stream key, the
 overlay key and its ticker line, slow mode, banned words, the next stream, the
 storage limits, and the Discord webhook.
 

@@ -3,7 +3,7 @@ Clip length and clip naming.
 
 The watch page asks how much of the stream to take, cuts the clip the moment
 Save is pressed, and only then offers a name. Two things have to hold for that
-to be safe: a client can only ask for a length the operator allows, and a clip
+to be safe: a client can only ask for one of the offered lengths, and a clip
 that already exists can be renamed afterwards by the person who made it.
 
 ffmpeg is stubbed here. These tests are about the window and the permissions,
@@ -18,6 +18,10 @@ import pytest
 
 import db
 import media
+from config import (
+    CLIP_COOLDOWN_HOST_SECONDS, CLIP_COOLDOWN_SECONDS, CLIP_LENGTHS,
+    DEFAULT_CLIP_LENGTH,
+)
 from config import CLIP_DIR
 
 from test_api import add_user, login, make_client, setup_admin
@@ -72,23 +76,23 @@ def test_a_length_that_was_never_offered_is_refused(client, live, seconds):
     assert db.list_clips() == []
 
 
-def test_the_channel_ceiling_wins_over_what_the_client_asked_for(client, live):
-    # The chips are disabled client-side at this setting, but the server is what
-    # actually holds the line: a hand-made request cannot take more than this.
+@pytest.mark.parametrize("seconds", CLIP_LENGTHS)
+def test_the_viewers_pick_is_taken_as_given(client, live, seconds):
+    # There is no channel ceiling any more: what the viewer chose is the length,
+    # and the only guard left is that it has to be one of the offered chips. One
+    # length per test, because a second clip in the same one hits the cooldown.
     setup_admin(client, username="owner")
-    db.set_stream_info(clip_seconds=30)
-    resp = client.post("/api/clip", json={"seconds": 60})
+    resp = client.post("/api/clip", json={"seconds": seconds})
     assert resp.status_code == 200
-    assert db.get_clip(resp.json()["id"])["duration"] == 30
+    assert db.get_clip(resp.json()["id"])["duration"] == seconds
 
 
-def test_no_length_at_all_falls_back_to_the_setting(client, live):
-    # What the overlay and any older client send. Nothing about that path moved.
+def test_no_length_at_all_takes_the_default(client, live):
+    # What the overlay's clip button sends, having no picker of its own.
     setup_admin(client, username="owner")
-    db.set_stream_info(clip_seconds=45)
     resp = client.post("/api/clip", json={})
     assert resp.status_code == 200
-    assert db.get_clip(resp.json()["id"])["duration"] == 45
+    assert db.get_clip(resp.json()["id"])["duration"] == DEFAULT_CLIP_LENGTH
 
 
 def test_a_clip_still_gets_the_default_name(client, live):
@@ -98,13 +102,44 @@ def test_a_clip_still_gets_the_default_name(client, live):
     assert db.get_clip(resp.json()["id"])["name"] == "Clip"
 
 
-def test_make_clip_takes_the_smaller_of_the_two(client, live):
+def test_make_clip_cuts_exactly_what_it_was_asked_for(client, live):
     setup_admin(client, username="owner")
-    db.set_stream_info(clip_seconds=60)
     user = db.get_user("owner")
     clip_id, error = asyncio.run(media.make_clip(user, None, seconds=30))
     assert error is None
     assert db.get_clip(clip_id)["duration"] == 30
+
+
+# ---- cooldowns -------------------------------------------------------------
+
+def test_the_host_waits_less_than_everyone_else():
+    """Fixed in config rather than set per role on the dashboard: viewers and
+    moderators wait the same, and only the host gets the short one."""
+    assert media.cooldown_for({"is_admin": 1, "is_moderator": 0}) == \
+        CLIP_COOLDOWN_HOST_SECONDS
+    assert media.cooldown_for({"is_admin": 0, "is_moderator": 1}) == \
+        CLIP_COOLDOWN_SECONDS
+    assert media.cooldown_for({"is_admin": 0, "is_moderator": 0}) == \
+        CLIP_COOLDOWN_SECONDS
+    assert CLIP_COOLDOWN_HOST_SECONDS < CLIP_COOLDOWN_SECONDS
+
+
+def test_the_cooldown_refusal_names_the_time_left(client, live):
+    """Short by design: the viewer wants the number, not a sentence."""
+    setup_admin(client, username="owner")
+    assert client.post("/api/clip", json={"seconds": 30}).status_code == 200
+    resp = client.post("/api/clip", json={"seconds": 30})
+    assert resp.status_code == 400
+    assert resp.json()["error"].startswith("Clip cooldown: ")
+
+
+def test_remaining_time_reads_in_whole_words():
+    assert media.format_remaining(240) == "4 minutes"
+    assert media.format_remaining(60) == "1 minute"
+    assert media.format_remaining(30) == "30 seconds"
+    assert media.format_remaining(1) == "1 second"
+    # Rounded up, so it never claims a minute has passed while seconds remain.
+    assert media.format_remaining(61) == "2 minutes"
 
 
 # ---- naming it afterwards --------------------------------------------------
