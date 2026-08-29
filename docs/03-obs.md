@@ -74,9 +74,19 @@ chat app shows when someone pastes your watch link:
 Northwind Live: Nell is streaming Ashfall Delta!
 ```
 
-with a frame of the stream beside it while you are live. It stays set until you
-change it, so it is worth clearing when you stop. What that frame means for
-privacy is spelled out in `docs/05-security.md`.
+with a frame of the stream beside it while you are live. Your viewers see it
+too, on the home page card, between the channel and the description:
+
+```
+Your stream title
+Nell @nell
+Playing: Ashfall Delta
+Your description
+```
+
+That line shows only while you are live. The label itself stays set until you
+change it, so it is worth clearing when you stop. What the frame in the preview
+means for privacy is spelled out in `docs/05-security.md`.
 
 ## A note on latency
 

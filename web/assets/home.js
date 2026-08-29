@@ -9,6 +9,7 @@ const greeting = document.getElementById("greeting");
 const card = document.getElementById("stream-card");
 const cardChannel = document.getElementById("card-channel");
 const cardTitle = document.getElementById("card-title");
+const cardPlaying = document.getElementById("card-playing");
 const cardDesc = document.getElementById("card-desc");
 const thumb = document.getElementById("thumb");
 const thumbFallback = document.getElementById("thumb-fallback");
@@ -242,6 +243,13 @@ async function refreshStatus() {
     /* treat a failed poll as offline */
   }
   applyAccent(data.accent);
+  // What the streamer is playing rides this poll, so the card follows a change
+  // made mid-broadcast rather than waiting for a reload. Absent when offline.
+  if (cardPlaying) {
+    const game = data.game || "";
+    cardPlaying.textContent = game ? `Playing: ${game}` : "";
+    cardPlaying.hidden = !game;
+  }
   const wasOnline = online;
   showLive(!!data.online, data.watching);
   if (data.online && !wasOnline) refreshThumb();

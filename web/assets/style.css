@@ -718,6 +718,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .card-channel { font-family: var(--mono); font-size: 12px; color: var(--text); }
 .card-channel .channel-name { color: var(--text); }
 .card-channel .channel-handle { color: var(--muted); margin-left: 6px; }
+.card-playing { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 .card-desc { font-family: var(--sans); color: var(--muted); font-size: 14px; }
 
 /* library (VODs + clips) */
@@ -1262,7 +1263,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   aspect-ratio: auto;
   height: min(58vh, 460px);
 }
-.live-console .stream-strip { margin-bottom: 12px; }
+.live-console .stream-strip { margin-bottom: 14px; }
 .now-playing {
   display: flex;
   align-items: center;

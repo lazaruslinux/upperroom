@@ -658,6 +658,12 @@ async def status():
             "watching": watching,
             "accent": accent,
             "site_name": site_name,
+            # What is being played, for the home card. Only while live: the label
+            # itself persists between broadcasts, but "Playing" on an offline
+            # card would be describing a stream that is not running. It is public
+            # here because it is already public in the watch page's link preview,
+            # which is the whole reason it exists.
+            "game": db.get_now_playing(),
             # The running release, public here so the dashboard footer and any
             # external check can read it without a number baked into the markup.
             "version": VERSION,

@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=51">
+  <link rel="stylesheet" href="/assets/style.css?v=52">
 </head>
 <body class="home">
   <div id="site-nav"></div>
@@ -60,6 +60,9 @@
         <span class="card-text">
           <span id="card-title" class="card-title">Live Stream</span>
           <span id="card-channel" class="card-channel"></span>
+          <!-- What the broadcast is, between the channel and its description.
+               Hidden unless the stream is live and the streamer has said. -->
+          <span id="card-playing" class="card-playing" hidden></span>
           <span id="card-desc" class="card-desc">Tap to join stream and start chatting</span>
         </span>
       </div>
@@ -87,6 +90,6 @@
   </footer>
 
   <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/home.js?v=19"></script>
+  <script src="/assets/home.js?v=20"></script>
 </body>
 </html>

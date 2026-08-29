@@ -267,9 +267,6 @@ async function loadChannel() {
   let data = {};
   try { data = await (await fetch("/api/channel")).json(); } catch { return; }
   chSite.value = data.site_name || "";
-  // The console's example line quotes the site name, so refresh it once the
-  // real one has arrived rather than leaving the placeholder up for a poll.
-  renderGameExample();
   chTitle.value = data.title || "";
   chDesc.value = data.description || "";
   // On load the saved value is the real one, so both mark it and apply it.
@@ -1803,7 +1800,6 @@ function setUpConsole() {
 const gameInput = document.getElementById("game-input");
 const gameOptions = document.getElementById("game-options");
 const gameMsg = document.getElementById("game-msg");
-const gameExample = document.getElementById("game-example");
 let savedGame = "";
 
 function showGameMsg(text, ok) {
@@ -1811,16 +1807,6 @@ function showGameMsg(text, ok) {
   gameMsg.classList.toggle("good", !!ok);
   gameMsg.classList.toggle("bad", !ok);
   gameMsg.hidden = !text;
-}
-
-function renderGameExample() {
-  if (!gameExample) return;
-  const site = (chSite && chSite.value.trim()) || "your site";
-  const who = (me && (me.name || me.username)) || "you";
-  const game = gameInput.value.trim();
-  gameExample.textContent = game
-    ? `${site}: ${who} is streaming ${game}!`
-    : `${site}: ${who} is live now!`;
 }
 
 function renderGameOptions(names) {
@@ -1847,7 +1833,6 @@ async function saveGame(name) {
     }
     savedGame = name;
     gameInput.value = name;
-    renderGameExample();
     showGameMsg(name ? `Playing "${name}".` : "Cleared.", true);
     loadStream();          // refreshes the remembered list straight away
   } catch {
@@ -1857,7 +1842,6 @@ async function saveGame(name) {
 
 function setUpGame() {
   if (!gameInput) return;
-  gameInput.addEventListener("input", renderGameExample);
   gameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") saveGame(gameInput.value.trim());
   });
@@ -1928,7 +1912,6 @@ function renderGame(data) {
     savedGame = value;
     gameInput.value = value;
   }
-  renderGameExample();
 }
 
 async function loadStream() {

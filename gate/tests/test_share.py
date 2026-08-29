@@ -178,6 +178,39 @@ def make_viewer(client):
     return viewer
 
 
+# ---- the home card --------------------------------------------------------
+
+@pytest.fixture
+def publisher(monkeypatch):
+    """MediaMTX reporting a publisher on our path. /api/status asks MediaMTX
+    directly rather than reading hub's flag, so a test about that payload has to
+    fake the poll, not the flag."""
+    from routes import media as media_routes
+
+    async def ready():
+        return {"ready": True, "readyTime": "2026-08-29T12:00:00.000000000Z"}
+
+    monkeypatch.setattr(media_routes, "fetch_path", ready)
+
+
+def test_status_carries_the_game_while_live(client, publisher):
+    # The home card reads this poll, so a game set mid-broadcast reaches it
+    # without a reload.
+    setup_admin(client, username="owner")
+    db.set_now_playing("Ashfall Delta")
+    body = client.get("/api/status").json()
+    assert body["online"] is True
+    assert body["game"] == "Ashfall Delta"
+
+
+def test_status_omits_the_game_while_offline(client):
+    # The label outlives a broadcast on purpose, but "Playing" on an offline
+    # card would be describing a stream that is not running.
+    setup_admin(client, username="owner")
+    db.set_now_playing("Ashfall Delta")
+    assert "game" not in client.get("/api/status").json()
+
+
 # ---- the remembered list --------------------------------------------------
 
 def test_recent_games_are_newest_first_and_capped(fresh_games):

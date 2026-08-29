@@ -148,7 +148,8 @@ only repackages the video and stays light.
   preview card.
 - Say what you are playing, and pasting your watch link into a chat app shows
   it: "Northwind Live: Nell is streaming Ashfall Delta!", with a frame of the
-  stream beside it while you are live. Pick from what you have played before or
+  stream beside it while you are live. Viewers see it on the home card too,
+  under the channel name, for as long as the broadcast runs. Pick from what you have played before or
   type something new. Because a preview is fetched without a session, that frame
   is reachable by anyone holding the link while you are on air; `docs/05-security.md`
   says exactly how far that goes.

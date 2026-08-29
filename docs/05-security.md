@@ -145,7 +145,10 @@ links leaves the site closed.
 
 One smaller thing is also public, and it is harmless: `/api/status` reports the
 running version of the app, so the dashboard footer can show it and an external
-check can read it without a session. This is accepted rather than hidden: the
+check can read it without a session. While a broadcast is running it also
+reports what you are playing, which the home card reads; that is the same label
+the link preview above already puts in front of anyone holding the link, so it
+is public either way. This is accepted rather than hidden: the
 source is public under the AGPL, so the version is not a secret, and knowing it
 buys an attacker nothing they could not already read in the code.
 

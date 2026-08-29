@@ -16,7 +16,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=51">
+  <link rel="stylesheet" href="/assets/style.css?v=52">
 </head>
 <body class="admin">
   <div id="site-nav"></div>
@@ -27,6 +27,18 @@
        can never drift from the page that is actually served. Everything below is
        the controls. -->
   <section class="live-console">
+    <!-- First thing on the page: whether the broadcast is up and being recorded,
+         so it is seen before anything else. Filled by admin.js from
+         /api/admin/stream, which is why it starts blank. -->
+    <section class="stream-strip is-offline" id="stream-strip" aria-live="polite">
+      <span class="stream-strip-dot" aria-hidden="true"></span>
+      <span class="stream-strip-state" id="stream-state">Offline</span>
+      <span class="stream-strip-since" id="stream-since" hidden></span>
+      <span class="stream-strip-watching" id="stream-watching" hidden></span>
+      <span class="stream-strip-rec" id="stream-rec" hidden></span>
+      <a class="stream-strip-link" id="stream-link" href="/watch">watch page</a>
+    </section>
+
     <div class="live-console-head">
       <div class="live-view-toggle" role="group" aria-label="What the frame shows">
         <button type="button" class="chip-btn is-on" data-view="full">Video + chat</button>
@@ -38,18 +50,6 @@
       <iframe id="live-view" src="/watch" title="Your channel, as viewers see it"
               allow="autoplay; fullscreen"></iframe>
     </div>
-
-    <!-- The live broadcast at a glance, so a streamer sees the broadcast is up
-         and being recorded without opening the container logs. Filled by admin.js
-         from /api/admin/stream, which is why it starts blank. -->
-    <section class="stream-strip is-offline" id="stream-strip" aria-live="polite">
-      <span class="stream-strip-dot" aria-hidden="true"></span>
-      <span class="stream-strip-state" id="stream-state">Offline</span>
-      <span class="stream-strip-since" id="stream-since" hidden></span>
-      <span class="stream-strip-watching" id="stream-watching" hidden></span>
-      <span class="stream-strip-rec" id="stream-rec" hidden></span>
-      <a class="stream-strip-link" id="stream-link" href="/watch">watch page</a>
-    </section>
 
     <!-- What you are playing. It feeds the link preview, so it is here beside
          the broadcast rather than down in the channel settings. -->
@@ -64,9 +64,6 @@
       </div>
     </div>
     <p id="game-msg" class="notify-msg" hidden></p>
-    <p class="settings-note muted live-console-note">Paste your watch link into a
-      chat app and the preview reads "<span id="game-example">someone is live now</span>".
-      It stays set until you change it.</p>
   </section>
 
   <main class="admin-main">
@@ -543,6 +540,6 @@
   </div>
 
   <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/admin.js?v=39"></script>
+  <script src="/assets/admin.js?v=40"></script>
 </body>
 </html>
