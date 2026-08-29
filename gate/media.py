@@ -5,8 +5,8 @@ A broadcast is recorded with a plain stream copy (no transcode) to local scratch
 while live, then archived to the media store when it ends. Clips are cut from
 that in-progress file on demand, and a background worker keeps a fresh preview
 frame for the home card. The stream watcher ties it together: it polls MediaMTX
-and drives the online/offline transitions (start/stop recording, wipe chat,
-announce go-live).
+and drives the online/offline transitions (start/stop recording, announce
+go-live, and narrate the night in chat).
 """
 
 import asyncio
@@ -26,6 +26,7 @@ from config import (
     CLIP_KEYFRAME_SLACK, CLIP_LAG, DEFAULT_CLIP_LENGTH, MAX_CLIP_NAME,
     MEDIAMTX_API, MEDIA_DIR, SHARED_DIR,
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
+    CHAT_IDLE_WIPE_SECONDS, NIGHT_GAP_SECONDS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
     SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
 )
@@ -70,7 +71,7 @@ def credit_watch_points():
 
 
 async def stream_watcher():
-    """Wipe the chat when a broadcast ends, so the next stream starts clean."""
+    """Follow the stream up and down, and drive what each transition means."""
     was_online = False
     # Accrue watch points once per minute of live time. We track elapsed live
     # seconds across polls with a monotonic clock and credit a round each time it
@@ -100,6 +101,7 @@ async def stream_watcher():
                 _watch.update(last_size=-1, no_growth=0, attempts=0,
                               next_retry_at=0.0)
                 plan = theater.stream_transition(True, theater.is_active())
+                await wipe_if_new_night()
                 if plan["record"]:
                     await start_recording()
                 else:
@@ -126,8 +128,11 @@ async def stream_watcher():
             if was_online and not online:
                 logger.info("stream offline")
                 plan = theater.stream_transition(False, theater.is_active())
-                if plan["wipe"]:
-                    await hub.wipe(reason="stream_ended")
+                if plan["announce_end"]:
+                    # Chat is not wiped here any more: the evening carries on,
+                    # into theater or just into people talking.
+                    db.set_last_air_ended_at(int(time.time()))
+                    await hub.narrate("Stream ended.")
                 if plan["state"]:
                     await theater.set_stage(plan["state"])
                 await stop_recording()
@@ -735,7 +740,40 @@ async def retention_worker():
     dashboard takes effect without waiting for the next broadcast to end."""
     while True:
         await enforce_retention()
+        try:
+            await sweep_idle_chat()
+        except Exception:
+            logger.warning("idle chat sweep failed", exc_info=True)
         await asyncio.sleep(RETENTION_INTERVAL)
+
+
+async def wipe_if_new_night():
+    """Clear chat when a broadcast opens a new night, and only then.
+
+    Chat used to be wiped when a stream ended, which cut the room off exactly
+    when an evening was moving from a broadcast to a film. It is wiped here
+    instead, so the wipe lands on an empty room at the start rather than on a
+    conversation at the end. The gap test is what makes a restart safe: OBS
+    dying and coming back is the same night and keeps everything, while
+    tomorrow evening is a new one and starts clean. A channel that has never
+    been on air has nothing to clear."""
+    last = db.get_last_air_ended_at()
+    if not last or int(time.time()) - last < NIGHT_GAP_SECONDS:
+        return
+    await hub.wipe(reason="new_night")
+
+
+async def sweep_idle_chat():
+    """The backstop for a night with no sequel: once the channel has been off
+    air longer than the idle window, the last evening's chat is cleared rather
+    than left on screen for days. Runs from the retention worker, and wipes at
+    most once because the wipe empties what it measures."""
+    last = db.get_last_air_ended_at()
+    if not last or int(time.time()) - last < CHAT_IDLE_WIPE_SECONDS:
+        return
+    if not hub.has_backlog():
+        return
+    await hub.wipe(reason="idle")
 
 
 async def start_recording():

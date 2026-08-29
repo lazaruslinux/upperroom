@@ -25,8 +25,11 @@ import db
 import media
 import projector
 import theater
-from config import ART_DIR, CLIP_DIR, VOD_DIR
+from config import (
+    ART_DIR, CHAT_IDLE_WIPE_SECONDS, CLIP_DIR, NIGHT_GAP_SECONDS, VOD_DIR,
+)
 from conftest import make_client
+from hub import hub
 from projector import ProjectorError, link
 
 from test_api import add_user, login, setup_admin
@@ -174,7 +177,10 @@ def test_ending_a_session_clears_whatever_it_was_showing(client):
     assert row["now_title"] is None and row["now_art"] is None
 
 
-def test_ending_a_session_wipes_the_chat_it_has_been_holding(client):
+def test_ending_a_session_narrates_it_and_leaves_the_chat_alone(client):
+    """Chat belongs to the evening, not the session. Ending one used to wipe the
+    room, which cut people off at exactly the moment a movie night finished and
+    everyone wanted to talk about it."""
     setup_admin(client, username="owner")
     start(client)
     with client.websocket_connect(
@@ -183,11 +189,21 @@ def test_ending_a_session_wipes_the_chat_it_has_been_holding(client):
         for _ in range(3):
             ws.receive_json()
         client.post("/api/admin/theater/end")
-        # The wipe the session held back, then the state frame saying it is over.
-        wipe = ws.receive_json()
+        said = ws.receive_json()
         ended = ws.receive_json()
-    assert wipe == {"type": "wipe", "reason": "stream_ended"}
+    assert said["type"] == "system"
+    assert said["text"] == "Theater mode disabled."
     assert ended == {"type": "theater", "active": False, "state": "off", "now": None}
+
+
+def test_a_session_records_when_the_channel_went_off_air(client):
+    """What a later broadcast measures its gap against, so the night after a
+    movie night starts clean."""
+    setup_admin(client, username="owner")
+    assert db.get_last_air_ended_at() == 0
+    start(client)
+    client.post("/api/admin/theater/end")
+    assert db.get_last_air_ended_at() > 0
 
 
 # ---- 2. What a session suppresses -----------------------------------------
@@ -202,9 +218,11 @@ def test_going_live_during_a_session_neither_records_nor_announces():
     assert plan["state"] == "playing"
 
 
-def test_going_offline_during_a_session_holds_the_chat_wipe():
+def test_the_path_dropping_between_titles_is_not_announced():
+    """During a session the stream going down is just the gap before the next
+    title, so the room must not be told the stream ended."""
     plan = theater.stream_transition(False, theater_active=True)
-    assert plan["wipe"] is False
+    assert plan["announce_end"] is False
     assert plan["state"] == "intermission"
 
 
@@ -213,7 +231,7 @@ def test_without_a_session_every_transition_behaves_exactly_as_before():
         "record": True, "notify": True, "state": None,
     }
     assert theater.stream_transition(False, theater_active=False) == {
-        "wipe": True, "state": None,
+        "announce_end": True, "state": None,
     }
 
 
@@ -614,3 +632,42 @@ def test_retention_and_the_orphan_sweep_leave_poster_art_alone(client):
         )
     finally:
         os.remove(poster)
+
+
+# ---- The night, not the broadcast ------------------------------------------
+
+def test_a_restart_within_the_night_keeps_the_room(client):
+    """OBS dying and coming back is the same evening. Wiping there would empty
+    the room mid-conversation, which is the failure this whole rule replaced."""
+    setup_admin(client, username="owner")
+    asyncio.run(hub.narrate("mid-conversation"))
+    db.set_last_air_ended_at(int(time.time()) - 60)
+    asyncio.run(media.wipe_if_new_night())
+    assert hub.has_backlog() is True
+
+
+def test_a_new_night_clears_the_last_one(client):
+    setup_admin(client, username="owner")
+    asyncio.run(hub.narrate("last night"))
+    db.set_last_air_ended_at(int(time.time()) - NIGHT_GAP_SECONDS - 1)
+    asyncio.run(media.wipe_if_new_night())
+    assert hub.has_backlog() is False
+
+
+def test_a_channel_that_has_never_aired_has_nothing_to_clear(client):
+    setup_admin(client, username="owner")
+    asyncio.run(hub.narrate("hello"))
+    assert db.get_last_air_ended_at() == 0
+    asyncio.run(media.wipe_if_new_night())
+    assert hub.has_backlog() is True
+
+
+def test_the_idle_sweep_clears_a_night_with_no_sequel(client):
+    setup_admin(client, username="owner")
+    asyncio.run(hub.narrate("still here"))
+    db.set_last_air_ended_at(int(time.time()) - CHAT_IDLE_WIPE_SECONDS - 1)
+    asyncio.run(media.sweep_idle_chat())
+    assert hub.has_backlog() is False
+    # And it does not keep firing on an already empty room.
+    asyncio.run(media.sweep_idle_chat())
+    assert hub.has_backlog() is False

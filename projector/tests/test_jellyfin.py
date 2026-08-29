@@ -79,6 +79,9 @@ def test_parse_items_maps_the_fields_the_gate_asked_for():
         "runtime_min": 95,
         "synopsis": "A synopsis.",
         "has_subtitles": True,
+        # A track with no text flag is not burnable, so there is no index.
+        "subtitle_index": None,
+        "media_source_id": "abc123",
     }]
 
 
@@ -86,3 +89,43 @@ def test_parse_items_drops_anything_without_an_id_and_survives_an_empty_reply():
     assert jellyfin.parse_items({"Items": [{"Name": "no id"}]}) == []
     assert jellyfin.parse_items({}) == []
     assert jellyfin.parse_items(None) == []
+
+
+def test_the_external_text_track_is_the_one_burned():
+    """A library with Bazarr keeps subtitles in files beside the video, and the
+    disc rip's own track is usually a picture ffmpeg cannot render. Burning
+    straight from the video file took whatever came first, which is how a film
+    with perfectly good .srt subtitles played with none."""
+    item = {"Id": "abc123", "MediaStreams": [
+        {"Type": "Subtitle", "Index": 3, "Codec": "pgssub",
+         "IsTextSubtitleStream": False, "IsExternal": False},
+        {"Type": "Subtitle", "Index": 0, "Codec": "subrip",
+         "IsTextSubtitleStream": True, "IsExternal": True},
+    ]}
+    assert jellyfin.text_subtitle_index(item) == 0
+
+
+def test_an_embedded_text_track_still_counts_when_there_is_no_sidecar():
+    item = {"Id": "abc123", "MediaStreams": [
+        {"Type": "Subtitle", "Index": 2, "Codec": "subrip",
+         "IsTextSubtitleStream": True, "IsExternal": False},
+    ]}
+    assert jellyfin.text_subtitle_index(item) == 2
+
+
+def test_an_image_only_title_offers_nothing_to_burn():
+    item = {"Id": "abc123", "MediaStreams": [
+        {"Type": "Subtitle", "Index": 3, "Codec": "pgssub",
+         "IsTextSubtitleStream": False, "IsExternal": False},
+    ]}
+    assert jellyfin.text_subtitle_index(item) is None
+
+
+def test_the_subtitle_url_is_the_shape_jellyfin_serves():
+    url = jellyfin.subtitle_url(BASE, "item1", "source1", 0)
+    assert url == f"{BASE}/Videos/item1/source1/Subtitles/0/Stream.srt"
+
+
+def test_the_media_source_falls_back_to_the_item():
+    assert jellyfin.media_source_id({"Id": "abc", "MediaSources": [{"Id": "src"}]}) == "src"
+    assert jellyfin.media_source_id({"Id": "abc"}) == "abc"

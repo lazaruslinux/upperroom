@@ -44,8 +44,49 @@ def item_url(base, item_id):
     The latter is gone in Jellyfin 10.10 and later, which answer it with a bare
     400, and this is the call the play command makes: on those servers every
     play failed while search worked, because search already used this endpoint."""
-    params = {"ids": str(item_id), "Fields": SEARCH_FIELDS}
+    # MediaSources on top of the search fields: the play path needs the source a
+    # subtitle track belongs to, and a search of 25 titles does not.
+    params = {"ids": str(item_id), "Fields": SEARCH_FIELDS + ",MediaSources"}
     return f"{base}/Items?{urlencode(params)}"
+
+
+def text_subtitle_index(item):
+    """The index of a text subtitle track to burn, or None.
+
+    External tracks come first: a library with Bazarr keeps its subtitles in
+    .srt files beside the video, and those are the ones somebody went to the
+    trouble of fetching. Image tracks (PGS, VOBSUB) are skipped entirely rather
+    than preferred and then failed on, which is what burning straight from the
+    video file used to do: ffmpeg took whatever subtitle stream came first, and
+    on a disc rip that is a picture it cannot render."""
+    text = [
+        stream for stream in (item.get("MediaStreams") or [])
+        if isinstance(stream, dict) and stream.get("Type") == "Subtitle"
+        and stream.get("IsTextSubtitleStream")
+        and isinstance(stream.get("Index"), int)
+    ]
+    if not text:
+        return None
+    external = [s for s in text if s.get("IsExternal")]
+    return (external or text)[0]["Index"]
+
+
+def subtitle_url(base, item_id, media_source_id, index):
+    """One subtitle track as SRT, which is what the burn filter can read."""
+    return (
+        f"{base}/Videos/{quote(str(item_id))}/{quote(str(media_source_id))}"
+        f"/Subtitles/{index}/Stream.srt"
+    )
+
+
+def media_source_id(item):
+    """The source a track belongs to. One file per item here, so the first
+    source is the one, and it falls back to the item's own id, which is what
+    Jellyfin uses for a single-file item anyway."""
+    sources = item.get("MediaSources") or []
+    if sources and isinstance(sources[0], dict) and sources[0].get("Id"):
+        return sources[0]["Id"]
+    return item.get("Id")
 
 
 def image_url(base, item_id, max_height=900):
@@ -92,6 +133,10 @@ def to_result(item):
         "runtime_min": ticks_to_minutes(item.get("RunTimeTicks")),
         "synopsis": str(item.get("Overview") or ""),
         "has_subtitles": has_subtitles(item),
+        # Which track to burn and where it lives. Only the play path reads these;
+        # the gate's clean_results drops them before anything reaches a browser.
+        "subtitle_index": text_subtitle_index(item),
+        "media_source_id": media_source_id(item),
     }
 
 

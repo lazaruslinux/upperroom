@@ -16,7 +16,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=49">
+  <link rel="stylesheet" href="/assets/style.css?v=50">
 </head>
 <body class="admin">
   <div id="site-nav"></div>
@@ -178,14 +178,24 @@
     <h2 class="section-title" style="margin-top:1.75rem;">Theater</h2>
     <div class="notify-panel">
       <span class="muted">Play titles from your own library to the room. While a
-        session is running nothing is recorded, clips are off, chat is not wiped
-        between titles, and going live is announced once at the start. Needs a
-        projector connected (below).</span>
-      <p id="theater-status" class="theater-status">Loading…</p>
-      <div class="theater-actions">
-        <button type="button" id="theater-start" class="solid-btn">Start session</button>
-        <button type="button" id="theater-end" class="danger-btn" hidden>End session</button>
-        <button type="button" id="theater-stop" class="ghost-btn" hidden>Stop the title</button>
+        session is running nothing is recorded, clips are off, and going live is
+        announced once at the start. Chat carries on from whatever came before
+        it. Needs a projector connected (below).</span>
+      <!-- What the room is seeing, beside the controls that change it. The same
+           frame the home card uses, so it costs a poll rather than a player. -->
+      <div class="theater-console">
+        <div class="theater-preview">
+          <img id="theater-thumb" alt="" hidden>
+          <p id="theater-thumb-none" class="muted">Nothing on air.</p>
+        </div>
+        <div class="theater-console-side">
+          <p id="theater-status" class="theater-status">Loading…</p>
+          <div class="theater-actions">
+            <button type="button" id="theater-start" class="solid-btn">Start session</button>
+            <button type="button" id="theater-end" class="danger-btn" hidden>End session</button>
+            <button type="button" id="theater-stop" class="ghost-btn" hidden>Stop the title</button>
+          </div>
+        </div>
       </div>
       <div class="ts-search">
         <input id="theater-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
@@ -505,6 +515,6 @@
   </div>
 
   <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/admin.js?v=37"></script>
+  <script src="/assets/admin.js?v=38"></script>
 </body>
 </html>

@@ -859,6 +859,14 @@ function renderTheater(data) {
   theaterStart.hidden = theaterActive;
   theaterEnd.hidden = !theaterActive;
   theaterStop.hidden = !theaterActive || !now;
+  // A session that just started or a title that just stopped has nothing on
+  // air, so drop the frame rather than leave the last one looking current.
+  if (!theaterActive || !now) {
+    theaterThumb.hidden = true;
+    theaterThumbNone.hidden = false;
+  } else {
+    refreshTheaterThumb();
+  }
 }
 
 function renderProjector(data) {
@@ -887,6 +895,28 @@ async function loadTheater() {
     const reply = await fetch("/api/theater");
     if (reply.ok) renderTheater(await reply.json());
   } catch { /* same */ }
+}
+
+// The preview beside the controls. Loaded into a detached image first so a slow
+// or missing frame never blanks the one already on screen, which is the same
+// reason the home card does it this way.
+const theaterThumb = document.getElementById("theater-thumb");
+const theaterThumbNone = document.getElementById("theater-thumb-none");
+
+function refreshTheaterThumb() {
+  const next = new Image();
+  next.onload = () => {
+    theaterThumb.src = next.src;
+    theaterThumb.hidden = false;
+    theaterThumbNone.hidden = true;
+  };
+  next.onerror = () => {
+    // No frame: either nothing is on air, or a title is starting and the first
+    // one has not been grabbed yet. Either way, say so rather than show stale.
+    theaterThumb.hidden = true;
+    theaterThumbNone.hidden = false;
+  };
+  next.src = `/api/thumbnail?t=${Date.now()}`;
 }
 
 // Every control answers with the same state payload, so one path applies it.
@@ -1826,14 +1856,20 @@ async function boot() {
   loadStreamKey();
   loadTheater();
   loadProjector();
+  refreshTheaterThumb();
   // Only while a session is open: the state moves on its own then (a title
   // ending puts the room back to intermission), and between sessions the
-  // operator's own actions are the only thing that changes it.
+  // operator's own actions are the only thing that changes it. The preview
+  // refreshes faster than the state, because it is what the operator is
+  // actually looking at while deciding whether the film is up.
   setInterval(() => {
     if (!theaterActive) return;
     loadTheater();
     loadProjector();
   }, 10000);
+  setInterval(() => {
+    if (theaterActive) refreshTheaterThumb();
+  }, 5000);
   loadOverlay();
   loadNotify();
   loadRetention();

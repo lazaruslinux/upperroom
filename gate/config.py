@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.6.2"
+VERSION = "0.7.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -155,6 +155,17 @@ CLIP_COOLDOWN_SECONDS = int(os.environ.get("SELFSTREAM_CLIP_COOLDOWN", "300"))
 CLIP_COOLDOWN_HOST_SECONDS = int(
     os.environ.get("SELFSTREAM_CLIP_COOLDOWN_HOST", "60")
 )
+# Chat belongs to the night, not to one broadcast. It survives a stream ending,
+# the switch to theater and the film after it, so an evening reads as one
+# conversation. The wipe moves to the start of the next broadcast and only fires
+# when the last air ended long enough ago to be a different night, so OBS
+# crashing and coming back keeps the room. The idle sweep is the backstop for a
+# night that never gets a sequel.
+NIGHT_GAP_SECONDS = int(os.environ.get("SELFSTREAM_NIGHT_GAP", "21600"))
+CHAT_IDLE_WIPE_SECONDS = int(
+    os.environ.get("SELFSTREAM_CHAT_IDLE_WIPE", "86400")
+)
+
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
 MAX_OVERLAY_TICKER = 200        # the operator's overlay message line, kept short

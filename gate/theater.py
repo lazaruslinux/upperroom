@@ -8,8 +8,8 @@ changes is what the gate does around that video:
 
   - it does not record, because a session is somebody else's film
   - clips are refused for the same reason
-  - the chat wipe is held until the session ends, so the room survives the gap
-    between one title and the next
+  - nothing about it wipes chat: a session is part of the same evening as the
+    broadcast before it, and the room carries over
   - going live announces once, at the start, not once per title
 
 Between titles viewers see an intermission card instead of the offline card, and
@@ -53,9 +53,8 @@ def stream_transition(going_online, theater_active):
     that talks to MediaMTX and ffmpeg is not a test, it is a stage set.
 
     During a session the gate skips recording and the go-live announcement (the
-    session start already made it), and holds the chat wipe until the session
-    ends. `state` is the session state the transition implies, or None when
-    there is no session to move."""
+    session start already made it). `state` is the session state the transition
+    implies, or None when there is no session to move."""
     if going_online:
         return {
             "record": not theater_active,
@@ -63,7 +62,9 @@ def stream_transition(going_online, theater_active):
             "state": "playing" if theater_active else None,
         }
     return {
-        "wipe": not theater_active,
+        # Only a real broadcast ending is worth saying out loud. During a session
+        # the path dropping is just the gap between titles.
+        "announce_end": not theater_active,
         "state": "intermission" if theater_active else None,
     }
 
@@ -122,14 +123,16 @@ async def start_session():
     logger.info("theater session %s started", session_id)
     await notify_live()
     db.mark_theater_notified(session_id)
+    await hub.narrate("Theater mode enabled.")
     session = db.get_active_theater_session()
     await broadcast_state(session)
     return public_state(session), None
 
 
 async def end_session():
-    """Close the open session. Stops anything playing first, then wipes the chat
-    the session has been holding back."""
+    """Close the open session. Stops anything playing first. Chat is left alone:
+    it belongs to the evening, not to the session, and is wiped when a later
+    broadcast starts a new night."""
     session = db.get_active_theater_session()
     if not session:
         return None, "No theater session is running."
@@ -141,10 +144,13 @@ async def end_session():
             # stop is a problem for the operator's machine, not a reason to
             # leave the room stuck in a session nobody can close.
             logger.warning("could not stop the projector at session end: %s", exc)
-    db.end_theater_session(session["id"], int(time.time()))
+    ended = int(time.time())
+    db.end_theater_session(session["id"], ended)
     logger.info("theater session %s ended", session["id"])
-    # The wipe every go-offline during the session skipped, paid once here.
-    await hub.wipe(reason="stream_ended")
+    # The night is over as far as the channel is concerned, so this is what a
+    # later broadcast measures its gap from.
+    db.set_last_air_ended_at(ended)
+    await hub.narrate("Theater mode disabled.")
     await broadcast_state(None)
     return public_state(None), None
 
@@ -263,8 +269,18 @@ async def play(jf_id, subtitles=True):
         art=art,
     )
     session = db.get_active_theater_session()
+    await hub.narrate(_now_showing_line(session))
     await broadcast_state(session)
     return public_state(session), None
+
+
+def _now_showing_line(session):
+    """What the room is told when a title goes on: the title, its year when the
+    library knows one, and an invitation."""
+    title = (session or {})["now_title"] or "The next title"
+    year = (session or {})["now_year"]
+    named = f"{title} ({year})" if year else title
+    return f"{named} selected. Enjoy the show!"
 
 
 async def stop():
@@ -276,6 +292,7 @@ async def stop():
     await link.rpc("stop", timeout=PLAY_TIMEOUT)
     db.set_theater_now(session["id"])
     session = db.get_active_theater_session()
+    await hub.narrate("Film stopped.")
     await broadcast_state(session)
     return public_state(session), None
 

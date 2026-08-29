@@ -148,7 +148,11 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- without another table, and re-arms it when the time is changed.
     next_stream_at INTEGER NOT NULL DEFAULT 0,
     next_stream_note TEXT NOT NULL DEFAULT '',
-    next_reminded_for INTEGER NOT NULL DEFAULT 0
+    next_reminded_for INTEGER NOT NULL DEFAULT 0,
+    -- When the channel last stopped being on air, whether that was a broadcast
+    -- going offline or a theater session closing. What decides whether the next
+    -- broadcast is the same night carrying on or a new one starting.
+    last_air_ended_at INTEGER NOT NULL DEFAULT 0
 );
 
 -- One row per broadcast we record. The file is written to local scratch while
@@ -462,6 +466,9 @@ def init_db():
         )
         _ensure_column(
             conn, "channel_settings", "next_reminded_for", "INTEGER NOT NULL DEFAULT 0"
+        )
+        _ensure_column(
+            conn, "channel_settings", "last_air_ended_at", "INTEGER NOT NULL DEFAULT 0"
         )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
@@ -2062,6 +2069,25 @@ def get_replay(kind, ref_id):
 
 
 # ---- The next scheduled stream --------------------------------------------
+
+# ---- When the channel was last on air --------------------------------------
+
+def get_last_air_ended_at():
+    """When the channel last went off air, or 0 on a channel that never has."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT last_air_ended_at FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return int(row["last_air_ended_at"]) if row else 0
+
+
+def set_last_air_ended_at(when):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET last_air_ended_at = ? WHERE id = 1",
+            (int(when),),
+        )
+
 
 def get_schedule():
     """The upcoming broadcast the operator announced: when it starts (0 when

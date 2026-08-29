@@ -182,6 +182,15 @@ class Hub:
         self._history.append(message)
         await self.broadcast(message)
 
+    async def narrate(self, text):
+        """A line about the night itself: the stream ending, theater opening, a
+        title going on. Kept in the backlog like a highlight rather than being
+        broadcast and forgotten, so somebody who arrives mid-film sees how the
+        room got here instead of an unexplained movie."""
+        message = {"type": "system", "text": text, "ts": int(time.time())}
+        self._history.append(message)
+        await self.broadcast(message)
+
     async def highlight(self, message):
         """Announce a purchased highlight and keep it in the backlog, the same way
         a chat line is retained, so a viewer who joins later still sees it rather
@@ -364,6 +373,11 @@ class Hub:
                             "end_watch_session failed on go-offline", exc_info=True
                         )
                     who["watch_id"] = None
+
+    def has_backlog(self):
+        """Whether there is anything to wipe, so the idle sweep can run on a
+        timer without wiping an already empty room over and over."""
+        return bool(self._history)
 
     async def wipe(self, reason=None):
         # Called when a broadcast ends. Clear the backlog and tell every open page

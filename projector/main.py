@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import logging
+from urllib.parse import urlencode
 
 import websockets
 
@@ -108,6 +109,26 @@ def play_options(detail, subtitles):
     return opts
 
 
+def subtitle_source(jf_id, detail, file_source):
+    """Where the burn should read subtitles from, or None when there is nothing
+    worth burning.
+
+    A text track is asked for from the library as SRT rather than read out of
+    the video file, because the two are often not the same thing: a library with
+    Bazarr keeps its subtitles in files beside the video, and a disc rip's own
+    track is usually a picture ffmpeg cannot render. In demo mode there is no
+    library, so the generated card's own file is all there is."""
+    if config.DEMO:
+        return file_source
+    index = detail.get("subtitle_index")
+    if index is None:
+        return None
+    return jellyfin.subtitle_url(
+        config.JELLYFIN_URL, jf_id,
+        detail.get("media_source_id") or jf_id, index,
+    ) + f"?{urlencode({'api_key': config.JELLYFIN_API_KEY})}"
+
+
 async def start_playing(socket, jf_id, subtitles):
     """Start a title. Returns its detail for the gate's reply.
 
@@ -121,7 +142,10 @@ async def start_playing(socket, jf_id, subtitles):
         config.JELLYFIN_URL, jf_id, config.JELLYFIN_API_KEY
     )
     if opts["subtitles"]:
-        opts["subtitle_source"] = source
+        opts["subtitle_source"] = subtitle_source(jf_id, detail, source)
+        # Nothing burnable: an image-only track cannot be rendered, and pointing
+        # the burn at the video file just fails and costs a retry to find out.
+        opts["subtitles"] = bool(opts["subtitle_source"])
     _state["jf_id"] = jf_id
     _state["started_at"] = asyncio.get_running_loop().time()
     await _player.start(player.build_play_args(source, opts))
