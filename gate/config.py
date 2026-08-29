@@ -33,13 +33,49 @@ def _setup_logging():
     logger.propagate = False
 
 
+class RedactQueryStrings(logging.Filter):
+    """Keep query strings out of the HTTP access log.
+
+    Two endpoints authenticate with a key in the URL: the projector's socket,
+    and the overlay, which is an OBS browser source and so cannot send a header.
+    uvicorn's access line records the whole request target, which means that
+    without this an operator's own `docker logs` slowly fills with live keys,
+    and logs travel: into backups, bug reports and screenshots. The path is kept
+    because it is what makes the line useful; only the query is dropped."""
+
+    def filter(self, record):
+        # The target sits at a different index depending on the line: an HTTP
+        # one logs (client, method, target, version, status), a WebSocket one
+        # logs (client, target). Rather than track uvicorn's shapes, redact any
+        # argument shaped like a request target, which is the only place a query
+        # string appears. Anchored on the leading slash so ordinary log text
+        # containing a question mark is left alone.
+        args = record.args
+        if not isinstance(args, tuple):
+            return True
+        redacted = []
+        for arg in args:
+            if isinstance(arg, str) and arg.startswith("/") and "?" in arg:
+                arg = arg.partition("?")[0] + "?<redacted>"
+            redacted.append(arg)
+        record.args = tuple(redacted)
+        return True
+
+
 _setup_logging()
+# Attached to the loggers rather than to a handler, so it survives uvicorn
+# installing its own handlers whenever that happens relative to this import.
+# Both names matter: uvicorn writes HTTP access lines to uvicorn.access, but
+# its WebSocket "[accepted]" lines go to uvicorn.error, and the sockets are
+# exactly where our keys ride.
+for _access_logger in ("uvicorn.access", "uvicorn.error"):
+    logging.getLogger(_access_logger).addFilter(RedactQueryStrings())
 
 # The running release. Bumped by hand per tagged release (releases are annotated
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))

@@ -194,3 +194,57 @@ def test_socket_connects_have_their_own_budget(client):
     assert client.post(
         "/api/auth", json={"username": "ghost", "password": "wrong"}
     ).status_code == 401
+
+
+def test_the_access_log_never_records_a_query_string():
+    """The projector key and the overlay key ride in the URL, so an unfiltered
+    access log accumulates live secrets in the operator's own docker logs."""
+    import logging
+    from config import RedactQueryStrings
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5", "GET", "/ws/projector?key=supersecret", "1.1", 200), None,
+    )
+    assert RedactQueryStrings().filter(record) is True
+    line = record.getMessage()
+    assert "supersecret" not in line
+    assert "/ws/projector" in line          # the path itself still tells you what was hit
+    assert "<redacted>" in line
+
+    # A WebSocket line puts the target at a different index, and that is the one
+    # the projector and the overlay actually authenticate on. Redacting only the
+    # HTTP shape left every socket connection writing its key to the log.
+    ws = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "WebSocket %s" [accepted]',
+        ("1.2.3.4:5", "/ws/projector?key=supersecret"), None,
+    )
+    RedactQueryStrings().filter(ws)
+    assert "supersecret" not in ws.getMessage()
+    assert "/ws/projector" in ws.getMessage()
+
+    # A path with no query is left exactly as it was.
+    plain = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5", "GET", "/api/status", "1.1", 200), None,
+    )
+    RedactQueryStrings().filter(plain)
+    assert plain.getMessage().endswith('"GET /api/status HTTP/1.1" 200')
+
+    # Ordinary log text carrying a question mark is not a request target and
+    # must survive untouched.
+    prose = logging.LogRecord(
+        "uvicorn.error", logging.INFO, __file__, 1, "could not reach %s",
+        ("who knows where?",), None,
+    )
+    RedactQueryStrings().filter(prose)
+    assert prose.getMessage() == "could not reach who knows where?"
+
+    # And the filter must be installed on BOTH loggers, not merely defined:
+    # uvicorn writes HTTP access lines to uvicorn.access but WebSocket ones to
+    # uvicorn.error, and the sockets are where the keys ride.
+    for name in ("uvicorn.access", "uvicorn.error"):
+        assert any(
+            isinstance(f, RedactQueryStrings)
+            for f in logging.getLogger(name).filters
+        ), name

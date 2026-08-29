@@ -90,7 +90,12 @@ async def item_detail(jf_id):
         if not found:
             raise ValueError("no such demo title")
         return demo.public(found)
-    return await jellyfin.item(config.JELLYFIN_URL, config.JELLYFIN_API_KEY, jf_id)
+    found = await jellyfin.item(
+        config.JELLYFIN_URL, config.JELLYFIN_API_KEY, jf_id
+    )
+    if not found:
+        raise ValueError("no such title in the library")
+    return found
 
 
 # ---- Playing --------------------------------------------------------------

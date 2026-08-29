@@ -30,7 +30,12 @@ def test_the_file_url_carries_the_key_in_the_query_for_ffmpeg():
 
 
 def test_the_item_and_image_urls_name_the_item():
-    assert jellyfin.item_url(BASE, "abc123").startswith(f"{BASE}/Items/abc123?")
+    # Through the list endpoint filtered to one id: /Items/{id} is gone in
+    # Jellyfin 10.10 and later, which answer it with a bare 400.
+    url = jellyfin.item_url(BASE, "abc123")
+    assert url.startswith(f"{BASE}/Items?")
+    assert "ids=abc123" in url
+    assert "/Items/abc123" not in url
     assert jellyfin.image_url(BASE, "abc123").startswith(
         f"{BASE}/Items/abc123/Images/Primary?"
     )

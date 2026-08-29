@@ -38,8 +38,14 @@ def search_url(base, query, limit=25):
 
 
 def item_url(base, item_id):
-    """One item, with the same fields the search asks for."""
-    return f"{base}/Items/{quote(str(item_id))}?{urlencode({'Fields': SEARCH_FIELDS})}"
+    """One item, with the same fields the search asks for.
+
+    Asked for through the /Items list filtered to one id, not /Items/{id}.
+    The latter is gone in Jellyfin 10.10 and later, which answer it with a bare
+    400, and this is the call the play command makes: on those servers every
+    play failed while search worked, because search already used this endpoint."""
+    params = {"ids": str(item_id), "Fields": SEARCH_FIELDS}
+    return f"{base}/Items?{urlencode(params)}"
 
 
 def image_url(base, item_id, max_height=900):
@@ -105,10 +111,12 @@ async def search(base, api_key, query, limit=25):
 
 
 async def item(base, api_key, item_id):
+    """One title's details, or None when the library has no such id."""
     async with httpx.AsyncClient(timeout=TIMEOUT) as http:
         reply = await http.get(item_url(base, item_id), headers=headers(api_key))
         reply.raise_for_status()
-        return to_result(reply.json())
+        found = parse_items(reply.json())
+        return found[0] if found else None
 
 
 async def art(base, api_key, item_id, max_height=900):
