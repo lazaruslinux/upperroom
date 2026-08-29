@@ -134,6 +134,20 @@ def build_play_args(item_url, opts):
     return args
 
 
+def is_hwaccel_failure(stderr_text):
+    """Whether ffmpeg died because hardware encoding is unavailable, so the same
+    title can be retried on the CPU instead of not playing at all.
+
+    A static ffmpeg loads libva at run time, so a missing runtime, a missing
+    driver or a render node the container cannot open all surface here rather
+    than at build time. The libva assertion is the loudest of them and says
+    nothing about VAAPI in words, which is why it is matched by name."""
+    text = (stderr_text or "").lower()
+    if "libva" in text or "vaapi" in text:
+        return True
+    return "init_hw_device" in text or "hwupload" in text
+
+
 def is_subtitle_failure(stderr_text):
     """Whether ffmpeg's output says the subtitle burn is what failed, so the
     same title can be retried without it instead of not playing at all."""

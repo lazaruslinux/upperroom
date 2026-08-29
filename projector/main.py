@@ -158,13 +158,27 @@ async def _supervise(socket, jf_id, opts, source):
     if _state["jf_id"] != jf_id:
         return                                   # something else is playing now
     tail = _player.stderr_text()
-    if (code not in (0, None) and ran_for < player.EARLY_EXIT_SECONDS
-            and opts.get("subtitles") and player.is_subtitle_failure(tail)):
+    died_early = code not in (0, None) and ran_for < player.EARLY_EXIT_SECONDS
+    if (died_early and opts.get("subtitles")
+            and player.is_subtitle_failure(tail)):
         logger.warning("subtitle burn failed; retrying without it")
         retry = dict(opts, subtitles=False)
         await _player.start(player.build_play_args(source, retry))
         await send_status(
             socket, "starting", detail="subtitles could not be burned in"
+        )
+        _start_supervisor(socket, jf_id, retry, source)
+        return
+    # Same idea one step down: a GPU that will not encode should cost the
+    # picture quality, not the showing. Without this the room just falls back to
+    # the intermission card and nothing on screen says why.
+    if (died_early and opts.get("vaapi_device")
+            and player.is_hwaccel_failure(tail)):
+        logger.warning("hardware encoding failed; retrying on the CPU")
+        retry = dict(opts, vaapi_device="")
+        await _player.start(player.build_play_args(source, retry))
+        await send_status(
+            socket, "starting", detail="hardware encoding unavailable, using the CPU"
         )
         _start_supervisor(socket, jf_id, retry, source)
         return

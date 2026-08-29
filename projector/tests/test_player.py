@@ -143,3 +143,44 @@ def test_a_subtitle_failure_is_recognised_but_an_ordinary_error_is_not():
     )
     assert not player.is_subtitle_failure("Connection refused")
     assert not player.is_subtitle_failure("")
+
+
+def test_a_libva_abort_reads_as_a_hardware_failure():
+    """The exact abort a static ffmpeg gives when the VAAPI runtime is missing
+    from the image. It never says "vaapi", which is why libva is matched by
+    name: without this the title silently stops and the room sees intermission."""
+    tail = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' "
+        "via dlopen: libva-drm.so.2: cannot open shared object file\n"
+        "ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion `0 && "
+        '"Assertion in generated code"\' failed.\n'
+    )
+    assert player.is_hwaccel_failure(tail) is True
+
+
+def test_hardware_and_subtitle_failures_are_told_apart():
+    # Each retry drops only its own thing, so one must not answer for the other.
+    subs = "Error initializing filter 'subtitles' with args ..."
+    assert player.is_subtitle_failure(subs) is True
+    assert player.is_hwaccel_failure(subs) is False
+
+    hw = "Failed to initialise VAAPI connection: -1 (unknown libva error)."
+    assert player.is_hwaccel_failure(hw) is True
+
+    # An ordinary end-of-file is neither, so nothing is retried on it.
+    normal = "frame= 1234 fps=30 q=-1.0 Lsize= 4096kB\nvideo:4000kB audio:96kB"
+    assert player.is_hwaccel_failure(normal) is False
+    assert player.is_subtitle_failure(normal) is False
+
+
+def test_dropping_the_device_moves_the_encode_to_the_cpu():
+    """What the retry actually hands to the argv builder."""
+    opts = {
+        "ingest_url": "rtmp://example/live", "stream_key": "k",
+        "bitrate": "6000k", "max_height": 1080, "vaapi_device": "/dev/dri/renderD128",
+    }
+    hw = player.build_play_args("http://library/file", opts)
+    cpu = player.build_play_args("http://library/file", dict(opts, vaapi_device=""))
+    assert "h264_vaapi" in hw and "libx264" not in hw
+    assert "libx264" in cpu and "h264_vaapi" not in cpu
+    assert "-vaapi_device" not in cpu

@@ -104,9 +104,15 @@ have to pass the device in as well:
 docker run -d --device /dev/dri/renderD128 --env-file .env upperroom-projector
 ```
 
-The pinned ffmpeg build the image ships carries VAAPI, so nothing else is
-needed. Leave the variable unset and it encodes with libx264 at `veryfast`,
-which one modern core can hold at 1080p.
+The image carries the VAAPI runtime and drivers for the two common cases (iHD
+for modern Intel, mesa for AMD and older Intel), because the pinned ffmpeg loads
+libva at run time rather than linking it. If your card needs a different driver,
+install it in the image; a device ffmpeg cannot open makes it abort on a libva
+assertion the moment a title starts. That is survivable rather than fatal: the
+projector notices, retries the same title on the CPU, and reports that hardware
+encoding was unavailable, so a showing degrades instead of stopping. Leave the
+variable unset and it encodes with libx264 at `veryfast` from the start, which
+one modern core can hold at 1080p.
 
 ### Subtitles
 

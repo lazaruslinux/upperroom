@@ -3,8 +3,11 @@
 # values to change together when moving to a newer one: see gate/Dockerfile for
 # the full explanation of why this is not the distribution's ffmpeg.
 #
-# These builds carry VAAPI, so PROJECTOR_VAAPI_DEVICE works with them provided
-# the render node is passed into the container.
+# These builds carry VAAPI, but they load libva at run time rather than linking
+# it, so the runtime and a driver have to be in the image as well as the render
+# node being passed in. Without them ffmpeg aborts on a libva assertion the
+# moment it tries to open the device, which looks like a title that starts and
+# immediately stops.
 FROM debian:trixie-slim AS ffmpeg
 ARG TARGETARCH
 ARG FFMPEG_RELEASE=autobuild-2026-08-18-15-03
@@ -38,8 +41,14 @@ COPY --from=ffmpeg /usr/local/bin/ffmpeg /usr/local/bin/ffprobe /usr/local/bin/
 
 # One font, for the demo cards and for burning in subtitles. Named explicitly by
 # the player rather than left to fontconfig, which this base has nothing in.
+#
+# Plus the VAAPI runtime and drivers, so PROJECTOR_VAAPI_DEVICE actually works:
+# libva itself, and a driver for the two common cases (iHD for modern Intel,
+# mesa for AMD and older Intel). Leave the variable unset and none of this is
+# touched; the encode runs on the CPU.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends \
+       fonts-dejavu-core libva2 libva-drm2 intel-media-va-driver mesa-va-drivers \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
