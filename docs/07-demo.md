@@ -59,10 +59,10 @@ docker compose --profile demo start demo-stream     # back to the synthetic broa
 running is harmless as long as `demo-stream` is stopped before you press play.
 
 To try the theater: sign in as the demo admin, open the dashboard, and under
-**Theater** press **Start session**, then **Search** (an empty-ish query like
-`the` finds the demo titles) and **play** a row. Each demo title runs two
-minutes and then ends on its own, so you also see the return to intermission.
-The whole feature is in `docs/11-theater.md`.
+**Theater** on the **Broadcast** tab press **Start session**, then **Search**
+(an empty-ish query like `the` finds the demo titles) and **play** a row. Each
+demo title runs two minutes and then ends on its own, so you also see the
+return to intermission. The whole feature is in `docs/11-theater.md`.
 
 ## 7.2 Demo credentials
 
@@ -93,7 +93,8 @@ like `ember-quiet-harbor`. Find it two ways:
   ```
   docker compose --profile demo logs demo-seed
   ```
-- or signed in as the demo admin, under **Invites** on the `/admin` dashboard.
+- or signed in as the demo admin, under **Access codes** on the `/admin`
+  dashboard's **People** tab.
 
 Redeem it from the login page: click **have an invite?**, then enter the code
 with a new username, display name, and password to make a fresh viewer account.

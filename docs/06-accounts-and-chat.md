@@ -11,8 +11,8 @@ page). There is nothing to run in a terminal.
 
 ## Letting people in with invites
 
-After setup you add everyone else with single-use invite codes, from the
-**Invites** section of the dashboard:
+After setup you add everyone else with single-use invite codes, from **Access
+codes** on the dashboard's **People** tab, with the **Invites** tab selected:
 
 - **Generate a code** with the **Generate code** button. You can add an optional
   label ("who it's for") to help you keep track. Each code is a short, readable
@@ -36,7 +36,8 @@ After setup you add everyone else with single-use invite codes, from the
 An invite makes somebody a member forever. A **guest pass** is for the other
 case: one person, one broadcast, no account.
 
-- **Generate a batch** under **Guest passes** on the dashboard. Set how many you
+- **Generate a batch** on the **Guest passes** tab of **Access codes**, on the
+  dashboard's **People** tab. Set how many you
   want; each one is single use. They look the same as invite codes.
 - **Copy all unused** puts the whole batch on your clipboard, one per line. The
   intended shape is one group message with several codes in it: whoever gets
@@ -72,8 +73,9 @@ a space of about thirty million.
 ## Managing people
 
 If your account has the admin flag, sign in and open the dashboard at `/admin`
-(there is a **dashboard** link in the site nav on every page). Under **People**,
-the **Manage users** button opens the list. With no terminal you can:
+(there is a **dashboard** link in the site nav on every page). On the
+**People** tab, the **Manage users** button opens the list, and **Bans** opens
+the same window on the list of who is barred. With no terminal you can:
 
 - **Create an account** with the small **+** above the list. Enter a username and a
   password, optionally a display name, tick admin if you want, and it is made.
@@ -106,11 +108,20 @@ yourself out.
 
 ## The admin dashboard
 
-`/admin` is the channel itself rather than the people in it: your site name and
-accent color, the **Next stream** announcement, **Chat moderation** (slow mode
-and banned words), the **Stream key**, the **Overlay** URL, **Go-live
-notifications**, **Storage** limits, and the **Content** library where you
-review, pin and delete recordings and clips.
+`/admin` opens with your own watch page in a frame, and the controls under it
+are grouped in five tabs:
+
+- **Broadcast**: the theater session and the **Next stream** announcement.
+- **Content**: the library of recordings and clips you review, pin and delete,
+  and the **Storage** limits that decide how long they last.
+- **People**: accounts, bans, invite codes and guest passes.
+- **Channel**: your site name, description and accent color, **Chat
+  moderation** (slow mode and banned words), and **Go-live notifications**.
+- **Connections**: the **Stream key**, the projector, and the **Overlay** URL.
+
+The row directly under the frame is what is on tonight: the stream title and
+the game. Both feed the card on the home page and the preview anyone gets when
+they share the watch link.
 
 ## Moderators
 
@@ -156,14 +167,14 @@ all reach it like any other line.
 
 ### Slow mode and banned words
 
-Two settings under **Chat moderation** in the admin dashboard apply to everyone
-at once. Slow mode sets a minimum number of seconds between one viewer's
-messages; moderators and admins are exempt. A new install starts at 2 seconds,
-which is short enough that a conversation never notices it and long enough to
-take the edge off someone hammering the enter key. Set it to 0 to turn it off,
-or raise it when chat gets away from you. An install that was already running
-before this default arrived keeps whatever it had, so nothing changes under you
-on an update.
+Two settings under **Chat moderation**, on the dashboard's **Channel** tab,
+apply to everyone at once. Slow mode sets a minimum number of seconds between
+one viewer's messages; moderators and admins are exempt. A new install starts
+at 2 seconds, which is short enough that a conversation never notices it and
+long enough to take the edge off someone hammering the enter key. Set it to 0
+to turn it off, or raise it when chat gets away from you. An install that was
+already running before this default arrived keeps whatever it had, so nothing
+changes under you on an update.
 
 The banned words list sits behind **Open banned words list**, rather than on the
 dashboard itself, because a new install ships with about a hundred entries and

@@ -106,20 +106,19 @@ def _absolute(request, path):
 
 def _preview_text():
     """(site, title, description) for the preview, from the channel's own
-    settings. The streamer is the longest-standing admin, the same account the
-    home card calls the channel owner, so this needs no setting of its own."""
+    settings. The headline is the channel and what tonight is called; the line
+    under it is what is being played. Two facts rather than one said twice: the
+    first shape put the game in the headline and the title underneath it, which
+    read as a repeat of itself in a real share."""
     info = db.get_stream_info()
     site = info["site_name"] or "upperroom"
-    owner = db.channel_owner() or {}
-    who = owner.get("display_name") or owner.get("username") or site
     game = db.get_now_playing()
     if hub.is_live():
-        title = (
-            f"{site}: {who} is streaming {game}!" if game
-            else f"{site}: {who} is live now!"
-        )
+        headline = info["stream_title"] or "Live now"
+        title = f"{site}: {headline}"
         description = (
-            info["stream_title"] or info["stream_description"] or "Live now."
+            f"playing {game}" if game
+            else (info["stream_description"] or "Live now.")
         )
     else:
         title = site

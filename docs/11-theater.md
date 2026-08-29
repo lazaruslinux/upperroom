@@ -49,8 +49,8 @@ projector is not connected.
 
 ### Setting it up
 
-1. On your server's dashboard, open **Projector** and press **Regenerate** to
-   mint a key. Copy it.
+1. On your server's dashboard, open the **Connections** tab, find **Projector**
+   and press **Regenerate** to mint a key. Copy it.
 2. Copy your **stream key** and server address out of the **Stream key** panel
    above it, exactly as you would for OBS.
 3. On your media machine:
@@ -66,14 +66,15 @@ projector is not connected.
    Without Docker: Python 3.12, `pip install -r requirements.txt`, an `ffmpeg`
    on the path, then `python main.py`.
 
-4. Back on the dashboard, **Projector** should say *Connected*.
+4. Back on the dashboard, **Connections** > **Projector** should say
+   *Connected*.
 
 ### The settings
 
 | Variable | What it is |
 |---|---|
 | `PROJECTOR_GATE_URL` | Your gate's projector socket, `wss://your-domain/ws/projector`. Use `ws://` only on a link you already trust end to end. |
-| `PROJECTOR_KEY` | The key from the dashboard's Projector panel. |
+| `PROJECTOR_KEY` | The key from the dashboard's Projector panel (Connections). |
 | `PROJECTOR_INGEST_URL` | Where to publish, `rtmp://your-domain:1935/live`. Same host and path OBS uses. |
 | `PROJECTOR_STREAM_KEY` | The channel's stream key, from the dashboard. |
 | `JELLYFIN_URL` | Your Jellyfin server, e.g. `http://media-box:8096`. Not needed in demo mode. |
@@ -129,7 +130,8 @@ than leaving you with nothing playing.
 
 Two places, the same controls:
 
-- **The dashboard**, under **Theater**. Start the session, search your library,
+- **The dashboard**, under **Theater** on the **Broadcast** tab. Start the
+  session, search your library,
   press play on a row, stop the title, end the session.
 - **The watch page**, on a strip above chat, visible to admins only. Same
   buttons, so you can run the evening from the page you are watching on.

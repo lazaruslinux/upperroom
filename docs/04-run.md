@@ -45,12 +45,14 @@ From then on there are two ways to let people in, and they answer different
 questions.
 
 **Invite codes** are for someone you want to keep. Open the dashboard at
-`/admin`, generate a single-use code under **Invites**, and share it. They
+`/admin`, go to **People**, and generate a single-use code under **Access
+codes** with the **Invites** tab selected, then share it. They
 redeem it from the login page ("have an invite?") to make their own viewer
 account, and it is theirs from then on. No terminal, and no email is involved.
 
-**Guest passes** are for someone who just wants to watch this one. Under
-**Guest passes**, choose how many you want and generate them: each is single
+**Guest passes** are for someone who just wants to watch this one. On the
+**Guest passes** tab of the same panel, choose how many you want and generate
+them: each is single
 use and lets one person watch and chat for half an hour without making an
 account. "Copy all unused" puts the whole batch on your clipboard, one per
 line, which is the point: one message, one code each, first come first served.
@@ -66,10 +68,12 @@ itself a few minutes later.
 
 See `docs/06-accounts-and-chat.md` for the details.
 
-Everything you run the place with is on the dashboard at `/admin`: people
-(accounts, bans and invites), branding, the schedule, chat rules, the stream
-key, the overlay, notifications, storage and the library of past broadcasts
-(the recordings). `/analytics` sits beside it and holds the numbers: watch time,
+Everything you run the place with is on the dashboard at `/admin`, in five
+tabs under your own watch page: **Broadcast** (theater and the schedule),
+**Content** (past broadcasts, clips and storage limits), **People** (accounts,
+bans, invites and guest passes), **Channel** (branding, chat rules and
+notifications) and **Connections** (the stream key, the projector and the
+overlay). `/analytics` sits beside it and holds the numbers: watch time,
 broadcasts, library and invite use, plus line charts of watch time, unique
 viewers and chat messages per day over the last thirty days.
 
@@ -106,7 +110,8 @@ so retuning them is an environment change rather than a dashboard toggle.
 Clips are deleted after two days unless you pin them. That is the one retention
 limit a fresh install ships switched on, and it is deliberate: a clip is the
 thing you hand to other people, so a short life keeps a mistake from standing
-forever. Change it under **Storage**, or pin a clip to keep it regardless.
+forever. Change it under **Content** > **Storage**, or pin a clip to keep it
+regardless.
 
 ### Sharing a clip publicly
 
@@ -144,18 +149,18 @@ gate finalizes whatever it captured, starts a fresh recording while you stay
 live, and backs off if failures repeat. You may see more than one recording for a
 single broadcast when this happens; nothing is lost.
 
-Nothing is deleted automatically unless you ask for it. The admin dashboard's
-**Storage** section shows what your recordings and clips are using and how much
-room is left on the disk, and lets you set limits: a number of recordings, a
-number of days, the same two for clips, and a ceiling on the total size. Every
-one of them is off until you set it, and lowering a limit takes effect as soon
-as you save.
+Nothing is deleted automatically unless you ask for it. The **Storage** panel
+on the dashboard's **Content** tab shows what your recordings and clips are
+using and how much room is left on the disk, and lets you set limits: a number
+of recordings, a number of days, the same two for clips, and a ceiling on the
+total size. Every one of them is off until you set it, and lowering a limit
+takes effect as soon as you save.
 
 Anything you want to keep for good, pin. A pinned recording or clip is never
 removed by any limit, and it does not use up a slot in the count, so "keep the
 last 20, plus the ones I pinned" is exactly what you get. The size limit never
 removes your newest recording or newest clip, so one large broadcast cannot
-delete itself. Pin and Delete both sit next to each item under **Content**.
+delete itself. Pin and Delete both sit next to each item in the same tab.
 
 The one thing to know if you are updating an older install: it has been keeping
 only the most recent 20 recordings, from a setting in `.env`. That value is
@@ -221,7 +226,8 @@ generic one baked into the file.
   logs caddy` for certificate errors.
 - The video never starts. Confirm OBS says it is streaming. Check
   `docker compose logs mediamtx` for a connection from your address. Make sure
-  the OBS stream key matches the one shown in the dashboard Stream key panel
+  the OBS stream key matches the one shown in the dashboard's Stream key panel
+  under **Connections**
   (it looks like `live?pass=...`).
 - OBS cannot connect. The firewall rule for port 1935 may not match your current
   home IP. See `docs/01-vps-setup.md`, section 1.4.

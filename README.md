@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.8.0**. Releases are tagged in git, and the running version
+Current version: **0.9.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -99,8 +99,8 @@ only repackages the video and stays light.
 ### Chat and moderation
 
 - An admin role and a separate moderator role, each with its own dashboard.
-  Accounts, bans and invites live under People on the dashboard, alongside the
-  channel settings. Only the account holder can change their own display name, and
+  Accounts, bans, invites and guest passes all live on the dashboard's People
+  tab. Only the account holder can change their own display name, and
   deleting an account makes you type its username first.
 - Chat commands: `/timeout`, `/untimeout`, `/del`, `/purge`, `/ban`, `/unban`
   for moderators, plus `/mod` and `/unmod` for the admin. `/help` lists whatever
@@ -122,12 +122,14 @@ only repackages the video and stays light.
 - Your site name leads the pages your viewers see, with a quiet "powered by
   upperroom" underneath. Set it in the dashboard.
 - Four accent colors, applied site wide, including the browser theme color.
-- Your stream key lives in the dashboard. Copy it, or regenerate it if it leaks,
-  without touching a config file or restarting anything.
+- Your stream key lives in the dashboard, under Connections. Copy it, or
+  regenerate it if it leaks, without touching a config file or restarting
+  anything.
 - The dashboard opens with your own watch page in it: the video, the chat and
   the list of who is watching, so you can start the broadcast in OBS and keep an
   eye on the room without a second tab. A switch drops the video and keeps chat
-  alone. Every control sits under it.
+  alone. The stream title and the game sit right under the frame, and the rest
+  of the controls are grouped in five tabs below that.
 - A transparent chat overlay you add to OBS as a browser source, so the
   broadcast itself shows chat, joins, clips and highlights, with a live status
   chip and an optional operator ticker line. URL options move it to any corner,
@@ -146,13 +148,14 @@ only repackages the video and stays light.
   sign in. An hour beforehand the same announcement goes out as a reminder.
 - Installs to a phone home screen like an app, with a real icon and a link
   preview card.
-- Say what you are playing, and pasting your watch link into a chat app shows
-  it: "Northwind Live: Nell is streaming Ashfall Delta!", with a frame of the
-  stream beside it while you are live. Viewers see it on the home card too,
-  under the channel name, for as long as the broadcast runs. Pick from what you have played before or
-  type something new. Because a preview is fetched without a session, that frame
-  is reachable by anyone holding the link while you are on air; `docs/05-security.md`
-  says exactly how far that goes.
+- Name the broadcast and say what you are playing, and pasting your watch link
+  into a chat app shows both: "Northwind Live: Thursday night run" over "playing
+  Ashfall Delta", with a frame of the stream beside them while you are live.
+  Viewers see the game on the home card too, under the channel name, for as long
+  as the broadcast runs. Pick from what you have played before or type something
+  new. Because a preview is fetched without a session, that frame is reachable by
+  anyone holding the link while you are on air; `docs/05-security.md` says
+  exactly how far that goes.
 
 ### Keeping it running
 
@@ -215,8 +218,9 @@ Cloudflare account. The tutorials in `docs/` walk through each part.
 5. Open your domain in a browser. Because there are no accounts yet, it sends
    you to a setup page that creates your admin account and names your site, then
    signs you in. That page is gone for good once it has run.
-6. Open the dashboard, copy the server address and stream key out of the Stream
-   key panel, and paste them into OBS: `docs/03-obs.md`. Then go live.
+6. Open the dashboard, go to Connections, copy the server address and stream
+   key out of the Stream key panel, and paste them into OBS:
+   `docs/03-obs.md`. Then go live.
 
 If you ever lock yourself out, accounts can still be made from the command line.
 That path is described in `docs/06-accounts-and-chat.md`. Everything else about

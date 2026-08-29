@@ -111,10 +111,10 @@ That is the whole point of the feature, so it is worth knowing its shape:
 
 ### The watch page's link preview
 
-Paste your watch link into a chat app and it shows a card: who is streaming
-what, with a picture. That card is built by the app fetching the page, and a
-preview fetcher never carries a cookie, so two things have to answer without
-one.
+Paste your watch link into a chat app and it shows a card: the channel and what
+this broadcast is called, what is being played, and a picture. That card is
+built by the app fetching the page, and a preview fetcher never carries a
+cookie, so two things have to answer without one.
 
 - **The page itself, `/watch`.** What comes back is only the shell: the markup,
   the stylesheet, and the preview tags. It contains no video, no chat and no

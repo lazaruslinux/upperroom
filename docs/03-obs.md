@@ -11,11 +11,12 @@ In OBS, open Settings, then Stream.
 - Server: `rtmp://watch.example.com:1935`
 - Stream Key: copy it from the admin dashboard
 
-Sign in as an admin, open the dashboard, and find the Stream key panel. It shows
+Sign in as an admin, open the dashboard, and find the Stream key panel under
+**Connections**. It shows
 the exact server and stream key to paste here; the key looks like
 `live?pass=...`. Use the Copy key button to grab it, and Show to reveal it. The
 stream key carries the publish credentials, which is how the server knows the
-stream is allowed. Treat it like a password, and regenerate it on the dashboard
+stream is allowed. Treat it like a password, and regenerate it there
 if it ever leaks (a live broadcast keeps running; the next connection needs the
 new key). The word `live` at the start is the stream path and must stay as is,
 because the rest of the app expects a path called `live`. It is not the site
@@ -66,16 +67,18 @@ chat and the watching list, so you can keep an eye on the room without a second
 tab. **Video + chat** and **Chat only** switch between the two; the choice is
 remembered on that browser. Everything below the frame is the controls.
 
-The **Playing** row on that panel is what you are streaming. Type it, or pick
-one you have used before, and press Set; **None** clears it. It is the line a
-chat app shows when someone pastes your watch link:
+The row under the frame is what is on tonight: **Title** is what this broadcast
+is called, **Playing** is the game. Type a game, or pick one you have used
+before, and press Set; **No game** clears the game on its own. The two are what
+a chat app shows when someone pastes your watch link:
 
 ```
-Northwind Live: Nell is streaming Ashfall Delta!
+Northwind Live: Thursday night run
+playing Ashfall Delta
 ```
 
-with a frame of the stream beside it while you are live. Your viewers see it
-too, on the home page card, between the channel and the description:
+with a frame of the stream beside them while you are live. Your viewers see the
+game on the home page card too, between the channel and the description:
 
 ```
 Your stream title

@@ -219,10 +219,12 @@ document.querySelectorAll(".lib-tab[data-content]").forEach((tab) => {
   });
 });
 
-// ---- channel settings (title, description, clip cooldowns) ----
+// ---- channel settings (the identity: name, description, accent) ----
+// The stream title is NOT here any more. It changes every broadcast and it is
+// the headline of the link preview, so it lives on the console with the game;
+// loadChannel still fills it, because /api/channel is where it comes from.
 
 const chSite = document.getElementById("ch-site");
-const chTitle = document.getElementById("ch-title");
 const chDesc = document.getElementById("ch-desc");
 const chMsg = document.getElementById("ch-msg");
 
@@ -267,8 +269,8 @@ async function loadChannel() {
   let data = {};
   try { data = await (await fetch("/api/channel")).json(); } catch { return; }
   chSite.value = data.site_name || "";
-  chTitle.value = data.title || "";
   chDesc.value = data.description || "";
+  setTitleField(data.title || "");
   // On load the saved value is the real one, so both mark it and apply it.
   selectAccent(data.accent || "green");
   applyAccentToDocument(data.accent || "green");
@@ -277,16 +279,13 @@ async function loadChannel() {
 document.getElementById("ch-save").addEventListener("click", async () => {
   const siteName = chSite.value.trim();
   if (!siteName) { showChMsg("Site name cannot be empty.", false); return; }
-  const title = chTitle.value.trim();
-  if (!title) { showChMsg("Stream title cannot be empty.", false); return; }
   chMsg.hidden = true;
   try {
     const reply = await fetch("/api/stream-info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        site_name: siteName, title, description: chDesc.value.trim(),
-        accent,
+        site_name: siteName, description: chDesc.value.trim(), accent,
       }),
     });
     if (!reply.ok) {
@@ -859,14 +858,6 @@ function renderTheater(data) {
   theaterStart.hidden = theaterActive;
   theaterEnd.hidden = !theaterActive;
   theaterStop.hidden = !theaterActive || !now;
-  // A session that just started or a title that just stopped has nothing on
-  // air, so drop the frame rather than leave the last one looking current.
-  if (!theaterActive || !now) {
-    theaterThumb.hidden = true;
-    theaterThumbNone.hidden = false;
-  } else {
-    refreshTheaterThumb();
-  }
 }
 
 function renderProjector(data) {
@@ -1104,13 +1095,15 @@ function showUsersView(which) {
   });
 }
 
-function openUsers() {
-  showUsersView("list");
+function openUsers(view) {
+  showUsersView(view || "list");
   usersModal.hidden = false;
   loadUsers();
 }
 
-document.getElementById("manage-users").addEventListener("click", openUsers);
+document.getElementById("manage-users").addEventListener("click", () => openUsers());
+document.getElementById("manage-bans")
+  .addEventListener("click", () => openUsers("bans"));
 usersModal.querySelectorAll("[data-back]").forEach((b) => {
   b.addEventListener("click", () => showUsersView("list"));
 });
@@ -1400,6 +1393,10 @@ async function loadBans() {
 function renderBans() {
   const list = document.getElementById("ban-list");
   document.getElementById("ban-empty").hidden = bans.length > 0;
+  // The count rides the button that opens the list, so the People tab still
+  // says at a glance whether anyone is barred without a section of its own.
+  const opener = document.getElementById("manage-bans");
+  if (opener) opener.textContent = bans.length ? `Bans (${bans.length})` : "Bans";
   list.innerHTML = "";
   bans.forEach((b) => {
     const row = document.createElement("div");
@@ -1793,20 +1790,27 @@ function setUpConsole() {
   liveView.addEventListener("load", tellFrame);
 }
 
-// ---- what you are playing ----
-// A label on the broadcast. It is what the link preview says you are streaming,
-// so the example line under the row shows exactly what that will read.
+// ---- what is on: the title and the game ----
+// The two lines of the link preview, edited together on the console. The title
+// comes from /api/channel (loadChannel fills it); the game rides the stream
+// poll, because it changes far more often and the poll is already running.
 
+const titleInput = document.getElementById("onair-title");
 const gameInput = document.getElementById("game-input");
 const gameOptions = document.getElementById("game-options");
-const gameMsg = document.getElementById("game-msg");
+const onairMsg = document.getElementById("onair-msg");
 let savedGame = "";
 
-function showGameMsg(text, ok) {
-  gameMsg.textContent = text;
-  gameMsg.classList.toggle("good", !!ok);
-  gameMsg.classList.toggle("bad", !ok);
-  gameMsg.hidden = !text;
+function showOnAirMsg(text, ok) {
+  onairMsg.textContent = text;
+  onairMsg.classList.toggle("good", !!ok);
+  onairMsg.classList.toggle("bad", !ok);
+  onairMsg.hidden = !text;
+}
+
+// Called by loadChannel, which is the only thing that reads the saved title.
+function setTitleField(value) {
+  if (titleInput) titleInput.value = value;
 }
 
 function renderGameOptions(names) {
@@ -1818,38 +1822,49 @@ function renderGameOptions(names) {
   });
 }
 
-async function saveGame(name) {
-  showGameMsg("", true);
+// One request for both fields. `game` is sent as a plain string because an empty
+// one is a real value there (it clears the label); an empty title is refused by
+// the server, so it is only sent when there is something to send.
+async function saveOnAir({ title, game }) {
+  showOnAirMsg("", true);
+  const body = {};
+  if (title !== undefined) body.title = title;
+  if (game !== undefined) body.game = game;
   try {
     const reply = await fetch("/api/stream-info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game: name }),
+      body: JSON.stringify(body),
     });
     const data = await reply.json().catch(() => ({}));
     if (!reply.ok) {
-      showGameMsg(data.error || "Could not save that.", false);
+      showOnAirMsg(data.error || "Could not save that.", false);
       return;
     }
-    savedGame = name;
-    gameInput.value = name;
-    showGameMsg(name ? `Playing "${name}".` : "Cleared.", true);
+    if (game !== undefined) {
+      savedGame = game;
+      gameInput.value = game;
+    }
+    showOnAirMsg(game === "" ? "Saved. No game showing." : "Saved.", true);
     loadStream();          // refreshes the remembered list straight away
   } catch {
-    showGameMsg("Could not reach the server.", false);
+    showOnAirMsg("Could not reach the server.", false);
   }
 }
 
-function setUpGame() {
+function setUpOnAir() {
   if (!gameInput) return;
-  gameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") saveGame(gameInput.value.trim());
+  const save = () => saveOnAir({
+    title: titleInput.value.trim(), game: gameInput.value.trim(),
   });
-  document.getElementById("game-save")
-    .addEventListener("click", () => saveGame(gameInput.value.trim()));
+  [titleInput, gameInput].forEach((field) => {
+    field.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+  });
+  document.getElementById("onair-save").addEventListener("click", save);
+  // Clears the game on its own, so it cannot trip over an empty title box.
   document.getElementById("game-none").addEventListener("click", () => {
     gameInput.value = "";
-    saveGame("");
+    saveOnAir({ game: "" });
   });
 }
 
@@ -1938,23 +1953,89 @@ async function loadVersion() {
   } catch { /* leave the footer blank rather than show a stale guess */ }
 }
 
+// ---- the control groups ----
+// Fourteen panels stacked in one column was a page to scroll past and fourteen
+// requests fired at page open, most of them for something the operator was not
+// looking at. They are five tabs now: one group is shown at a time, and a
+// group's data is fetched the first time it is shown. The console above is not
+// a group, because it is what the page is for.
+
+const TAB_KEY = "selfstream_dash_tab";
+
+const PANEL_LOADERS = {
+  broadcast: [loadTheater],
+  content: [loadContent, loadRetention],
+  people: [loadBans, loadInvites, loadGuestPasses],
+  channel: [loadModeration, loadNotify],
+  connections: [loadStreamKey, loadOverlay, loadProjector],
+};
+
+const loadedPanels = new Set();
+
+function showPanel(name, remember) {
+  if (!PANEL_LOADERS[name]) name = "broadcast";
+  document.querySelectorAll(".admin-tabs .lib-tab").forEach((tab) => {
+    tab.classList.toggle("selected", tab.dataset.panel === name);
+  });
+  document.querySelectorAll(".admin-group").forEach((group) => {
+    group.hidden = group.dataset.panel !== name;
+  });
+  if (!loadedPanels.has(name)) {
+    loadedPanels.add(name);
+    PANEL_LOADERS[name].forEach((load) => load());
+  }
+  if (remember) {
+    try { localStorage.setItem(TAB_KEY, name); } catch (e) {}
+  }
+}
+
+function setUpPanels() {
+  document.querySelectorAll(".admin-tabs .lib-tab").forEach((tab) => {
+    tab.addEventListener("click", () => showPanel(tab.dataset.panel, true));
+  });
+  // Following /admin#people from the dashboard itself changes only the hash, so
+  // the page never reloads and nothing below would run again.
+  window.addEventListener("hashchange", () => {
+    const name = (location.hash || "").replace("#", "");
+    if (PANEL_LOADERS[name]) showPanel(name, true);
+  });
+  // A link to /admin#people lands there; otherwise carry on from wherever the
+  // last visit finished.
+  let start = (location.hash || "").replace("#", "");
+  if (!PANEL_LOADERS[start]) {
+    try { start = localStorage.getItem(TAB_KEY) || ""; } catch (e) { start = ""; }
+  }
+  showPanel(start, false);
+}
+
+// Invites and guest passes share a panel: the same job twice over, so the two
+// lists take turns rather than sitting one above the other.
+function setUpCodeTabs() {
+  const tabs = document.querySelectorAll(".lib-tab[data-codes]");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.toggle("selected", t === tab));
+      document.querySelectorAll(".codes-view").forEach((view) => {
+        view.hidden = view.dataset.codes !== tab.dataset.codes;
+      });
+    });
+  });
+}
+
 async function boot() {
   if (!(await requireAdmin())) return;
   mountNav(me, { current: "dashboard" });
   setUpConsole();
-  setUpGame();
+  setUpOnAir();
+  setUpCodeTabs();
   loadVersion();
   loadStream();
   setInterval(loadStream, 10000);
-  loadBans();
-  loadInvites();
-  loadGuestPasses();
-  loadContent();
+  // Eager despite living in the Channel tab: it owns the accent applied to the
+  // whole document, and it is where the console's title field is filled from.
   loadChannel();
-  loadModeration();
-  loadStreamKey();
-  loadTheater();
-  loadProjector();
+  // Last, so the first group's loaders run after everything above is wired.
+  setUpPanels();
   // Only while a session is open: the state moves on its own then (a title
   // ending puts the room back to intermission), and between sessions the
   // operator's own actions are the only thing that changes it. What is actually
@@ -1964,10 +2045,6 @@ async function boot() {
     loadTheater();
     loadProjector();
   }, 10000);
-  loadOverlay();
-  loadNotify();
-  loadRetention();
-  loadSchedule();
 }
 
 boot();

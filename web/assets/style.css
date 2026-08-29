@@ -1289,7 +1289,7 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
   .live-console-frame { aspect-ratio: auto; height: 68vh; max-height: none; }
   .live-console-frame.is-chat-only { height: 60vh; }
 }
-.live-console #game-msg { margin: 8px 0 0; }
+.live-console #onair-msg { margin: 8px 0 0; }
 
 /* The live-broadcast strip at the top of the dashboard. Same panel chrome as the
    rest of the page; the red dot and label follow the LIVE convention used on the
@@ -1320,8 +1320,6 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .stream-strip-rec.is-recording { color: var(--accent); }
 .stream-strip-rec.is-restarting,
 .stream-strip-rec.is-notrecording { color: var(--op); font-weight: 600; }
-.stream-strip-link { margin-left: auto; color: var(--accent); text-decoration: none; }
-.stream-strip-link:hover { text-decoration: underline; }
 
 .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
 
@@ -1374,6 +1372,18 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 .stat-card.is-static:hover { border-color: var(--border); }
 .stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; }
 .stat-label { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+
+/* ---- the dashboard's control groups ----
+   Five tabs instead of fourteen open panels. The chips are the same ones the
+   content list uses; they wrap on a phone rather than running off the side. */
+.admin-tabs { flex-wrap: wrap; margin-bottom: 20px; }
+/* Inside a group the headings space themselves, so the panels no longer carry
+   an inline margin each. The first one sits tight under the tabs. */
+.admin-group .section-title { margin-top: 1.75rem; }
+.admin-group > .section-title:first-child { margin-top: 0; }
+/* Invites and guest passes take turns inside one panel, so each view keeps the
+   column spacing the panel would have given its children directly. */
+.codes-view { display: flex; flex-direction: column; gap: 12px; }
 
 .section-title {
   font-family: var(--mono);
@@ -1947,7 +1957,9 @@ body[data-stage^="theater"] .chat-form:focus-within {
 
 /* The dashboard's theater panel reuses the same result rows. */
 .theater-status { font-family: var(--mono); font-size: 12px; margin: 0; }
-.theater-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Buttons that belong together, left to right. Not .edit-actions, which
+   pushes its two ends apart for the delete-here / save-there shape. */
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
 
 /* =========================================================================

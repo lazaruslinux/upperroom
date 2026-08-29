@@ -11,8 +11,8 @@ password: keep it to yourself, and regenerate it if it ever leaks.
 
 ## Get the URL
 
-1. Open the admin dashboard (`/admin`) and find the **Overlay** panel, just below
-   **Channel**.
+1. Open the admin dashboard (`/admin`), go to the **Connections** tab, and find
+   the **Overlay** panel at the bottom of it.
 2. Copy the URL shown there with **Copy URL**. It looks like
    `https://your-domain/overlay?key=...`.
 

@@ -7,7 +7,8 @@
 !.env.example
 
 # --- Local session / AI-assistant context (personal, never shared) ---
-CLAUDE.md
+# The glob also covers CLAUDE-archive.md.
+CLAUDE*.md
 .claude/settings.local.json
 .claude/*.local.json
 

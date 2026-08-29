@@ -53,24 +53,40 @@ def test_watch_page_is_served_without_a_session(client):
     assert 'id="video"' in resp.text          # the real page, not a stub
 
 
-def test_preview_names_the_game_while_live(client):
+def test_preview_is_the_channel_and_title_over_the_game(client):
+    # The two lines say different things: the headline is what tonight is
+    # called, the line under it is what is being played.
     setup_admin(client, username="owner", channel="Northwind Live")
-    db.update_user("owner", display_name="Nell")
+    db.set_stream_info(title="Thursday night run")
     db.set_now_playing("Ashfall Delta")
     go_live()
     body = client.get("/watch").text
     assert (
         '<meta property="og:title" '
-        'content="Northwind Live: Nell is streaming Ashfall Delta!">'
+        'content="Northwind Live: Thursday night run">'
+    ) in body
+    assert (
+        '<meta property="og:description" content="playing Ashfall Delta">'
     ) in body
 
 
-def test_preview_falls_back_to_live_now_with_no_game(client):
+def test_preview_headline_falls_back_when_there_is_no_title(client):
     setup_admin(client, username="owner", channel="Northwind Live")
-    db.update_user("owner", display_name="Nell")
+    db.set_stream_info(title="")
     go_live()
     body = client.get("/watch").text
-    assert 'content="Northwind Live: Nell is live now!"' in body
+    assert '<meta property="og:title" content="Northwind Live: Live now">' in body
+
+
+def test_preview_description_falls_back_when_nothing_is_playing(client):
+    # No game, so the line under the headline is the channel's own description
+    # rather than an empty "playing".
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_stream_info(title="Thursday night run", description="Games, mostly.")
+    go_live()
+    body = client.get("/watch").text
+    assert '<meta property="og:description" content="Games, mostly.">' in body
+    assert 'content="playing' not in body
 
 
 def test_preview_offline_does_not_claim_a_stream(client):
@@ -78,7 +94,7 @@ def test_preview_offline_does_not_claim_a_stream(client):
     db.set_now_playing("Ashfall Delta")
     body = client.get("/watch").text
     assert '<meta property="og:title" content="Northwind Live">' in body
-    assert "is streaming" not in body
+    assert 'content="playing' not in body
 
 
 def test_preview_escapes_the_channel_settings(client):
