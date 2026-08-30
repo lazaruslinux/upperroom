@@ -325,3 +325,19 @@ def test_an_offline_channel_never_names_a_film(client):
     start_showing("The Long Afternoon", 2019)
     body = client.get("/watch").text
     assert "The Long Afternoon" not in body
+
+
+def test_the_preview_names_an_episode_by_its_show(client):
+    # His ask: "playing Silo (2023) S3E1", not the episode's own name, which
+    # would say nothing to somebody reading a shared link.
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_stream_info(title="Film night")
+    session_id = db.create_theater_session(int(time.time()))
+    db.set_theater_now(
+        session_id, jf_id="ep1", title="Freedom Day", year=2023,
+        series="Silo", season=3, episode=1,
+    )
+    go_live()
+    body = client.get("/watch").text
+    assert '<meta property="og:description" content="playing Silo (2023) S3E1">' in body
+    assert "Freedom Day" not in body

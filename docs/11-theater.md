@@ -1,8 +1,8 @@
 # 11. Theater
 
 Theater is watching something together. Instead of broadcasting yourself, you
-put on a title from your own media library and everyone in the room watches it
-at the same time, with the same chat they always have.
+put on a film or an episode from your own media library and everyone in the
+room watches it at the same time, with the same chat they always have.
 
 It is not a second video path. What plays reaches your viewers over exactly the
 same ingest, the same MediaMTX, and the same watch page as an OBS broadcast, so
@@ -136,8 +136,8 @@ than leaving you with nothing playing.
 Two places, the same controls:
 
 - **The dashboard**, under **Theater** on the **Broadcast** tab. Start the
-  session, search your library,
-  press play on a row, stop the title, end the session.
+  session, search your library, press play on a row, stop the title, end the
+  session.
 - **The watch page**, on a strip above chat, visible to admins only. Same
   buttons, so you can run the evening from the page you are watching on.
 
@@ -147,6 +147,19 @@ A normal evening:
    announcement goes out once.
 2. **Play** a title. Search, pick a row, press play. The Now showing card covers
    the few seconds before the picture arrives.
+
+   Searching finds **films and shows**, each with its poster. A film has a
+   **play** button. A show has an **episodes** button instead, because a show is
+   not a thing you can put on: pressing it opens that show's run, with a chip
+   per season and the episodes of the season you are looking at. Pick one and
+   press play, or press **back** to return to what you searched for. A show with
+   a single season shows no chips, since there would be nothing to choose
+   between.
+
+   An episode is named by its show wherever it appears: chat says
+   `Silo (2023) S3E1, "Freedom Day" selected`, and a shared link reads
+   `playing Silo (2023) S3E1`. The year is the show's, not the year that season
+   happened to air, because that is the year anybody knows the show by.
 3. When it ends, or when you press **stop**, the room returns to intermission.
    Chat is untouched. Play the next one.
 4. **End session** when the evening is over. Whatever is playing stops and the

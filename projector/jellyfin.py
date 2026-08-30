@@ -1,10 +1,10 @@
 """
 Reading a Jellyfin library.
 
-Only what the projector needs: find movies by name, read one item's details,
-fetch its poster, and build the URL ffmpeg reads the file from. The API key is
-passed in and never logged; the URL builders are pure so they can be asserted
-without a server.
+Only what the projector needs: find titles by name, list a series' episodes,
+read one item's details, fetch its poster, and build the URL ffmpeg reads the
+file from. The API key is passed in and never logged; the URL builders are pure
+so they can be asserted without a server.
 """
 
 import logging
@@ -26,15 +26,30 @@ def headers(api_key):
 
 
 def search_url(base, query, limit=25):
-    """The /Items search for movies matching `query`."""
+    """The /Items search for films and shows matching `query`.
+
+    Series come back as their own kind of row rather than as a pile of episodes:
+    a show has one name worth searching for, and its episodes are asked for
+    separately once somebody picks it."""
     params = {
         "searchTerm": query,
-        "IncludeItemTypes": "Movie",
+        "IncludeItemTypes": "Movie,Series",
         "Recursive": "true",
         "Limit": str(limit),
         "Fields": SEARCH_FIELDS,
     }
     return f"{base}/Items?{urlencode(params)}"
+
+
+def episodes_url(base, series_id):
+    """Every episode of one series, in order, seasons and all.
+
+    /Shows/{id}/Episodes rather than a filtered /Items list: it is the endpoint
+    built for this, it sorts by season and number already, and it returns the
+    whole run in one call so the seasons can be grouped without a request each.
+    Verified against Jellyfin 10.11."""
+    params = {"Fields": SEARCH_FIELDS}
+    return f"{base}/Shows/{quote(str(series_id))}/Episodes?{urlencode(params)}"
 
 
 def item_url(base, item_id):
@@ -123,10 +138,19 @@ def has_subtitles(item):
     return False
 
 
+KINDS = {"Series": "series", "Episode": "episode"}
+
+
 def to_result(item):
-    """One library item as the gate's search reply shape."""
-    return {
+    """One library item as the gate's search reply shape.
+
+    `kind` is what tells the two sides apart: a film and an episode can be put
+    on air, a series cannot, and asking a series for its episodes is the only
+    thing to do with one."""
+    kind = KINDS.get(item.get("Type"), "movie")
+    result = {
         "jf_id": str(item.get("Id") or ""),
+        "kind": kind,
         "title": str(item.get("Name") or "Untitled"),
         "year": item.get("ProductionYear")
         if isinstance(item.get("ProductionYear"), int) else None,
@@ -138,6 +162,20 @@ def to_result(item):
         "subtitle_index": text_subtitle_index(item),
         "media_source_id": media_source_id(item),
     }
+    if kind == "episode":
+        # An episode's own name is the episode's; the show's name and its place
+        # in the run are what identify it to anybody reading a chat line.
+        result["series"] = str(item.get("SeriesName") or "")
+        result["series_id"] = str(item.get("SeriesId") or "")
+        result["season"] = _number(item.get("ParentIndexNumber"))
+        result["episode"] = _number(item.get("IndexNumber"))
+    return result
+
+
+def _number(value):
+    """A season or episode number, or None. A special outside the numbering has
+    neither, and guessing one would put it in the wrong place."""
+    return value if isinstance(value, int) else None
 
 
 def parse_items(payload):
@@ -155,13 +193,55 @@ async def search(base, api_key, query, limit=25):
         return parse_items(reply.json())
 
 
+async def episodes(base, api_key, series_id):
+    """Every episode of one series, each carrying the show's own year.
+
+    An episode's ProductionYear is the year that episode aired, so a later
+    season would name the show by a year nobody knows it as. The series is
+    fetched once and its year put on every row instead."""
+    async with httpx.AsyncClient(timeout=TIMEOUT) as http:
+        reply = await http.get(
+            episodes_url(base, series_id), headers=headers(api_key)
+        )
+        reply.raise_for_status()
+        found = parse_items(reply.json())
+        show = await _series(http, base, api_key, series_id)
+    for row in found:
+        row["series_year"] = show.get("year") if show else None
+        if show and not row.get("series"):
+            row["series"] = show.get("title") or ""
+    return found
+
+
+async def _series(http, base, api_key, series_id):
+    """The series itself, for its name and year. Best effort: losing it costs a
+    year in a label, not the episode list."""
+    try:
+        reply = await http.get(item_url(base, series_id), headers=headers(api_key))
+        reply.raise_for_status()
+        found = parse_items(reply.json())
+        return found[0] if found else None
+    except Exception:
+        logger.info("could not read the series behind %s", series_id, exc_info=True)
+        return None
+
+
 async def item(base, api_key, item_id):
-    """One title's details, or None when the library has no such id."""
+    """One title's details, or None when the library has no such id.
+
+    An episode gets the show's year folded in the same way the episode list
+    does, because this is what the gate stores as what is on air."""
     async with httpx.AsyncClient(timeout=TIMEOUT) as http:
         reply = await http.get(item_url(base, item_id), headers=headers(api_key))
         reply.raise_for_status()
         found = parse_items(reply.json())
-        return found[0] if found else None
+        if not found:
+            return None
+        found = found[0]
+        if found["kind"] == "episode" and found.get("series_id"):
+            show = await _series(http, base, api_key, found["series_id"])
+            found["series_year"] = show.get("year") if show else None
+        return found
 
 
 async def art(base, api_key, item_id, max_height=900):

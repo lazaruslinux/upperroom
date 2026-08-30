@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 import db
 import theater
 from auth import admin_user, session_user
-from config import MAX_THEATER_QUERY, MIN_THEATER_QUERY
+from config import MAX_THEATER_EPISODES, MAX_THEATER_QUERY, MIN_THEATER_QUERY
 from projector import ProjectorError, link
 
 router = APIRouter()
@@ -103,6 +103,41 @@ async def search(request: Request, q: str = ""):
     except ProjectorError:
         return _unavailable()
     return {"results": theater.clean_results(results)}
+
+
+@router.get("/api/admin/theater/episodes")
+async def episodes(request: Request, series: str = ""):
+    """One show's episodes, asked for after its row is picked out of a search.
+
+    The whole run in one reply rather than a request per season: the library
+    returns it that way, and a picker that has every episode can group them
+    without going back for each season the operator opens."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not theater.SAFE_ID.match(str(series or "")):
+        return JSONResponse({"error": "Unknown show."}, status_code=400)
+    try:
+        results = await link.rpc("episodes", {"series": series})
+    except ProjectorError:
+        return _unavailable()
+    return {
+        "episodes": theater.clean_results(results, limit=MAX_THEATER_EPISODES)
+    }
+
+
+@router.get("/api/admin/theater/art")
+async def art(request: Request, jf_id: str = ""):
+    """Where one title's poster is, fetching it from the projector the first
+    time. Answers with a null rather than an error when the library has no
+    picture: a missing poster is a row without a picture, not a failed search."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if not theater.SAFE_ID.match(str(jf_id or "")):
+        return JSONResponse({"error": "Unknown title."}, status_code=400)
+    try:
+        return {"art": await theater.poster(jf_id)}
+    except ProjectorError:
+        return {"art": None}
 
 
 @router.get("/api/admin/theater/projector")

@@ -75,6 +75,16 @@ async def do_search(query):
     )
 
 
+async def do_episodes(series_id):
+    """Every episode of one series, in order. Asked for only after somebody
+    picks a show out of a search, so this never runs on its own."""
+    if config.DEMO:
+        return demo.episodes(series_id)
+    return await jellyfin.episodes(
+        config.JELLYFIN_URL, config.JELLYFIN_API_KEY, series_id
+    )
+
+
 async def do_art(jf_id):
     raw = (await demo.art(jf_id)) if config.DEMO else (
         await jellyfin.art(config.JELLYFIN_URL, config.JELLYFIN_API_KEY, jf_id)
@@ -242,6 +252,10 @@ async def handle(socket, message):
         elif method == "search":
             await socket.send(
                 reply(request_id, await do_search(str(params.get("query") or "")))
+            )
+        elif method == "episodes":
+            await socket.send(
+                reply(request_id, await do_episodes(str(params.get("series") or "")))
             )
         elif method == "art":
             await socket.send(

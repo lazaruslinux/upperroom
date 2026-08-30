@@ -316,7 +316,14 @@ CREATE TABLE IF NOT EXISTS theater_sessions (
     now_year INTEGER,
     now_runtime INTEGER,
     now_synopsis TEXT,
-    now_art TEXT
+    now_art TEXT,
+    -- An episode is not identified by its own name: "Freedom Day" says nothing
+    -- without the show it belongs to and its place in the run. A film leaves
+    -- all three null. now_year holds the SHOW's year for an episode, because
+    -- that is the year anybody knows the show by.
+    now_series TEXT,
+    now_season INTEGER,
+    now_episode INTEGER
 );
 
 -- What the streamer has said they are playing, kept so the dashboard can offer
@@ -408,6 +415,11 @@ def init_db():
         # no key, the projector socket cannot authenticate at all, which is the
         # right default for a machine that reaches out to this server.
         _ensure_column(conn, "channel_settings", "projector_key", "TEXT")
+        # Theater grew from films to shows. A session that predates this has no
+        # episode on air, so null is exactly right for every existing row.
+        _ensure_column(conn, "theater_sessions", "now_series", "TEXT")
+        _ensure_column(conn, "theater_sessions", "now_season", "INTEGER")
+        _ensure_column(conn, "theater_sessions", "now_episode", "INTEGER")
         # An operator message line the overlay scrolls along the bottom. Empty by
         # default so an existing channel shows nothing new until it is set, and
         # NOT NULL so a reader never has to guard for a missing value.
@@ -1033,15 +1045,18 @@ def set_theater_state(session_id, state):
 
 
 def set_theater_now(session_id, title=None, year=None, runtime=None,
-                    synopsis=None, art=None, jf_id=None):
+                    synopsis=None, art=None, jf_id=None, series=None,
+                    season=None, episode=None):
     """Record what is on air, or clear it when called with nothing (the title
     stopped). Written as one statement so a half-set title cannot be read."""
     with connect() as conn:
         conn.execute(
             "UPDATE theater_sessions SET now_jf_id = ?, now_title = ?, "
-            "now_year = ?, now_runtime = ?, now_synopsis = ?, now_art = ? "
+            "now_year = ?, now_runtime = ?, now_synopsis = ?, now_art = ?, "
+            "now_series = ?, now_season = ?, now_episode = ? "
             "WHERE id = ?",
-            (jf_id, title, year, runtime, synopsis, art, session_id),
+            (jf_id, title, year, runtime, synopsis, art, series, season,
+             episode, session_id),
         )
 
 
@@ -1060,7 +1075,8 @@ def end_theater_session(session_id, ended_at):
         conn.execute(
             "UPDATE theater_sessions SET state = 'ended', ended_at = ?, "
             "now_jf_id = NULL, now_title = NULL, now_year = NULL, "
-            "now_runtime = NULL, now_synopsis = NULL, now_art = NULL "
+            "now_runtime = NULL, now_synopsis = NULL, now_art = NULL, "
+            "now_series = NULL, now_season = NULL, now_episode = NULL "
             "WHERE id = ?",
             (ended_at, session_id),
         )

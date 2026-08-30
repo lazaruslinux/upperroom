@@ -916,43 +916,32 @@ async function theaterAction(path, body) {
   }
 }
 
-function renderTheaterResults(results) {
-  theaterResults.textContent = "";
-  results.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "ts-row";
-    const label = document.createElement("div");
-    label.className = "ts-label";
-    const title = document.createElement("span");
-    title.className = "ts-title";
-    title.textContent = item.title;
-    label.appendChild(title);
-    const bits = [];
-    if (item.year) bits.push(item.year);
-    if (item.runtime_min) bits.push(`${item.runtime_min} min`);
-    if (item.has_subtitles) bits.push("subtitles");
-    if (bits.length) {
-      const meta = document.createElement("span");
-      meta.className = "ts-meta";
-      meta.textContent = bits.join(" · ");
-      label.appendChild(meta);
-    }
-    row.appendChild(label);
-    const play = document.createElement("button");
-    play.type = "button";
-    play.className = "chip-btn";
-    play.textContent = "play";
-    play.addEventListener("click", async () => {
-      play.disabled = true;
+// The rows themselves live in theater-picker.js, shared with the watch page's
+// host modal so the two cannot drift. What stays here is where a play comes
+// from and where a message goes.
+let lastResults = [];
+
+function pickerOptions() {
+  return {
+    onPlay: async (item) => {
       const done = await theaterAction("/api/admin/theater/play", {
         jf_id: item.jf_id, subtitles: theaterSubs.checked,
       });
       if (done) showTheaterMsg(`Playing "${item.title}".`, true);
-      play.disabled = false;
-    });
-    row.appendChild(play);
-    theaterResults.appendChild(row);
-  });
+      return !!done;
+    },
+    // Back out of a show's episodes to whatever the search found.
+    onBack: () => renderTheaterResults(lastResults),
+    message: (text, ok) => {
+      if (!text) { theaterMsg.hidden = true; return; }
+      showTheaterMsg(text, ok);
+    },
+  };
+}
+
+function renderTheaterResults(results) {
+  lastResults = results;
+  theaterPicker.render(theaterResults, results, pickerOptions());
 }
 
 document.getElementById("theater-search").addEventListener("click", async () => {

@@ -71,6 +71,35 @@ def stream_transition(going_online, theater_active):
 
 # ---- What viewers see -----------------------------------------------------
 
+def episode_code(season, episode):
+    """`S3E1`, or as much of it as the library knows. A special with no number
+    has no code rather than a made-up one."""
+    if not isinstance(season, int) and not isinstance(episode, int):
+        return ""
+    parts = []
+    if isinstance(season, int):
+        parts.append(f"S{season}")
+    if isinstance(episode, int):
+        parts.append(f"E{episode}")
+    return "".join(parts)
+
+
+def now_label(session):
+    """What is on air as one line, the same wherever it is said.
+
+    A film is its own name and year. An episode is the SHOW's name and year plus
+    its place in the run: "Freedom Day" identifies nothing on its own, while
+    "Silo (2023) S3E1" identifies it to anybody."""
+    if not session or not session["now_title"]:
+        return ""
+    series = session["now_series"]
+    name = series or session["now_title"]
+    year = session["now_year"]
+    label = f"{name} ({year})" if year else name
+    code = episode_code(session["now_season"], session["now_episode"])
+    return f"{label} {code}" if code else label
+
+
 def public_now(session):
     """The on-air title as viewers may see it, or None. Deliberately without the
     library id: what the operator's library calls a film is their business, and
@@ -80,6 +109,13 @@ def public_now(session):
     return {
         "title": session["now_title"],
         "year": session["now_year"],
+        # Null on a film. A page showing an episode wants the show's name and
+        # the numbering, not just the episode's own title.
+        "series": session["now_series"],
+        "season": session["now_season"],
+        "episode": session["now_episode"],
+        # Composed here so every surface says it the same way.
+        "label": now_label(session),
         "runtime_min": session["now_runtime"],
         "synopsis": session["now_synopsis"] or "",
         "art": f"/media/art/{session['now_art']}" if session["now_art"] else None,
@@ -176,6 +212,23 @@ def art_filename(jf_id):
     return f"{jf_id}.jpg"
 
 
+async def poster(jf_id):
+    """The stored poster for one title as `/media/art/<file>`, fetching it from
+    the projector the first time. None when the library has no picture for it.
+
+    Cached on disk deliberately: a search of twenty-five rows would otherwise ask
+    the projector for twenty-five posters every time it was run, and the poster
+    for a title does not change."""
+    name = art_filename(jf_id)
+    if not name:
+        return None
+    if os.path.exists(os.path.join(ART_DIR, name)):
+        return f"/media/art/{name}"
+    reply = await link.rpc("art", {"jf_id": jf_id})
+    saved = save_art(jf_id, (reply or {}).get("jpeg_b64")) if isinstance(reply, dict) else None
+    return f"/media/art/{saved}" if saved else None
+
+
 def save_art(jf_id, jpeg_b64):
     """Re-encode a poster from the projector and store it. Returns the filename,
     or None if there was nothing usable.
@@ -208,12 +261,19 @@ def save_art(jf_id, jpeg_b64):
     return name
 
 
-def clean_results(results):
-    """Trim a projector's search reply to the fields the dashboard uses, capped
-    in count and in length, so a misbehaving library cannot push a wall of text
-    through the admin page."""
+KINDS = ("movie", "series", "episode")
+
+
+def clean_results(results, limit=MAX_THEATER_RESULTS):
+    """Trim a projector's reply to the fields the dashboard uses, capped in
+    count and in length, so a misbehaving library cannot push a wall of text
+    through the admin page.
+
+    `limit` is higher for an episode list than for a search: a search is a page
+    of choices, while a show's run is the whole run and cutting it would hide a
+    season with nothing to say it had happened."""
     cleaned = []
-    for item in (results or [])[:MAX_THEATER_RESULTS]:
+    for item in (results or [])[:limit]:
         if not isinstance(item, dict):
             continue
         jf_id = str(item.get("jf_id") or "")
@@ -221,14 +281,29 @@ def clean_results(results):
             continue
         year = item.get("year")
         runtime = item.get("runtime_min")
-        cleaned.append({
+        kind = item.get("kind")
+        kind = kind if kind in KINDS else "movie"
+        row = {
             "jf_id": jf_id,
+            "kind": kind,
             "title": str(item.get("title") or "Untitled")[:200],
             "year": int(year) if isinstance(year, int) else None,
             "runtime_min": int(runtime) if isinstance(runtime, int) else None,
             "synopsis": str(item.get("synopsis") or "")[:1000],
             "has_subtitles": bool(item.get("has_subtitles")),
-        })
+        }
+        if kind == "episode":
+            season = item.get("season")
+            number = item.get("episode")
+            show_year = item.get("series_year")
+            row["series"] = str(item.get("series") or "")[:200]
+            row["season"] = int(season) if isinstance(season, int) else None
+            row["episode"] = int(number) if isinstance(number, int) else None
+            # The show's year wins over the episode's: it is what the show is
+            # known by, and a later season would otherwise rename it.
+            if isinstance(show_year, int):
+                row["year"] = show_year
+        cleaned.append(row)
     return cleaned
 
 
@@ -258,15 +333,20 @@ async def play(jf_id, subtitles=True):
         "play", {"jf_id": jf_id, "subtitles": bool(subtitles)}, timeout=PLAY_TIMEOUT
     )
     detail = detail if isinstance(detail, dict) else {}
+    # One cleaning path for what the projector says, whether it came back from a
+    # search or from playing, so a field can only be trusted in one shape.
+    detail = (clean_results([{**detail, "jf_id": jf_id}]) or [{}])[0]
     db.set_theater_now(
         session["id"],
         jf_id=jf_id,
-        title=str(detail.get("title") or "")[:200] or "Now playing",
-        year=detail.get("year") if isinstance(detail.get("year"), int) else None,
-        runtime=(detail.get("runtime_min")
-                 if isinstance(detail.get("runtime_min"), int) else None),
-        synopsis=str(detail.get("synopsis") or "")[:1000],
+        title=detail.get("title") or "Now playing",
+        year=detail.get("year"),
+        runtime=detail.get("runtime_min"),
+        synopsis=detail.get("synopsis") or "",
         art=art,
+        series=detail.get("series"),
+        season=detail.get("season"),
+        episode=detail.get("episode"),
     )
     session = db.get_active_theater_session()
     await hub.narrate(_now_showing_line(session))
@@ -275,11 +355,12 @@ async def play(jf_id, subtitles=True):
 
 
 def _now_showing_line(session):
-    """What the room is told when a title goes on: the title, its year when the
-    library knows one, and an invitation."""
-    title = (session or {})["now_title"] or "The next title"
-    year = (session or {})["now_year"]
-    named = f"{title} ({year})" if year else title
+    """What the room is told when a title goes on. An episode is named by its
+    show and its place in the run, with its own title after it: the code says
+    which one, the name says what it is called."""
+    named = now_label(session) or "The next title"
+    if (session or {})["now_series"] and session["now_title"]:
+        named = f'{named}, "{session["now_title"]}"'
     return f"{named} selected. Enjoy the show!"
 
 

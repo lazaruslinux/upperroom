@@ -313,6 +313,10 @@ def test_the_now_showing_payload_names_the_title_but_never_the_library_id(client
     assert now == {
         "title": "The Long Afternoon", "year": 2019, "runtime_min": 95,
         "synopsis": "A synopsis.", "art": "/media/art/abc123.jpg",
+        # A film belongs to no show, so the episode fields are empty and the
+        # label is just the title and its year.
+        "series": None, "season": None, "episode": None,
+        "label": "The Long Afternoon (2019)",
     }
     assert "abc123" not in str(now["title"])
 
@@ -362,7 +366,9 @@ def test_search_proxies_the_projector_and_trims_what_comes_back(client):
     results = client.get("/api/admin/theater/search?q=afternoon").json()["results"]
     assert stub.sent[0]["method"] == "search"
     assert stub.sent[0]["params"] == {"query": "afternoon"}
-    assert results == [PLAY_DETAIL]
+    # A row with no kind of its own is a film: a library item that does not say
+    # it is a show is not one, and a play button on a folder plays nothing.
+    assert results == [{**PLAY_DETAIL, "kind": "movie"}]
 
 
 def test_a_search_result_with_an_unusable_id_is_dropped(client):
@@ -671,3 +677,109 @@ def test_the_idle_sweep_clears_a_night_with_no_sequel(client):
     # And it does not keep firing on an already empty room.
     asyncio.run(media.sweep_idle_chat())
     assert hub.has_backlog() is False
+
+
+# ---- shows, seasons and episodes ------------------------------------------
+# Television arrived after films did. What matters is that an episode is
+# identified by its SHOW rather than by its own name: "Freedom Day" says
+# nothing, "Silo (2023) S3E1" says everything.
+
+EPISODE = {
+    "jf_id": "ep1",
+    "kind": "episode",
+    "title": "Freedom Day",
+    "series": "Silo",
+    "series_year": 2023,
+    "season": 3,
+    "episode": 1,
+    "year": 2025,               # the year THIS episode aired
+    "runtime_min": 59,
+    "synopsis": "An episode.",
+    "has_subtitles": True,
+}
+
+
+def test_an_episode_is_labelled_by_its_show_not_its_own_name(client):
+    setup_admin(client, username="owner")
+    start(client)
+    session = db.get_active_theater_session()
+    db.set_theater_now(
+        session["id"], jf_id="ep1", title="Freedom Day", year=2023,
+        series="Silo", season=3, episode=1,
+    )
+    now = client.get("/api/theater").json()["now"]
+    assert now["label"] == "Silo (2023) S3E1"
+    assert now["title"] == "Freedom Day"        # still available for the card
+    assert now["series"] == "Silo" and now["season"] == 3 and now["episode"] == 1
+
+
+def test_a_special_with_no_number_is_not_given_one(client):
+    setup_admin(client, username="owner")
+    start(client)
+    session = db.get_active_theater_session()
+    db.set_theater_now(
+        session["id"], jf_id="ep2", title="Behind the Scenes", year=2023,
+        series="Silo", season=0, episode=None,
+    )
+    assert client.get("/api/theater").json()["now"]["label"] == "Silo (2023) S0"
+
+
+def test_the_show_year_beats_the_episode_year_when_results_are_cleaned():
+    # A season that aired later must not rename the show to a year nobody knows
+    # it by. The projector sends both; only one survives.
+    cleaned = theater.clean_results([EPISODE])[0]
+    assert cleaned["year"] == 2023
+    assert cleaned["series"] == "Silo"
+    assert cleaned["season"] == 3 and cleaned["episode"] == 1
+
+
+def test_cleaning_keeps_a_series_row_as_a_series():
+    cleaned = theater.clean_results([
+        {"jf_id": "s1", "kind": "series", "title": "Silo", "year": 2023},
+    ])[0]
+    assert cleaned["kind"] == "series"
+    # A show is not playable, so it carries no episode numbering of its own.
+    assert "season" not in cleaned
+
+
+def test_an_unknown_kind_is_treated_as_a_film():
+    cleaned = theater.clean_results([
+        {"jf_id": "x1", "kind": "collection", "title": "Something"},
+    ])[0]
+    assert cleaned["kind"] == "movie"
+
+
+def test_the_episodes_route_asks_the_projector_for_one_show(client):
+    setup_admin(client, username="owner")
+    stub = attach(StubProjector(replies={"episodes": [EPISODE]}))
+    body = client.get("/api/admin/theater/episodes?series=s1").json()
+    assert stub.sent[0]["method"] == "episodes"
+    assert stub.sent[0]["params"] == {"series": "s1"}
+    assert [(e["season"], e["episode"]) for e in body["episodes"]] == [(3, 1)]
+
+
+def test_the_episodes_route_refuses_an_id_it_would_not_write_to_disk(client):
+    setup_admin(client, username="owner")
+    attach(StubProjector(replies={"episodes": []}))
+    assert client.get(
+        "/api/admin/theater/episodes?series=../../etc/passwd"
+    ).status_code == 400
+
+
+def test_a_viewer_cannot_list_a_shows_episodes(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    login(client, "viewer")
+    assert client.get("/api/admin/theater/episodes?series=s1").status_code == 403
+
+
+def test_the_chat_line_names_the_episode_and_its_title(client):
+    setup_admin(client, username="owner")
+    start(client)
+    session = db.get_active_theater_session()
+    db.set_theater_now(
+        session["id"], jf_id="ep1", title="Freedom Day", year=2023,
+        series="Silo", season=3, episode=1,
+    )
+    line = theater._now_showing_line(db.get_active_theater_session())
+    assert line == 'Silo (2023) S3E1, "Freedom Day" selected. Enjoy the show!'

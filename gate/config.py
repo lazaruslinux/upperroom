@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.10.1"
+VERSION = "0.11.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -284,6 +284,9 @@ CLIP_KEYFRAME_SLACK = 2
 MIN_THEATER_QUERY = 2
 MAX_THEATER_QUERY = 64
 MAX_THEATER_RESULTS = 25
+# A show's whole run, not a page of it. Cutting an episode list at the search cap
+# would hide a season with nothing on screen to say it had been hidden.
+MAX_THEATER_EPISODES = 500
 MAX_THEATER_ART_BYTES = 2 * 1024 * 1024
 # Posters are shown at a few hundred pixels; anything larger is re-encoded down.
 THEATER_ART_MAX = (600, 900)

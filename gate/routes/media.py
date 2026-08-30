@@ -117,7 +117,9 @@ def _on_the_projector():
     now = state["now"]
     if not now:
         return state["active"], None
-    return True, (f"{now['title']} ({now['year']})" if now["year"] else now["title"])
+    # The label is composed in one place, so a film reads "Name (Year)" and an
+    # episode reads "Show (Year) S3E1" wherever it is said.
+    return True, (now["label"] or now["title"])
 
 
 def _preview_text():

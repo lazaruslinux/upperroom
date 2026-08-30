@@ -62,7 +62,10 @@ To try the theater: sign in as the demo admin, open the dashboard, and under
 **Theater** on the **Broadcast** tab press **Start session**, then **Search**
 (an empty-ish query like `the` finds the demo titles) and **play** a row. Each
 demo title runs two minutes and then ends on its own, so you also see the
-return to intermission. The whole feature is in `docs/11-theater.md`.
+return to intermission. Among the films is one demo **show**, The Standing
+Stones, with two short seasons: its row has an **episodes** button rather than
+a play button, which is what the episode picker looks like on a real library.
+The whole feature is in `docs/11-theater.md`.
 
 ## 7.2 Demo credentials
 

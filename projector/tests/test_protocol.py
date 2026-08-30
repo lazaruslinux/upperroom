@@ -33,16 +33,45 @@ def test_the_key_rides_the_query_string_of_the_gate_url():
 
 
 def test_the_demo_catalog_searches_by_title_and_lists_everything_when_blank():
-    assert len(demo.search("")) == 3
+    # Three films and the one show.
+    assert len(demo.search("")) == 4
     assert [i["title"] for i in demo.search("harbour")] == ["Harbour Lights"]
     assert demo.search("nothing like this") == []
 
 
+def test_the_demo_show_is_found_but_its_episodes_are_not_searched():
+    # A real library works this way too: you find the show by name, then ask it
+    # for its episodes. Searching an episode title finds nothing.
+    found = demo.search("standing")
+    assert [i["kind"] for i in found] == ["series"]
+    assert demo.search("the ford") == []
+
+
+def test_the_demo_show_lists_its_episodes_in_order():
+    episodes = demo.episodes("demo-show")
+    assert [(e["season"], e["episode"]) for e in episodes] == [
+        (1, 1), (1, 2), (1, 3), (2, 1), (2, 2),
+    ]
+    assert {e["series"] for e in episodes} == {"The Standing Stones"}
+    # The show's year, not the year the season aired: nobody calls it by that.
+    assert {e["series_year"] for e in episodes} == {2020}
+    assert demo.episodes("demo-one") == []
+
+
 def test_demo_results_never_leak_internal_fields():
     for item in demo.search(""):
-        assert set(item) == {
-            "jf_id", "title", "year", "runtime_min", "synopsis", "has_subtitles"
+        assert set(item) <= {
+            "jf_id", "kind", "title", "year", "runtime_min", "synopsis",
+            "has_subtitles",
         }
+    for item in demo.episodes("demo-show"):
+        assert set(item) <= {
+            "jf_id", "kind", "title", "year", "runtime_min", "synopsis",
+            "has_subtitles", "series", "series_id", "series_year", "season",
+            "episode",
+        }
+    # Whatever the shape, the internal one never rides along.
+    assert not any("color" in i for i in demo.search("") + demo.episodes("demo-show"))
 
 
 def test_demo_ids_are_findable_and_unknown_ones_are_not():

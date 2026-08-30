@@ -131,7 +131,10 @@ cookie, so two things have to answer without one.
 - The preview tags carry your site name, your stream title or description, and
   what is being played. Nothing else about the channel, no account names, and
   nothing at all about your viewers.
-- **During a theater session that line is the film, by name and year.** This is
+- **During a theater session that line is what is on the projector**: a film by
+  name and year, or an episode as its show, that show's year, and its place in
+  the run (`playing Silo (2023) S3E1`). The episode's own title is not in it.
+  This is
   the one place a title leaves the account wall: `/api/theater`, where the watch
   page reads it, refuses anyone without a session. Anyone holding your watch
   link can therefore see what you are showing tonight without an account. That

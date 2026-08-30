@@ -74,6 +74,9 @@ def test_parse_items_maps_the_fields_the_gate_asked_for():
     }]}
     assert jellyfin.parse_items(payload) == [{
         "jf_id": "abc123",
+        # Nothing says otherwise, so it is a film: a library item with no Type
+        # is not a show, and guessing one would put a play button on a folder.
+        "kind": "movie",
         "title": "The Long Afternoon",
         "year": 2019,
         "runtime_min": 95,
@@ -83,6 +86,60 @@ def test_parse_items_maps_the_fields_the_gate_asked_for():
         "subtitle_index": None,
         "media_source_id": "abc123",
     }]
+
+
+def test_a_series_is_marked_as_one_and_carries_no_episode_numbering():
+    payload = {"Items": [
+        {"Id": "s1", "Type": "Series", "Name": "Silo", "ProductionYear": 2023},
+    ]}
+    row = jellyfin.parse_items(payload)[0]
+    assert row["kind"] == "series"
+    assert row["title"] == "Silo" and row["year"] == 2023
+    # A show is not a thing you can put on air, so it has no place in a run.
+    assert "season" not in row and "episode" not in row
+
+
+def test_an_episode_carries_its_show_and_its_place_in_the_run():
+    # The shape verified against a real Jellyfin 10.11 library.
+    payload = {"Items": [{
+        "Id": "e1",
+        "Type": "Episode",
+        "Name": "Freedom Day",
+        "SeriesName": "Silo",
+        "SeriesId": "s1",
+        "ParentIndexNumber": 1,
+        "IndexNumber": 1,
+        "ProductionYear": 2023,
+        "RunTimeTicks": 59 * 60 * 10_000_000,
+    }]}
+    row = jellyfin.parse_items(payload)[0]
+    assert row["kind"] == "episode"
+    assert row["title"] == "Freedom Day"        # the episode's own name
+    assert row["series"] == "Silo" and row["series_id"] == "s1"
+    assert row["season"] == 1 and row["episode"] == 1
+
+
+def test_a_special_outside_the_numbering_keeps_no_numbers():
+    # A special with no IndexNumber must not be guessed into a slot.
+    payload = {"Items": [{
+        "Id": "e2", "Type": "Episode", "Name": "Behind the Silo",
+        "SeriesName": "Silo", "ParentIndexNumber": 0,
+    }]}
+    row = jellyfin.parse_items(payload)[0]
+    assert row["season"] == 0 and row["episode"] is None
+
+
+def test_the_episodes_url_asks_the_shows_endpoint():
+    # /Items/{id} is gone in 10.10+; /Shows/{id}/Episodes is the one built for
+    # this and returns the whole run already sorted.
+    url = jellyfin.episodes_url("http://jf", "s1")
+    assert url.startswith("http://jf/Shows/s1/Episodes?")
+    assert "Fields=Overview%2CMediaStreams" in url
+
+
+def test_the_search_asks_for_films_and_shows():
+    url = jellyfin.search_url("http://jf", "silo")
+    assert "IncludeItemTypes=Movie%2CSeries" in url
 
 
 def test_parse_items_drops_anything_without_an_id_and_survives_an_empty_reply():

@@ -1951,9 +1951,39 @@ body[data-stage^="theater"] .chat-form:focus-within {
   border-bottom: 1px solid var(--border);
 }
 .ts-row:last-child { border-bottom: 0; }
+/* .chip-btn stretches to fill by default: it is built for the watch page's host
+   strip, where the buttons share a row. Here it sits at its own width beside a
+   title that takes the rest. */
+.ts-row .chip-btn, .ts-show .chip-btn { flex: none; }
 .ts-label { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .ts-title { font-size: 15px; }
 .ts-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+/* The poster beside a row. It keeps its box whether or not a picture arrives,
+   so a list does not reflow as the posters fill in one by one. */
+.ts-poster {
+  flex: none;
+  width: 40px;
+  aspect-ratio: 2 / 3;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ts-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---- a show's episodes ----
+   The header names the show and holds the way back; the chips pick a season;
+   the list is that season alone, because a run of forty is not a list to
+   scroll past to reach the one you want. */
+.ts-show {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-show .ts-poster { width: 54px; }
+.ts-seasons { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.ts-episodes .ts-row { padding-left: 2px; }
 
 /* The dashboard's theater panel reuses the same result rows. */
 .theater-status { font-family: var(--mono); font-size: 12px; margin: 0; }

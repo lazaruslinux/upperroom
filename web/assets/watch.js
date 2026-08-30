@@ -334,38 +334,14 @@ async function hostAction(path, body) {
   }
 }
 
-function renderSearchResults(results) {
-  tsResults.textContent = "";
-  if (!results.length) {
-    tsMsg.textContent = "Nothing matched.";
-    tsMsg.hidden = false;
-    return;
-  }
-  results.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "ts-row";
-    const label = document.createElement("div");
-    label.className = "ts-label";
-    const title = document.createElement("span");
-    title.className = "ts-title";
-    title.textContent = item.title;
-    label.appendChild(title);
-    const bits = [];
-    if (item.year) bits.push(item.year);
-    if (item.runtime_min) bits.push(`${item.runtime_min} min`);
-    if (bits.length) {
-      const meta = document.createElement("span");
-      meta.className = "ts-meta";
-      meta.textContent = bits.join(" · ");
-      label.appendChild(meta);
-    }
-    row.appendChild(label);
-    const play = document.createElement("button");
-    play.type = "button";
-    play.className = "chip-btn";
-    play.textContent = "play";
-    play.addEventListener("click", async () => {
-      play.disabled = true;
+// The rows live in theater-picker.js, shared with the dashboard's theater panel
+// so hosting from a phone and hosting from the dashboard look the same and stay
+// that way. This end owns where a play comes from and where a message goes.
+let lastResults = [];
+
+function pickerOptions() {
+  return {
+    onPlay: async (item) => {
       tsMsg.hidden = true;
       const done = await hostAction("/api/admin/theater/play", {
         jf_id: item.jf_id, subtitles: tsSubs.checked,
@@ -374,12 +350,26 @@ function renderSearchResults(results) {
       else {
         tsMsg.textContent = hostMsg.textContent;
         tsMsg.hidden = false;
-        play.disabled = false;
       }
-    });
-    row.appendChild(play);
-    tsResults.appendChild(row);
-  });
+      return !!done;
+    },
+    onBack: () => renderSearchResults(lastResults),
+    message: (text) => {
+      tsMsg.textContent = text;
+      tsMsg.hidden = !text;
+    },
+  };
+}
+
+function renderSearchResults(results) {
+  if (!results.length) {
+    tsResults.textContent = "";
+    tsMsg.textContent = "Nothing matched.";
+    tsMsg.hidden = false;
+    return;
+  }
+  lastResults = results;
+  theaterPicker.render(tsResults, results, pickerOptions());
 }
 
 async function runSearch() {
