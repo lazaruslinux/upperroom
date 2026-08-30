@@ -111,7 +111,7 @@ yourself out.
 `/admin` opens with your own watch page in a frame, and the controls under it
 are grouped in five tabs:
 
-- **Broadcast**: the theater session and the **Next stream** announcement.
+- **Broadcast**: the theater session and the **Room limit**.
 - **Content**: the library of recordings and clips you review, pin and delete,
   and the **Storage** limits that decide how long they last.
 - **People**: accounts, bans, invite codes and guest passes.

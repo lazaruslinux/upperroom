@@ -1432,12 +1432,6 @@ function setUpGuest() {
     note.textContent =
       "You are watching as a guest. Sign in or use an invite code for an account.";
   }
-  // The home link goes nowhere useful for a guest; point it at the way in.
-  const homeLink = document.getElementById("home-link");
-  if (homeLink) {
-    homeLink.setAttribute("href", "/");
-    homeLink.textContent = "Sign in";
-  }
   guestTimer.hidden = false;
   renderGuestTimer();
   guestTick = setInterval(renderGuestTimer, 1000);
@@ -1479,13 +1473,6 @@ window.addEventListener("message", (event) => {
   if (!msg || msg.type !== "video") return;
   setVideoShown(!!msg.show);
 });
-
-// In a frame, the home link would load the home page inside that frame. Send it
-// to the top window instead.
-if (window.top !== window.self) {
-  const framedHome = document.getElementById("home-link");
-  if (framedHome) framedHome.setAttribute("target", "_top");
-}
 
 async function boot() {
   if (!(await requireAuth())) return;

@@ -31,6 +31,12 @@ card, a **Now showing** panel over the first couple of seconds of a title, and a
 slightly dimmed page while the session runs. Nothing else about the watch page
 moves.
 
+**A title reaching its end closes the session.** The live mark goes out, the
+channel reads offline, and it takes you to start the next one. That is
+deliberate: a film that finishes at midnight used to leave the room sitting on
+the intermission card until somebody pressed end, so the channel looked on air
+until morning and anyone who had left the page open was still pulling from it.
+
 ## 11.2 The projector
 
 The playing is done by a separate small service called the **projector**, in
@@ -180,10 +186,13 @@ A normal evening:
    `Silo (2023) S3E1, "Freedom Day" selected`, and a shared link reads
    `playing Silo (2023) S3E1`. The year is the show's, not the year that season
    happened to air, because that is the year anybody knows the show by.
-3. When it ends, or when you press **stop**, the room returns to intermission.
-   Chat is untouched. Play the next one.
-4. **End session** when the evening is over. Whatever is playing stops and the
-   room goes back to an ordinary broadcast. Chat is kept.
+3. **When the title ends, the session ends.** The room goes offline and chat is
+   untouched. Nothing restarts on its own; the next one is yours to put on.
+4. **Stop** is different, and it is the one for changing your mind mid-film: the
+   room drops back to intermission and waits for you to pick the next title,
+   with the session still open.
+5. **End session** closes the evening yourself. Whatever is playing stops and
+   the room goes back to an ordinary broadcast. Chat is kept.
 
 One session runs at a time, and starting a second is refused rather than
 quietly ignored.
@@ -210,5 +219,5 @@ picture, sound and posters, and never contacts a library. That is what the demo
 stack uses (`docs/07-demo.md`), and it is the quickest way to see a session work
 before setting up a library.
 
-Each demo title runs two minutes and then ends on its own, which also shows the
-return to intermission without pressing anything.
+Each demo title runs two minutes and then ends on its own, which is also the
+quickest way to watch a session close itself when its title runs out.

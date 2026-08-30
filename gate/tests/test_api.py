@@ -23,7 +23,6 @@ import db
 import notify
 from config import (
     COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH, MAX_OVERLAY_TICKER,
-    MAX_SCHEDULE_NOTE,
 )
 from conftest import make_client
 from hub import hub
@@ -412,8 +411,6 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("POST", "/api/admin/retention", {"vod_keep_count": 1}),
         ("POST", "/api/vods/1/keep", {"keep": True}),
         ("POST", "/api/clips/1/keep", {"keep": True}),
-        ("GET", "/api/admin/schedule", None),
-        ("POST", "/api/admin/schedule", {"next_stream_at": 0}),
     ],
 )
 def test_viewer_is_refused_admin_endpoints(client, method, path, body):
@@ -1497,92 +1494,6 @@ def test_pinning_something_that_does_not_exist_is_a_404(client):
     setup_admin(client)
     assert client.post("/api/vods/999/keep", json={"keep": True}).status_code == 404
     assert client.post("/api/clips/999/keep", json={"keep": True}).status_code == 404
-
-
-# ---- 11. The next scheduled stream ----------------------------------------
-
-def test_schedule_round_trips_through_the_admin_api(client):
-    setup_admin(client)
-    when = int(time.time()) + 7200
-    resp = client.post(
-        "/api/admin/schedule",
-        json={"next_stream_at": when, "next_stream_note": "Week four"},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["next_stream_at"] == when
-    assert client.get("/api/admin/schedule").json()["next_stream_note"] == "Week four"
-
-
-@pytest.mark.parametrize(
-    "when,why",
-    [
-        (int(time.time()) - 86400, "long past"),
-        (int(time.time()) + 400 * 86400, "beyond a year"),
-        ("soon", "not a number"),
-    ],
-)
-def test_schedule_rejects_an_unusable_time(client, when, why):
-    setup_admin(client)
-    resp = client.post("/api/admin/schedule", json={"next_stream_at": when})
-    assert resp.status_code == 400, why
-    assert db.get_schedule()["next_stream_at"] == 0
-
-
-def test_the_countdown_is_public_but_the_note_is_not(client):
-    # The whole point of the split: someone who finds the sign-in page learns
-    # when the next stream is, and nothing about what it is.
-    setup_admin(client)
-    when = int(time.time()) + 3600
-    client.post(
-        "/api/admin/schedule",
-        json={"next_stream_at": when, "next_stream_note": "prayer night"},
-    )
-    anon = make_client()
-    status = anon.get("/api/status").json()
-    assert status["next_stream_at"] == when
-    assert "next_stream_note" not in status
-    assert "prayer night" not in str(status)
-    # Signed in, the note is there.
-    channel = client.get("/api/channel").json()
-    assert channel["next_stream_note"] == "prayer night"
-
-
-def test_the_countdown_disappears_once_the_stream_is_well_past(client):
-    setup_admin(client)
-    # Set it legitimately, then move it into the past behind the API's back, the
-    # way time passing would.
-    client.post("/api/admin/schedule", json={"next_stream_at": int(time.time()) + 60})
-    db.set_schedule(int(time.time()) - 3 * 3600, "")
-    assert "next_stream_at" not in client.get("/api/status").json()
-
-
-def test_a_schedule_just_past_still_shows_during_the_grace_window(client):
-    # A stream that starts late must not vanish exactly when people look for it.
-    setup_admin(client)
-    client.post("/api/admin/schedule", json={"next_stream_at": int(time.time()) + 60})
-    db.set_schedule(int(time.time()) - 600, "")
-    assert "next_stream_at" in client.get("/api/status").json()
-
-
-def test_clearing_the_schedule_removes_it_everywhere(client):
-    setup_admin(client)
-    client.post(
-        "/api/admin/schedule",
-        json={"next_stream_at": int(time.time()) + 3600, "next_stream_note": "x"},
-    )
-    client.post("/api/admin/schedule", json={"next_stream_at": 0})
-    assert "next_stream_at" not in client.get("/api/status").json()
-    assert client.get("/api/channel").json()["next_stream_note"] == ""
-
-
-def test_a_long_schedule_note_is_clamped_not_rejected(client):
-    setup_admin(client)
-    resp = client.post(
-        "/api/admin/schedule",
-        json={"next_stream_at": int(time.time()) + 3600, "next_stream_note": "x" * 500},
-    )
-    assert resp.status_code == 200
-    assert len(db.get_schedule()["next_stream_note"]) == MAX_SCHEDULE_NOTE
 
 
 # ---- 12. Web app manifest -------------------------------------------------

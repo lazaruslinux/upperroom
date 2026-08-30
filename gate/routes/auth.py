@@ -131,17 +131,12 @@ def channel(request: Request):
     if not read_session(request.cookies.get(COOKIE_NAME, "")):
         return Response(status_code=401)
     info = db.get_stream_info()
-    schedule = db.get_schedule()
     owner = db.channel_owner()
     base = {
         "site_name": info["site_name"],
         "title": info["stream_title"],
         "description": info["stream_description"],
         "accent": info["accent"],
-        # The schedule note only goes to signed-in viewers; the public status
-        # endpoint carries the time alone.
-        "next_stream_at": schedule["next_stream_at"],
-        "next_stream_note": schedule["next_stream_note"],
     }
     if not owner:
         return {**base, "username": None, "name": "upperroom", "avatar": 0}

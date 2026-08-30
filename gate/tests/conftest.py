@@ -51,6 +51,7 @@ import db  # noqa: E402
 import main  # noqa: E402
 import projector  # noqa: E402
 import watchers  # noqa: E402
+import theater  # noqa: E402
 from hub import hub  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -98,4 +99,8 @@ def client(tmp_path, monkeypatch):
     # Who is pulling video is process-global as well, so a test that filled the
     # room would leave the next one at its limit.
     watchers.reset()
+    # When the host last stopped a title is process-global too, and it decides
+    # whether an idle report closes the session. One test's stop would otherwise
+    # keep the next test's finished title from closing anything.
+    theater._host_stopped_at = -1e9
     return make_client()

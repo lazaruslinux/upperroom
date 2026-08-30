@@ -150,8 +150,6 @@ only repackages the video and stays light.
   unique viewers and chat messages per day over the last thirty days.
 - When you go live it can post to a Discord webhook, send email, or do neither.
   Email is opt in per account, and you are never mailed about your own stream.
-- Set the time of your next stream and visitors see a countdown before they even
-  sign in. An hour beforehand the same announcement goes out as a reminder.
 - Installs to a phone home screen like an app, with a real icon and a link
   preview card.
 - Name the broadcast and say what you are playing, and pasting your watch link
@@ -271,8 +269,8 @@ explains every value.
 Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
 description, accent color, the stream key, the
-overlay key and its ticker line, slow mode, banned words, the next stream, the
-viewer limit, the storage limits, and the Discord webhook.
+overlay key and its ticker line, slow mode, banned words, the viewer limit, the
+storage limits, and the Discord webhook.
 
 ## Security model
 

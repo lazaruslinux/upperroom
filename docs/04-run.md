@@ -69,7 +69,7 @@ itself a few minutes later.
 See `docs/06-accounts-and-chat.md` for the details.
 
 Everything you run the place with is on the dashboard at `/admin`, in five
-tabs under your own watch page: **Broadcast** (theater and the schedule),
+tabs under your own watch page: **Broadcast** (theater and the room limit),
 **Content** (past broadcasts, clips and storage limits), **People** (accounts,
 bans, invites and guest passes), **Channel** (branding, chat rules and
 notifications) and **Connections** (the stream key, the projector and the

@@ -579,15 +579,94 @@ def test_an_error_reply_is_raised_as_a_projector_error(client):
         asyncio.run(link.rpc("play", {"jf_id": "abc123"}))
 
 
-def test_a_status_event_of_idle_takes_the_title_off_air(client):
-    # ffmpeg dying on its own has to reach the room, or the page keeps showing a
-    # title that stopped playing minutes ago.
+def test_a_title_reaching_its_end_closes_the_session(client):
+    # The whole session goes, not just the title. A film finishing at midnight
+    # used to leave the room in intermission until somebody pressed end, so the
+    # channel read as on air until morning and anyone who had left the page open
+    # was still holding it.
     setup_admin(client, username="owner")
     start(client)
-    session = db.get_active_theater_session()
-    db.set_theater_now(session["id"], jf_id="abc123", title="The Long Afternoon")
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    # The session only reads "playing" once the stream is actually up; what says
+    # a title is on air here is that it has one.
+    assert db.get_active_theater_session()["now_title"]
+
     asyncio.run(link.handle({"event": "status", "state": "idle"}))
-    assert db.get_active_theater_session()["now_title"] is None
+
+    assert db.get_active_theater_session() is None
+    assert client.get("/api/theater").json() == {
+        "active": False, "state": "off", "now": None
+    }
+
+
+def test_closing_on_an_ended_title_does_not_wait_on_the_projector(client):
+    # The projector has just said it is idle. Asking it to stop anyway hangs
+    # until the RPC times out, which held the room open for another twenty
+    # seconds after the very thing that ended it.
+    setup_admin(client, username="owner")
+    start(client)
+    stub = working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    stub.sent.clear()
+
+    asyncio.run(link.handle({"event": "status", "state": "idle"}))
+
+    assert db.get_active_theater_session() is None
+    assert "stop" not in stub.methods()
+
+
+def test_a_title_that_dies_closes_the_session_too(client):
+    # An ffmpeg that fell over is still a room nobody is going to come back to.
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    asyncio.run(link.handle({"event": "status", "state": "error", "detail": "boom"}))
+    assert db.get_active_theater_session() is None
+
+
+def test_the_hosts_own_stop_leaves_the_session_open(client):
+    # The projector reports idle whenever ffmpeg exits, including the exit the
+    # host just asked for. That one is not a title ending, so the room waits in
+    # intermission for them to pick the next one.
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    client.post("/api/admin/theater/stop")
+
+    asyncio.run(link.handle({"event": "status", "state": "idle"}))
+
+    session = db.get_active_theater_session()
+    assert session is not None
+    assert session["now_title"] is None
+
+
+def test_an_idle_report_never_closes_a_session_with_nothing_playing(client):
+    # A session sitting in intermission gets an idle report whenever the
+    # projector reconnects. Closing on that would end a session the host had
+    # only just started.
+    setup_admin(client, username="owner")
+    start(client)
+    asyncio.run(link.handle({"event": "status", "state": "idle"}))
+    assert db.get_active_theater_session() is not None
+
+
+def test_a_stale_host_stop_does_not_hold_the_session_open_forever(client, monkeypatch):
+    # The grace covers the seconds around the host's own stop, not the rest of
+    # the night: the title played after it still closes the session when it ends.
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    client.post("/api/admin/theater/stop")
+    monkeypatch.setattr(theater, "HOST_STOP_GRACE", 0)
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+
+    asyncio.run(link.handle({"event": "status", "state": "idle"}))
+
+    assert db.get_active_theater_session() is None
 
 
 def test_the_link_remembers_when_it_last_heard_from_the_projector(client):

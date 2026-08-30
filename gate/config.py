@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -259,18 +259,6 @@ ART_DIR = os.path.join(MEDIA_DIR, "art")
 # waiting for the next broadcast to end.
 RETENTION_INTERVAL = 3600
 
-# ---- The next scheduled stream --------------------------------------------
-# The operator announces one upcoming broadcast; the login page counts down to
-# it and everyone with go-live email on gets one reminder beforehand. Fixed
-# rather than configurable for the same reason as the points rate below: the
-# lead time is part of the feature's shape, not a per-install knob.
-SCHEDULE_REMIND_LEAD = 3600        # remind this long before the start time
-# How long past the start time a schedule keeps showing before it clears itself.
-# Two hours, so a broadcast that starts late still reads "starting soon" rather
-# than vanishing exactly when viewers are looking for it.
-SCHEDULE_GRACE = 7200
-SCHEDULE_CHECK_INTERVAL = 60       # how often the reminder worker looks
-MAX_SCHEDULE_NOTE = 120
 # How much of the live edge a clip captures is the viewer's pick, from
 # CLIP_LENGTHS above.
 #

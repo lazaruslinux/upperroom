@@ -23,7 +23,7 @@ from auth import (
 )
 from config import (
     CLIP_DIR, CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
-    SCHEDULE_GRACE, SITE_URL, THUMB_INTERVAL, THUMB_PATH, VERSION, VOD_DIR,
+    SITE_URL, THUMB_INTERVAL, THUMB_PATH, VERSION, VOD_DIR,
     WEB_DIR,
 )
 from hub import hub
@@ -700,12 +700,4 @@ async def status():
         "site_name": site_name,
         "version": VERSION,
     }
-    # The time of the next announced broadcast is public, so the login page can
-    # count down to it. The note that goes with it is not: it says what the
-    # gathering is, and that stays behind the sign in. Only sent while the
-    # schedule is still worth showing.
-    schedule = db.get_schedule()
-    when = schedule["next_stream_at"]
-    if when and time.time() < when + SCHEDULE_GRACE:
-        body["next_stream_at"] = when
     return body

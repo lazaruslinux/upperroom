@@ -16,7 +16,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=56">
+  <link rel="stylesheet" href="/assets/style.css?v=57">
 </head>
 <body class="admin">
   <div id="site-nav"></div>
@@ -88,10 +88,9 @@
     <section class="admin-group" data-panel="broadcast">
       <h2 class="section-title">Theater</h2>
       <div class="notify-panel">
-        <span class="muted">Play titles from your own library to the room. While a
-          session is running nothing is recorded, clips are off, and going live is
-          announced once at the start. Chat carries on from whatever came before
-          it. Needs a projector connected (Connections).</span>
+        <span class="muted">Play titles from your library to the room. Nothing is
+          recorded and clips are off during a session. Needs a projector
+          (Connections).</span>
         <!-- No preview here: the console at the top of the page is showing the
              room exactly what it is seeing, so this panel is the controls alone. -->
         <p id="theater-status" class="theater-status">Loading…</p>
@@ -113,11 +112,8 @@
 
       <h2 class="section-title">Room limit</h2>
       <div class="notify-panel">
-        <p class="muted">Everyone watching pulls their own copy of the broadcast
-          from this server, so the number of viewers is what the bandwidth costs.
-          At 1080p and 6000 Kbps that is roughly 2.9 GB per person per hour. Set a
-          limit and anyone arriving past it is told the room is full; chat still
-          works for them. You are never counted and never turned away.</p>
+        <p class="muted">Each viewer costs roughly 2.9 GB an hour. Past the limit
+          the video is refused and chat still works. You are never counted.</p>
         <label>People who may watch at once <span class="muted">(0 = no limit)</span>
           <input id="room-limit" type="number" min="0" step="1" inputmode="numeric">
         </label>
@@ -128,26 +124,6 @@
         <p id="room-limit-msg" class="notify-msg" hidden></p>
       </div>
 
-      <h2 class="section-title">Next stream</h2>
-      <div class="notify-panel">
-        <p id="sched-status" class="muted">Nothing scheduled.</p>
-        <label>Date and time <span class="muted">(your local time)</span>
-          <input id="sched-when" type="datetime-local">
-        </label>
-        <label>Note <span class="muted">(optional, max 120 characters)</span>
-          <input id="sched-note" type="text" maxlength="120" autocomplete="off"
-                 placeholder="What this one is about">
-        </label>
-        <p class="muted">The countdown is public, so anyone who opens the sign-in
-          page sees it. The note is not: only signed-in viewers see that. Viewers
-          with go-live email on get one reminder an hour before, unless you have
-          switched channel email off under Channel. Admins are never emailed.</p>
-        <div class="edit-actions">
-          <button type="button" id="sched-clear" class="ghost-btn">Clear</button>
-          <button type="button" id="sched-save" class="solid-btn">Save</button>
-        </div>
-        <p id="sched-msg" class="notify-msg" hidden></p>
-      </div>
     </section>
 
     <!-- ---- Content: what has been recorded, and how long it is kept ---- -->
@@ -605,6 +581,6 @@
 
   <script src="/assets/nav.js?v=7"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/admin.js?v=44"></script>
+  <script src="/assets/admin.js?v=45"></script>
 </body>
 </html>

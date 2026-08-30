@@ -153,42 +153,6 @@ function renderLive() {
   statusTime.textContent = formatStarted(elapsed);
 }
 
-// The next announced broadcast. Its time rides the public status poll, so the
-// login page counts down to it before anyone signs in; the note that goes with
-// it deliberately does not, and shows on the home page after sign in instead.
-const nextBox = document.getElementById("next-stream");
-const nextCount = document.getElementById("next-count");
-const nextWhen = document.getElementById("next-when");
-let nextAt = null;
-let nextTick = null;
-
-function formatCountdown(seconds) {
-  if (seconds <= 0) return "starting soon";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `in ${days}d ${hours}h`;
-  if (hours > 0) return `in ${hours}h ${minutes}m`;
-  return `in ${Math.max(1, minutes)}m`;
-}
-
-function renderNext() {
-  if (!nextAt) {
-    nextBox.hidden = true;
-    if (nextTick) { clearInterval(nextTick); nextTick = null; }
-    return;
-  }
-  const away = nextAt - Math.floor(Date.now() / 1000);
-  nextCount.textContent = `Next stream ${formatCountdown(away)}`;
-  // The server stores UTC; every viewer reads it in their own time.
-  nextWhen.textContent = new Date(nextAt * 1000).toLocaleString([], {
-    weekday: "short", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit",
-  });
-  nextBox.hidden = false;
-  if (!nextTick) nextTick = setInterval(renderNext, 30000);
-}
-
 async function refreshStatus() {
   let online = false;
   let since = null;
@@ -201,8 +165,6 @@ async function refreshStatus() {
     applyAccent(data.accent);
     applySiteName(data.site_name);
     // Once the stream is actually on, a countdown to it is just noise.
-    nextAt = online ? null : (data.next_stream_at || null);
-    renderNext();
   } catch {
     online = false;
   }

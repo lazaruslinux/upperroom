@@ -28,7 +28,7 @@ from config import (
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
     CHAT_IDLE_WIPE_SECONDS, NIGHT_GAP_SECONDS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
-    SCHEDULE_GRACE, STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
+    STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
 )
 from hub import hub
 from notify import notify_live
@@ -114,13 +114,6 @@ async def stream_watcher():
                     asyncio.create_task(notify_live())
                 if plan["state"]:
                     await theater.set_stage(plan["state"])
-                # This is the broadcast people were waiting for, so retire the
-                # announcement. Only one that is due around now: a schedule for
-                # next week survives an unannounced stream today.
-                try:
-                    db.clear_schedule_if_past(int(time.time()) + SCHEDULE_GRACE)
-                except Exception:
-                    logger.warning("could not clear the schedule", exc_info=True)
             elif online:
                 # Supervise the in-progress recording: restart it if the recorder
                 # died or its scratch file stalled while the stream is still live.

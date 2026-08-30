@@ -126,57 +126,6 @@ async function loadChannel() {
     channel = { username: null, name: "upperroom", avatar: 0 };
   }
   renderChannel();
-  applySchedule(channel);
-}
-
-// ---- the next scheduled stream ----
-// Signed in, so this is the one place the operator's note is shown; the login
-// page gets the time alone from the public status poll.
-
-const nextBox = document.getElementById("next-stream");
-const nextCount = document.getElementById("next-count");
-const nextWhen = document.getElementById("next-when");
-const nextNote = document.getElementById("next-note");
-let nextAt = null;
-let nextNoteText = "";
-let nextTick = null;
-
-function formatCountdown(seconds) {
-  if (seconds <= 0) return "starting soon";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `in ${days}d ${hours}h`;
-  if (hours > 0) return `in ${hours}h ${minutes}m`;
-  return `in ${Math.max(1, minutes)}m`;
-}
-
-function renderNext() {
-  // Hidden while the stream is actually on: the card above says everything.
-  if (!nextAt || online) {
-    nextBox.hidden = true;
-    if (nextTick) { clearInterval(nextTick); nextTick = null; }
-    return;
-  }
-  const away = nextAt - Math.floor(Date.now() / 1000);
-  nextCount.textContent = `Next stream ${formatCountdown(away)}`;
-  // The server stores UTC; every viewer reads it in their own time.
-  nextWhen.textContent = new Date(nextAt * 1000).toLocaleString([], {
-    weekday: "short", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit",
-  });
-  nextNote.textContent = nextNoteText;
-  nextNote.hidden = !nextNoteText;
-  nextBox.hidden = false;
-  if (!nextTick) nextTick = setInterval(renderNext, 30000);
-}
-
-function applySchedule(data) {
-  const when = data.next_stream_at || 0;
-  // Stop showing it once it is well past, matching what the server publishes.
-  nextAt = when && Date.now() / 1000 < when + 7200 ? when : null;
-  nextNoteText = nextAt ? (data.next_stream_note || "") : "";
-  renderNext();
 }
 
 // ---- live status + thumbnail ----
@@ -254,7 +203,6 @@ async function refreshStatus() {
   showLive(!!data.online, data.watching);
   if (data.online && !wasOnline) refreshThumb();
   // Going live retires the schedule server-side; hide it here at the same time.
-  if (data.online !== wasOnline) renderNext();
 }
 
 card.addEventListener("click", () => {

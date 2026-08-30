@@ -16,11 +16,11 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
-    "0.12.0": [
+    "0.13.0": [
         "The chat bar folds away, so the picture can have the whole width.",
         "The people icon opens the list of everyone watching.",
         "The channel can now limit how many people watch at once.",
-        "The host no longer announces themselves coming and going.",
+        "A film ending now closes theater mode instead of running on.",
         "This notice, once per release.",
     ],
 }

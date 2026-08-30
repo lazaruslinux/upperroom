@@ -165,14 +165,22 @@ async def start_session():
     return public_state(session), None
 
 
-async def end_session():
+async def end_session(narration="Theater mode disabled.", stop_projector=True):
     """Close the open session. Stops anything playing first. Chat is left alone:
     it belongs to the evening, not to the session, and is wiped when a later
-    broadcast starts a new night."""
+    broadcast starts a new night.
+
+    narration is what the room is told, so a session that closed because its
+    title ran out can say so rather than reading like the host pressed end.
+
+    stop_projector is False when the projector has just reported itself idle:
+    it has nothing left to stop, does not answer a stop it cannot act on, and
+    waiting out the timeout would hold the room open for another twenty seconds
+    after the very thing that ended it."""
     session = db.get_active_theater_session()
     if not session:
         return None, "No theater session is running."
-    if session["state"] == "playing" or session["now_title"]:
+    if stop_projector and (session["state"] == "playing" or session["now_title"]):
         try:
             await link.rpc("stop", timeout=PLAY_TIMEOUT)
         except ProjectorError as exc:
@@ -186,7 +194,7 @@ async def end_session():
     # The night is over as far as the channel is concerned, so this is what a
     # later broadcast measures its gap from.
     db.set_last_air_ended_at(ended)
-    await hub.narrate("Theater mode disabled.")
+    await hub.narrate(narration)
     await broadcast_state(None)
     return public_state(None), None
 
@@ -364,12 +372,27 @@ def _now_showing_line(session):
     return f"{named} selected. Enjoy the show!"
 
 
+# When the host last took a title off on purpose, on the monotonic clock. The
+# projector reports "idle" whenever ffmpeg exits, and it cannot say why, so this
+# is what tells a title that RAN OUT from one the host stopped: the first closes
+# the session, the second leaves the room in intermission to pick the next.
+_host_stopped_at = -1e9
+# How long after the host's stop an idle report is still read as theirs. The
+# projector answers the stop and reports within a second or two; this is loose
+# enough to survive a slow link and far short of any real title.
+HOST_STOP_GRACE = 15
+
+
 async def stop():
     """Take whatever is on air off it. The projector stops publishing, the path
     drops, and the watcher moves the session to intermission."""
+    global _host_stopped_at
     session = db.get_active_theater_session()
     if not session:
         return None, "No theater session is running."
+    # Marked before the call, not after: the projector may report itself idle
+    # while we are still waiting on the reply.
+    _host_stopped_at = time.monotonic()
     await link.rpc("stop", timeout=PLAY_TIMEOUT)
     db.set_theater_now(session["id"])
     session = db.get_active_theater_session()
@@ -381,24 +404,47 @@ async def stop():
 # ---- Events from the projector --------------------------------------------
 
 async def on_projector_event(message):
-    """Handle one event the projector sent unprompted. Only 'status' matters
-    this round: it says what the projector thinks it is doing, which is how an
-    ffmpeg that died on its own reaches the room instead of leaving the page
-    showing a title that stopped playing minutes ago."""
+    """Handle one event the projector sent unprompted. Only 'status' matters:
+    it says what the projector thinks it is doing, which is how an ffmpeg that
+    died on its own reaches the room instead of leaving the page showing a
+    title that stopped playing minutes ago.
+
+    A title reaching its end closes the whole session. Before, the room fell
+    back to the intermission card and stayed there until somebody pressed end,
+    which meant a film finishing at midnight left the channel apparently on air
+    until morning, with anyone who had left the page open still holding it.
+    """
     if message.get("event") != "status":
         return
     state = str(message.get("state") or "")
-    if state in ("idle", "error"):
-        session = db.get_active_theater_session()
-        if not session:
-            return
-        if state == "error":
-            logger.warning(
-                "the projector reported an error: %s",
-                str(message.get("detail") or "")[:200],
-            )
+    if state not in ("idle", "error"):
+        return
+    session = db.get_active_theater_session()
+    if not session:
+        return
+    if state == "error":
+        logger.warning(
+            "the projector reported an error: %s",
+            str(message.get("detail") or "")[:200],
+        )
+    # Nothing was on air to end. A session sitting in intermission gets an idle
+    # report whenever the projector reconnects, and that must not close it.
+    if session["state"] != "playing" and not session["now_title"]:
+        return
+    # The host took it off themselves, so leave them in intermission to pick
+    # the next one rather than making them start a session again.
+    if time.monotonic() - _host_stopped_at < HOST_STOP_GRACE:
         db.set_theater_now(session["id"])
         await broadcast_state(db.get_active_theater_session())
+        return
+    logger.info("theater session %s closing: its title ended", session["id"])
+    await end_session(
+        narration="That was the end of it. Theater mode is off."
+        if state == "idle"
+        else "The title stopped unexpectedly. Theater mode is off.",
+        # It just told us it is idle, so there is nothing to stop.
+        stop_projector=False,
+    )
 
 
 link.on_event = on_projector_event
