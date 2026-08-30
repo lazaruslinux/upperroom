@@ -15,9 +15,11 @@ While a theater session is open:
 - **Nothing is recorded.** A session is somebody else's film, and building a
   library of it is not what this is for.
 - **Clips are refused**, and say so, for the same reason.
-- **Chat is not wiped between titles.** Ordinarily the room clears when a
-  broadcast ends. During a session the gap between one title and the next is an
-  intermission, not an ending, so the wipe is held until you end the session.
+- **Chat is never wiped by a session.** Not between titles, and not when you
+  end it. Chat belongs to the night rather than to one broadcast, so an evening
+  that runs from a stream into a film reads as one conversation. The room
+  clears at the START of a later broadcast, once the channel has been off air
+  long enough to count as a different night.
 - **Going live announces once**, at the start of the session, rather than once
   per title. Nobody wants a Discord ping per film.
 
@@ -144,8 +146,8 @@ A normal evening:
    the few seconds before the picture arrives.
 3. When it ends, or when you press **stop**, the room returns to intermission.
    Chat is untouched. Play the next one.
-4. **End session** when the evening is over. Whatever is playing stops, and the
-   chat is wiped exactly as it is at the end of any broadcast.
+4. **End session** when the evening is over. Whatever is playing stops and the
+   room goes back to an ordinary broadcast. Chat is kept.
 
 One session runs at a time, and starting a second is refused rather than
 quietly ignored.

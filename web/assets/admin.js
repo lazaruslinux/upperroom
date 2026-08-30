@@ -995,8 +995,8 @@ theaterStop.addEventListener("click", () => theaterAction("/api/admin/theater/st
 
 theaterEnd.addEventListener("click", async () => {
   if (!confirm(
-    "End the theater session? Whatever is playing stops, and the chat is wiped " +
-    "the way it is at the end of any broadcast."
+    "End the theater session? Whatever is playing stops and the room goes back " +
+    "to the ordinary broadcast. Chat is kept."
   )) return;
   if (await theaterAction("/api/admin/theater/end")) {
     showTheaterMsg("Session ended.", true);

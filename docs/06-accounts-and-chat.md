@@ -274,11 +274,19 @@ Notes:
 
 Chat is live for everyone signed in. Messages appear instantly through a
 WebSocket, with no page reloads. The last fifty messages stay on screen, each
-with a small local timestamp like `19:42`, and the whole chat is wiped
-automatically when a broadcast ends, so the next stream starts clean. When that
-happens the room does not just fall silent: a short line, "Stream ended. Chat
-clears between broadcasts.", is shown so a viewer mid-conversation sees why the
-messages went rather than assuming something broke.
+with a small local timestamp like `19:42`.
+
+**Chat belongs to the night, not to one broadcast.** Ending a stream does not
+clear it, and neither does ending a theater session, so an evening that runs
+from a broadcast into a film and back reads as one conversation. The room is
+cleared at the *start* of a later broadcast instead, and only once the channel
+has been off air long enough to be a different night
+(`SELFSTREAM_NIGHT_GAP`, six hours by default). That gap is what makes a
+restart safe: OBS crashing and coming back keeps the room, while tomorrow
+evening starts clean. A night that never gets a sequel is swept after
+`SELFSTREAM_CHAT_IDLE_WIPE`, a day by default. When a wipe does happen the room
+does not just fall silent: a short line says why, so a viewer mid-conversation
+is not left assuming something broke.
 
 Everyone can pick their own name and message colors from the gear on the watch
 page. The server checks the choice rather than trusting it: a color too dark to
@@ -300,6 +308,13 @@ The watching list is the safety and fun feature. Everyone signed in can see:
 - a live count, for example "3 watching"
 - the names of everyone currently watching, with "(you)" next to their own
 - a short line in chat when someone joins or leaves
+
+Those lines are one per person, not one per tab, and a brief disappearance never
+produces any. Someone switching to another app on their phone drops the
+connection and makes a new one when they come back, so the room used to get a
+departure and an arrival every time. A departure is now held for a minute
+(`SELFSTREAM_JOIN_GRACE`) and cancelled if they return inside it, which means a
+glance at another app is silent and only a real leaving is announced.
 
 Tap or click the count at the top of the chat panel to show or hide the full
 list of names. The count updates the moment someone opens or closes the page.

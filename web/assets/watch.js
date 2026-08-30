@@ -421,7 +421,7 @@ function setUpHost() {
   hostStart.addEventListener("click", () => hostAction("/api/admin/theater/session"));
   hostStop.addEventListener("click", () => hostAction("/api/admin/theater/stop"));
   hostEnd.addEventListener("click", () => {
-    if (!confirm("End the theater session? Chat is wiped when it ends.")) return;
+    if (!confirm("End the theater session? Chat is kept.")) return;
     hostAction("/api/admin/theater/end");
   });
   hostPlay.addEventListener("click", () => {
@@ -686,10 +686,10 @@ function connectChat() {
       // The room is deliberately cleared between broadcasts. Empty it, then say
       // why, so a mid-conversation chat does not just vanish with no explanation.
       messages.innerHTML = "";
-      if (msg.reason === "stream_ended") {
-        renderSystem({ text: "Stream ended. Chat clears between broadcasts." });
-      } else if (msg.reason === "moderator") {
-        renderSystem({ text: "A moderator cleared the chat." });
+      if (msg.reason === "new_night") {
+        renderSystem({ text: "A new night. Chat starts fresh." });
+      } else if (msg.reason === "idle") {
+        renderSystem({ text: "Last night's chat has been cleared." });
       }
     }
     else if (msg.type === "theater") applyTheater(msg);

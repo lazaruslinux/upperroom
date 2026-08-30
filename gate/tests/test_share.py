@@ -9,6 +9,7 @@ shell and the frame is reachable without signing in.
 """
 
 import os
+import time
 
 import pytest
 
@@ -252,3 +253,61 @@ def fresh_games(client):
     """The db helpers under test need a database; the client fixture is what
     points db at a fresh one."""
     return client
+
+
+# ---- what the preview says a theater night is showing ----------------------
+# A film on the projector is what the room is actually watching, so it wins the
+# "playing" line over a game label left over from an earlier broadcast. This is
+# the ONE place a title leaves the account wall (/api/theater refuses anyone
+# without a session), which is deliberate and written up in docs/05-security.md.
+
+def start_showing(title, year=None):
+    session_id = db.create_theater_session(int(time.time()))
+    db.set_theater_now(session_id, title=title, year=year)
+    return session_id
+
+
+def test_preview_names_the_film_during_a_theater_session(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_stream_info(title="Film night")
+    start_showing("The Long Afternoon", 2019)
+    go_live()
+    body = client.get("/watch").text
+    assert '<meta property="og:title" content="Northwind Live: Film night">' in body
+    assert (
+        '<meta property="og:description" content="playing The Long Afternoon (2019)">'
+    ) in body
+
+
+def test_a_film_outranks_the_game_label(client):
+    # The game is whatever was set last; the film is what is on the screen now.
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_now_playing("Ashfall Delta")
+    start_showing("Harbour Lights", 2004)
+    go_live()
+    body = client.get("/watch").text
+    assert 'content="playing Harbour Lights (2004)"' in body
+    assert "Ashfall Delta" not in body
+
+
+def test_a_film_with_no_year_is_named_without_empty_brackets(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    start_showing("Field Recordings")
+    go_live()
+    assert 'content="playing Field Recordings"' in client.get("/watch").text
+
+
+def test_between_titles_the_game_speaks_again(client):
+    # A session with nothing playing is an intermission, not a film.
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_now_playing("Ashfall Delta")
+    db.create_theater_session(int(time.time()))
+    go_live()
+    assert 'content="playing Ashfall Delta"' in client.get("/watch").text
+
+
+def test_an_offline_channel_never_names_a_film(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    start_showing("The Long Afternoon", 2019)
+    body = client.get("/watch").text
+    assert "The Long Afternoon" not in body

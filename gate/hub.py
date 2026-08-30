@@ -12,7 +12,7 @@ import time
 from collections import deque
 
 import db
-from config import CHAT_HISTORY, CHAT_RETENTION_SECONDS
+from config import CHAT_HISTORY, CHAT_RETENTION_SECONDS, JOIN_GRACE_SECONDS
 
 logger = logging.getLogger("upperroom.hub")
 
@@ -35,6 +35,10 @@ class Hub:
         self._timeouts = {}           # username -> epoch until which they are muted
         self._banned = set()          # usernames with a persistent chat ban
         self._last_post = {}          # username -> epoch of last message, for slow mode
+        # username -> the task waiting to announce that they left. A phone that
+        # backgrounds its tab drops the socket and opens a new one on return, so
+        # a departure is only believed once it has lasted JOIN_GRACE_SECONDS.
+        self._leaving = {}
 
     def viewers(self):
         # One entry per person, even if they have several tabs open.
@@ -120,10 +124,35 @@ class Hub:
     def remove_watcher(self, socket):
         self._watchers.discard(socket)
 
+    def _here(self, username):
+        """Whether this person already holds a socket. One person can hold
+        several: a second tab, or the dashboard, which frames the watch page."""
+        return any(w["username"] == username for w in self._sockets.values())
+
+    def _left_line(self, name):
+        return {"type": "system", "text": f"{name} left", "ts": int(time.time())}
+
+    async def _leave_later(self, username, name):
+        """Announce a departure, but only if it is still true when the grace is
+        up. Coming back inside it cancels this task and says nothing, so a tab
+        switch never reaches the room."""
+        try:
+            await asyncio.sleep(JOIN_GRACE_SECONDS)
+        except asyncio.CancelledError:
+            return
+        # A newer task may own this username by now; only the current one talks.
+        if self._leaving.get(username) is not asyncio.current_task():
+            return
+        self._leaving.pop(username, None)
+        await self.broadcast(self._left_line(name))
+
     async def join(self, socket, who):
         # Replay the recent backlog so someone joining mid stream sees the last
         # messages. The backlog is kept until the stream ends, then wiped.
         async with self._lock:
+            already_here = self._here(who["username"])
+            # A departure still inside its grace means they never really left.
+            returning = self._leaving.pop(who["username"], None)
             self._sockets[socket] = who
             history = list(self._history)
             # Only accrue watch time while the stream is actually live. Joining
@@ -137,11 +166,16 @@ class Hub:
                 except Exception:
                     who["watch_id"] = None
                     logger.debug("start_watch_session failed on join", exc_info=True)
+        if returning:
+            returning.cancel()
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
-        await self.broadcast(
-            {"type": "system", "text": f"{who['name']} joined", "ts": int(time.time())}
-        )
+        # One line per person arriving, not one per socket, and nothing at all
+        # for someone who only dropped out for a moment.
+        if not already_here and not returning:
+            await self.broadcast(
+                {"type": "system", "text": f"{who['name']} joined", "ts": int(time.time())}
+            )
 
     async def leave(self, socket):
         who = self._sockets.pop(socket, None)
@@ -151,10 +185,20 @@ class Hub:
             except Exception:
                 logger.debug("end_watch_session failed on leave", exc_info=True)
         await self.broadcast(self.presence_message())
-        if who:
-            await self.broadcast(
-                {"type": "system", "text": f"{who['name']} left", "ts": int(time.time())}
-            )
+        # Still here in another tab, so there is nothing to announce.
+        if not who or self._here(who["username"]):
+            return
+        # A grace of zero turns the wait off: say it now and hold no task, which
+        # is also what keeps a test suite from waiting out a real minute.
+        if JOIN_GRACE_SECONDS <= 0:
+            await self.broadcast(self._left_line(who["name"]))
+            return
+        old = self._leaving.get(who["username"])
+        if old:
+            old.cancel()
+        self._leaving[who["username"]] = asyncio.create_task(
+            self._leave_later(who["username"], who["name"])
+        )
 
     async def say(self, who, text):
         ts = int(time.time())

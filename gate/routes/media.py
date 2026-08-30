@@ -27,6 +27,7 @@ from config import (
     WEB_DIR,
 )
 from hub import hub
+import theater
 from media import (
     fetch_path, link_shared, make_clip, ready_epoch, unlink_shared,
     _remove_media_files,
@@ -104,6 +105,20 @@ def _absolute(request, path):
     return f"{proto}://{host}{path}"
 
 
+def _showing():
+    """The film on the projector as `Title (Year)`, or None if none is playing.
+
+    Reuses the theater module's own idea of what a viewer may see, so the
+    preview can never show more than the watch page does. Note that this one
+    line is PUBLIC: /api/theater, the only other place a title appears, needs an
+    account. Naming the film in a share is deliberate and documented in
+    `docs/05-security.md`."""
+    now = theater.public_state()["now"]
+    if not now:
+        return None
+    return f"{now['title']} ({now['year']})" if now["year"] else now["title"]
+
+
 def _preview_text():
     """(site, title, description) for the preview, from the channel's own
     settings. The headline is the channel and what tonight is called; the line
@@ -116,10 +131,16 @@ def _preview_text():
     if hub.is_live():
         headline = info["stream_title"] or "Live now"
         title = f"{site}: {headline}"
-        description = (
-            f"playing {game}" if game
-            else (info["stream_description"] or "Live now.")
-        )
+        # A film on the projector wins: it is what the room is actually
+        # watching, and the game label is left over from the last broadcast.
+        # Between titles there is no film, so the game speaks again.
+        showing = _showing()
+        if showing:
+            description = f"playing {showing}"
+        elif game:
+            description = f"playing {game}"
+        else:
+            description = info["stream_description"] or "Live now."
     else:
         title = site
         description = (

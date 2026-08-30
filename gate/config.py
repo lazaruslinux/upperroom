@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -168,6 +168,11 @@ NIGHT_GAP_SECONDS = int(os.environ.get("SELFSTREAM_NIGHT_GAP", "21600"))
 CHAT_IDLE_WIPE_SECONDS = int(
     os.environ.get("SELFSTREAM_CHAT_IDLE_WIPE", "86400")
 )
+# How long someone may be gone before the room is told. A phone that backgrounds
+# its tab drops the socket and opens a new one on return, which announced a
+# departure and an arrival every time somebody glanced at another app. Both
+# lines wait this long now, so a flap is silent and a real departure still reads.
+JOIN_GRACE_SECONDS = int(os.environ.get("SELFSTREAM_JOIN_GRACE", "60"))
 
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60

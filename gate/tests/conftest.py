@@ -37,6 +37,11 @@ os.environ["SELFSTREAM_THUMB"] = os.path.join(_SCRATCH, "thumb.jpg")
 os.environ["SELFSTREAM_WEB_DIR"] = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web"
 )
+# A departure is normally held for a minute in case the viewer is only switching
+# tabs. Off here, so the socket tests below see the line the moment they close a
+# connection instead of waiting out a real minute; the grace has its own tests,
+# which set their own value.
+os.environ["SELFSTREAM_JOIN_GRACE"] = "0"
 # The stream key is seeded from PUBLISH_PASS on first init_db, so drop any value
 # a developer has in their shell before it can leak a real key into the tests.
 os.environ.pop("PUBLISH_PASS", None)
@@ -76,6 +81,11 @@ def client(tmp_path, monkeypatch):
     hub._timeouts.clear()
     hub._banned.clear()
     hub._last_post.clear()
+    # A pending departure is a live asyncio task on whichever loop made it, so
+    # one left behind would fire into the next test's room.
+    for task in hub._leaving.values():
+        task.cancel()
+    hub._leaving.clear()
     # The live flag is process-global too, and now gates highlight redemption, so
     # reset it between tests. A case that wants a live stream sets it explicitly.
     hub._live = False

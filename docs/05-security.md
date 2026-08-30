@@ -128,17 +128,23 @@ cookie, so two things have to answer without one.
   cannot watch it. It is one still, at the rate the app captures them, with no
   sound. Between broadcasts the app deletes the frame, so this falls back to the
   channel's static card and no frame of anything is reachable.
-- The preview tags carry your site name, your stream title or description, the
-  name of the longest-standing admin account, and what you have said you are
-  playing. Nothing else about the channel, and nothing at all about your
-  viewers.
+- The preview tags carry your site name, your stream title or description, and
+  what is being played. Nothing else about the channel, no account names, and
+  nothing at all about your viewers.
+- **During a theater session that line is the film, by name and year.** This is
+  the one place a title leaves the account wall: `/api/theater`, where the watch
+  page reads it, refuses anyone without a session. Anyone holding your watch
+  link can therefore see what you are showing tonight without an account. That
+  is deliberate, so a share says something worth reading, and it tells a
+  stranger no more than the frame beside it already does. Between titles there
+  is no film in the tags, only whatever you last set as the game.
 - The country gate, if you set one, applies to both. So does the rate limiting
   and the fail2ban jail below.
 
-If a frame of your live stream reaching whoever holds the link is not a trade
-you want, set what you are playing and leave it at that: there is no switch for
-the picture, but the preview reads correctly without ever being fetched by
-anyone you did not send the link to.
+If a frame of your live stream, or the name of tonight's film, reaching whoever
+holds the link is not a trade you want, keep the link to people you would tell
+anyway: there is no switch for either, but nothing is fetched unless somebody
+pastes the link somewhere that unfurls it.
 
 Nothing else is reachable without signing in. Publishing no clips and sharing no
 links leaves the site closed.
