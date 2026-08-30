@@ -16,6 +16,9 @@ import time
 from contextlib import contextmanager
 
 import wordfilter
+# Only for stamping a new account with the release it was made on, so nobody
+# is welcomed by a list of things that changed before they arrived.
+from config import VERSION
 
 DB_PATH = os.environ.get("SELFSTREAM_DB", "/data/selfstream.db")
 
@@ -380,6 +383,11 @@ def init_db():
         # the row wherever it matters, never trusted from the session cookie.
         _ensure_column(conn, "users", "is_guest", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "guest_expires_at", "INTEGER NOT NULL DEFAULT 0")
+        # The release whose "what changed" notice this person has already seen.
+        # Empty on an existing account, which is what makes the notice appear
+        # once after an upgrade; a new account is stamped with the running
+        # version at sign-up, so nobody is welcomed with a changelog.
+        _ensure_column(conn, "users", "last_seen_version", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "chat_log", "deleted_by", "TEXT")
         # Older databases snapshotted replay chat before per-viewer colors rode
         # along, so their replay rows have no color to carry. Add the columns in
@@ -493,6 +501,13 @@ def init_db():
         )
         _ensure_column(
             conn, "channel_settings", "now_playing_game", "TEXT NOT NULL DEFAULT ''"
+        )
+        # How many people may pull the video at once, 0 for no limit. Every
+        # viewer costs the server a full copy of the broadcast, so this is the
+        # one setting that bounds the bandwidth bill. Off by default: an
+        # existing channel should not start refusing people on an upgrade.
+        _ensure_column(
+            conn, "channel_settings", "max_viewers", "INTEGER NOT NULL DEFAULT 0"
         )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
@@ -632,10 +647,20 @@ def add_user(username, display_name, password, is_admin=False, email=""):
     with connect() as conn:
         conn.execute(
             "INSERT INTO users "
-            "(username, display_name, password_hash, is_admin, created_at, email) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(username, display_name, password_hash, is_admin, created_at, "
+            "email, last_seen_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (username, display_name, hash_password(password),
-             1 if is_admin else 0, int(time.time()), email or ""),
+             1 if is_admin else 0, int(time.time()), email or "", VERSION),
+        )
+
+
+def mark_version_seen(username, version):
+    """Remember that this person has read the notice for this release."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET last_seen_version = ? WHERE username = ?",
+            (version, username),
         )
 
 
@@ -697,9 +722,10 @@ def create_first_user(username, display_name, password, when):
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO users "
-            "(username, display_name, password_hash, is_admin, created_at) "
-            "SELECT ?, ?, ?, 1, ? WHERE NOT EXISTS (SELECT 1 FROM users)",
-            (username, display_name, hash_password(password), when),
+            "(username, display_name, password_hash, is_admin, created_at, "
+            " last_seen_version) "
+            "SELECT ?, ?, ?, 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM users)",
+            (username, display_name, hash_password(password), when, VERSION),
         )
         return cur.rowcount > 0
 
@@ -758,6 +784,28 @@ def set_stream_info(site_name=None, title=None, description=None, accent=None):
     with connect() as conn:
         conn.execute(
             f"UPDATE channel_settings SET {', '.join(sets)} WHERE id = 1", values
+        )
+
+
+def get_max_viewers():
+    """How many people may pull the video at once, 0 for no limit. Kept out of
+    get_stream_info for the same reason now_playing_game is: that one feeds the
+    public status payload, and how full the room is allowed to get is the
+    operator's business, not a visitor's."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT max_viewers FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return int(row["max_viewers"]) if row else 0
+
+
+def set_max_viewers(count):
+    """Set the viewer limit. 0 clears it, which is a real value here rather than
+    an unset one, so this cannot ride set_stream_info's None-means-unset keys."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET max_viewers = ? WHERE id = 1",
+            (max(0, int(count)),),
         )
 
 
@@ -1438,9 +1486,10 @@ def register_via_invite(code, username, display_name, password, when):
             return "user_exists"
         conn.execute(
             "INSERT INTO users "
-            "(username, display_name, password_hash, is_admin, created_at, invite_code) "
-            "VALUES (?, ?, ?, 0, ?, ?)",
-            (username, display_name, hash_password(password), when, code),
+            "(username, display_name, password_hash, is_admin, created_at, "
+            " invite_code, last_seen_version) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?)",
+            (username, display_name, hash_password(password), when, code, VERSION),
         )
         return "ok"
 
@@ -1561,9 +1610,10 @@ def redeem_guest_pass(code, username, display_name, when, expires_at):
         conn.execute(
             "INSERT INTO users "
             "(username, display_name, password_hash, is_admin, created_at, "
-            " is_guest, guest_expires_at, notify_live) "
-            "VALUES (?, ?, ?, 0, ?, 1, ?, 0)",
-            (username, display_name, GUEST_PASSWORD_SENTINEL, when, expires_at),
+            " is_guest, guest_expires_at, notify_live, last_seen_version) "
+            "VALUES (?, ?, ?, 0, ?, 1, ?, 0, ?)",
+            (username, display_name, GUEST_PASSWORD_SENTINEL, when, expires_at,
+             VERSION),
         )
         return "ok"
 

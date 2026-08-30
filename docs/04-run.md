@@ -200,6 +200,24 @@ docker compose up -d --build
 Your accounts survive updates because they live in a docker volume, not in the
 container.
 
+### Telling people what changed
+
+After an update, everyone who signs in gets a small notice on the home page
+naming the new version and listing what changed, with a button to dismiss it.
+They see it once. Somebody who skipped three releases gets the newest one and
+nothing else: it is a "here is what is new", not a version history.
+
+The lines come from `NOTES` in `gate/changelog.py`, keyed by version. **A
+version bump wants its entry in the same commit**, and the test suite fails if
+the running version has none, so a silent release is caught before it ships.
+Five lines is the whole budget and each one is a short sentence, because the
+notice has to fit a phone screen without scrolling. Write them for a viewer:
+what they can now do, not which file moved.
+
+Nobody is greeted with a changelog on the way in. A new account is stamped with
+the running version as it is created, so the notice only ever means "this
+changed since you were last here".
+
 If you keep your own copy of `docker-compose.yml` or your own Caddy config
 rather than the ones in this repo, updating to 0.8.0 needs two small additions,
 both for the watch page's link preview:

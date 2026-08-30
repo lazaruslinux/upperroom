@@ -32,7 +32,7 @@ from conftest import make_client
 from hub import hub
 from projector import ProjectorError, link
 
-from test_api import add_user, login, setup_admin
+from test_api import add_user, drain_join, login, setup_admin
 from test_guest import make_pass, redeem
 
 
@@ -186,8 +186,7 @@ def test_ending_a_session_narrates_it_and_leaves_the_chat_alone(client):
     with client.websocket_connect(
         "/ws", cookies={"selfstream_session": client.cookies.get("selfstream_session")}
     ) as ws:
-        for _ in range(3):
-            ws.receive_json()
+        drain_join(ws)
         client.post("/api/admin/theater/end")
         said = ws.receive_json()
         ended = ws.receive_json()

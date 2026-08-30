@@ -258,6 +258,19 @@ You do not have to configure any of this; it is on by default.
 - **Only the address your own proxy observed is trusted.** `X-Forwarded-For` is
   something a caller can write, so the rate limiter and the country gate read
   the entry Caddy added, never one that arrived from outside.
+- **The room can be capped.** Broadcast -> Room limit on the dashboard sets how
+  many people may pull the live video at once; `0`, the default, is no limit.
+  Caddy already asks the gate to authorize every video segment, so that is
+  where the limit is applied, and it applies to the live stream only: saved
+  broadcasts and clips are files on disk and are never refused by it. An admin
+  is never counted and never turned away, so the limit cannot lock you out of
+  your own broadcast, and someone already watching is never cut off mid-title.
+
+  **Be clear about what this is.** It is a bandwidth guard, not an access
+  control. It counts distinct accounts, so one signed-in member could pull
+  several copies at once and still occupy a single place. Everyone who can reach
+  the video already holds an account you issued; if you need to stop a specific
+  person, remove or ban the account rather than tightening this number.
 
 ## Optional extra hardening
 

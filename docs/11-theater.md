@@ -52,6 +52,26 @@ needs no open port, no certificate, no name in DNS, and nothing about it is
 reachable from the internet. If you unplug it, the gate simply reports that the
 projector is not connected.
 
+### What actually crosses the wire
+
+A 4K film does not leave your house as a 4K film. The projector reads the
+original file from your library over your own network, then re-encodes it
+locally before publishing: scaled down to `PROJECTOR_MAX_HEIGHT` (1080 by
+default, and it never upscales) at `PROJECTOR_VIDEO_BITRATE` (6000k by default),
+plus 160k of stereo audio. Roughly 6 Mbps leaves your machine, and that is all.
+
+**That figure does not change with the number of viewers.** The projector
+publishes one stream to your server; your server hands out the copies. Ten
+people watching costs your home connection exactly what one person costs.
+
+Your *server's* bandwidth is the other story. It does not re-encode either, so
+each viewer downloads the full 6 Mbps: about 2.9 GB per person per hour. A
+two-hour film for ten people is roughly 58 GB. If that matters on your host's
+plan, lower `PROJECTOR_VIDEO_BITRATE`, or cap the audience under
+**Broadcast -> Room limit** on the dashboard (see
+`docs/06-accounts-and-chat.md`). The stream strip on the dashboard shows what
+the running broadcast has sent so far.
+
 ### Setting it up
 
 1. On your server's dashboard, open the **Connections** tab, find **Projector**

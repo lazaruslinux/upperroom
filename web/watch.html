@@ -31,7 +31,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <!-- og:end -->
-  <link rel="stylesheet" href="/assets/style.css?v=54">
+  <link rel="stylesheet" href="/assets/style.css?v=56">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -69,21 +69,43 @@
         <a href="/guest" class="pill">Use a guest pass</a>
       </div>
     </div>
+    <!-- Shown when the channel is at its viewer limit. The server refuses the
+         video, not the page, so chat still works while this is up. -->
+    <div id="room-full" class="guest-over" hidden>
+      <p class="guest-over-title">The room is full</p>
+      <p class="muted">This channel limits how many people can watch at once. Chat still works, and the video starts on its own when a place opens up.</p>
+      <div class="guest-over-actions">
+        <button id="room-full-retry" type="button" class="pill primary">Try again</button>
+      </div>
+    </div>
   </section>
 
   <aside class="chat">
     <header class="chat-head">
-      <a href="/home" class="icon-btn" aria-label="Back to home">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 11l9-8 9 8"></path><path d="M5 10v10h14V10"></path>
+      <!-- Collapse rather than a way off the page: this is the one bar a viewer
+           reads all night, and the old home link led away from the stream. Home
+           lives in the settings panel now. -->
+      <button id="chat-collapse" type="button" class="icon-btn" aria-label="Collapse chat" aria-expanded="true" title="Collapse chat">
+        <svg class="collapse-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 17l5-5-5-5"></path><path d="M4 4v16"></path>
         </svg>
-      </a>
-      <button id="viewer-toggle" type="button">
-        <span id="viewer-count">0 watching</span>
       </button>
+      <span class="chat-title">Stream Chat</span>
       <!-- A guest's remaining time, in the chat bar where they will actually
            see it. Hidden entirely for members rather than shown empty. -->
       <span id="guest-timer" class="guest-timer" hidden></span>
+      <button id="viewer-toggle" type="button" class="icon-btn" aria-label="Who is watching" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        <!-- The count left the bar (it now just names the panel), but it is
+             still what this button is for, so it stays for screen readers and
+             rides the button's tooltip. -->
+        <span id="viewer-count" class="sr-only">0 watching</span>
+      </button>
       <button id="settings-toggle" type="button" class="icon-btn" aria-label="Settings">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
@@ -103,6 +125,10 @@
     </div>
     <div id="settings-panel" class="settings-panel" hidden>
       <p class="settings-heading muted">Stream &amp; chat</p>
+      <div class="setting">
+        <span>Home page</span>
+        <a id="home-link" href="/home" class="pill">Back to home</a>
+      </div>
       <div class="setting">
         <span>Theme</span>
         <button id="theme-toggle" type="button" class="pill">Dark</button>
@@ -216,6 +242,6 @@
   </div>
 
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/watch.js?v=34"></script>
+  <script src="/assets/watch.js?v=35"></script>
 </body>
 </html>

@@ -43,6 +43,11 @@ only repackages the video and stays light.
   roughly two to five seconds behind live.
 - Serves one watch page. No video leaves the server without a valid session.
 - Live chat, a list of who is watching, and a count.
+- An optional limit on how many people may watch at once. Every viewer pulls
+  their own copy of the stream, so this is the setting that bounds the bandwidth
+  bill; past it the video is refused and chat still works while they wait.
+- A one-time notice after an update, naming the new version and listing what
+  changed in at most five lines. Once per person per release, newest only.
 - Records every broadcast (a recording you can replay later), and lets viewers
   clip the recent stream. Past broadcasts and clips show in the library.
   The viewer picks how much to take (thirty, forty-five or sixty seconds), and
@@ -267,7 +272,7 @@ Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
 description, accent color, the stream key, the
 overlay key and its ticker line, slow mode, banned words, the next stream, the
-storage limits, and the Discord webhook.
+viewer limit, the storage limits, and the Discord webhook.
 
 ## Security model
 

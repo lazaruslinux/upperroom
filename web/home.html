@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=54">
+  <link rel="stylesheet" href="/assets/style.css?v=56">
 </head>
 <body class="home">
   <div id="site-nav"></div>
@@ -82,6 +82,19 @@
     </section>
   </main>
 
+  <!-- The one-time notice after an upgrade. Filled and shown by home.js only
+       when the server says this viewer has not read the running release's
+       notes; there is never more than one, and never one per missed version. -->
+  <div id="whats-new" class="modal" hidden>
+    <div class="modal-card whats-new-card">
+      <h3 id="whats-new-title">upperroom has been updated</h3>
+      <ul id="whats-new-list" class="whats-new-list"></ul>
+      <div class="crop-actions">
+        <button type="button" id="whats-new-ok" class="pill primary">Got it</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="site-foot mono muted">
     <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
@@ -90,6 +103,6 @@
   </footer>
 
   <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/home.js?v=20"></script>
+  <script src="/assets/home.js?v=21"></script>
 </body>
 </html>

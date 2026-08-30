@@ -14,6 +14,9 @@ const unmuteButton = document.getElementById("unmute");
 const clipBtn = document.getElementById("clip-btn");
 const theaterInter = document.getElementById("theater-inter");
 const nowShowing = document.getElementById("now-showing");
+const viewerToggle = document.getElementById("viewer-toggle");
+const chatCollapse = document.getElementById("chat-collapse");
+const roomFull = document.getElementById("room-full");
 
 let me = null;
 let hls = null;
@@ -30,10 +33,14 @@ const MAX_VISIBLE_MESSAGES = 50;  // keep the last 50 lines on screen, no more
 let chatLive = false;
 
 // The header count is "watching" while live, "in chat" while offline (people
-// can still hang out in chat between streams).
+// can still hang out in chat between streams). The bar itself just names the
+// panel now, so this reads out of the people button rather than out of the bar:
+// still there for a screen reader, and on the tooltip for everyone else.
 function setViewerLabel() {
   const noun = streamOnline ? "watching" : "in chat";
-  viewerCount.textContent = `${lastViewerCount} ${noun}`;
+  const label = `${lastViewerCount} ${noun}`;
+  viewerCount.textContent = label;
+  viewerToggle.title = label;
 }
 
 async function requireAuth() {
@@ -102,7 +109,36 @@ function setStage(next) {
 function stageForOnline() { return theaterActive ? "theater_playing" : "live"; }
 function stageForOffline() { return theaterActive ? "theater_intermission" : "offline"; }
 
+// The server refuses the video when the channel is at its viewer limit, and it
+// says so with a 403 on the stream itself. hls.js hands us that status on the
+// error and takes the short path above; Safari's native player does not, and
+// neither does a fatal that arrives without a response, so those ask the stream
+// directly. Anything but a refusal is a real outage and shows the offline card.
+async function streamRefused() {
+  try {
+    const reply = await fetch(STREAM_URL, { method: "GET", cache: "no-store" });
+    return reply.status === 403;
+  } catch {
+    return false;
+  }
+}
+
+function showRoomFull() {
+  // Not the offline card and not the intermission card: the stream is fine,
+  // this viewer just has no place in it. Chat is not capped, so the socket
+  // stays up and the room stays readable behind this.
+  setStage(stageForOffline());
+  offline.hidden = true;
+  if (theaterInter) theaterInter.hidden = true;
+  roomFull.hidden = false;
+}
+
+function hideRoomFull() {
+  roomFull.hidden = true;
+}
+
 function startVideo() {
+  hideRoomFull();
   if (window.Hls && Hls.isSupported()) {
     hls = new Hls({ lowLatencyMode: true, backBufferLength: 30 });
     hls.loadSource(STREAM_URL);
@@ -123,6 +159,17 @@ function startVideo() {
     });
     hls.on(Hls.Events.ERROR, (event, data) => {
       if (!data.fatal) return;
+      // Being refused is not a hiccup. There is nothing to recover from a 403,
+      // and retrying it would only spend the three attempts below and then
+      // report the stream as down, which is the wrong thing to tell somebody
+      // whose only problem is that the room is full.
+      if (data.response && data.response.code === 403) {
+        hls.destroy();
+        hls = null;
+        showRoomFull();
+        setTimeout(checkStream, 15000);
+        return;
+      }
       // A brief source hiccup (a muxer restart, a dropped segment) should not
       // blank straight to the offline card. Try to resume a few times first.
       if (recoverAttempts < 3) {
@@ -134,12 +181,19 @@ function startVideo() {
         }
         return;
       }
-      // Recovery did not take, so the stream is probably actually down. Show
-      // the offline card and let the status poll bring it back when it returns.
+      // Recovery did not take. Either the room is full, which the stream says
+      // with a 403, or the stream is actually down.
       hls.destroy();
       hls = null;
-      setStage(stageForOffline());
-      setTimeout(checkStream, 5000);
+      streamRefused().then((refused) => {
+        if (refused) {
+          showRoomFull();
+          setTimeout(checkStream, 15000);
+          return;
+        }
+        setStage(stageForOffline());
+        setTimeout(checkStream, 5000);
+      });
     });
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
     // Safari on iOS plays HLS natively without hls.js. Bind the status
@@ -148,8 +202,15 @@ function startVideo() {
       nativeListenersBound = true;
       video.addEventListener("loadedmetadata", () => setStage(stageForOnline()));
       video.addEventListener("error", () => {
-        setStage(stageForOffline());
-        setTimeout(checkStream, 5000);
+        streamRefused().then((refused) => {
+          if (refused) {
+            showRoomFull();
+            setTimeout(checkStream, 15000);
+            return;
+          }
+          setStage(stageForOffline());
+          setTimeout(checkStream, 5000);
+        });
       });
     }
     video.src = STREAM_URL;
@@ -726,9 +787,16 @@ function connectChat() {
   };
 }
 
-document.getElementById("viewer-toggle").addEventListener("click", () => {
-  viewerList.hidden = !viewerList.hidden;
-});
+// The watching list and the settings panel both drop out of the same bar and
+// both push chat down, so only one of them is ever open.
+function showPanel(panel) {
+  const open = panel ? panel.hidden : false;
+  viewerList.hidden = panel !== viewerList || !open;
+  settingsPanel.hidden = panel !== settingsPanel || !open;
+  viewerToggle.setAttribute("aria-expanded", String(!viewerList.hidden));
+}
+
+viewerToggle.addEventListener("click", () => showPanel(viewerList));
 
 // ---- settings: theme, chat font, avatar, bio ----
 
@@ -753,8 +821,44 @@ const themeToggle = document.getElementById("theme-toggle");
 const fontPicker = document.getElementById("font-picker");
 
 document.getElementById("settings-toggle").addEventListener("click", () => {
-  settingsPanel.hidden = !settingsPanel.hidden;
+  showPanel(settingsPanel);
 });
+
+const roomFullRetry = document.getElementById("room-full-retry");
+if (roomFullRetry) {
+  roomFullRetry.addEventListener("click", () => {
+    hideRoomFull();
+    checkStream();
+  });
+}
+
+// ---- collapsing the chat ----
+// The column folds to a rail so the picture can have the width, and the choice
+// is remembered. Collapsed is a body class rather than a style on .chat: the
+// stage, the host strip and the mobile stacking all key off it.
+
+const CHAT_OPEN_KEY = "selfstream_chat_open";
+
+function setChatOpen(open, remember) {
+  document.body.classList.toggle("chat-collapsed", !open);
+  chatCollapse.setAttribute("aria-expanded", String(open));
+  const label = open ? "Collapse chat" : "Show chat";
+  chatCollapse.setAttribute("aria-label", label);
+  chatCollapse.title = label;
+  // A collapsed rail has nowhere to put a dropdown, so close both on the way in.
+  if (!open) showPanel(null);
+  if (remember) {
+    try { localStorage.setItem(CHAT_OPEN_KEY, open ? "1" : "0"); } catch (e) {}
+  }
+}
+
+chatCollapse.addEventListener("click", () => {
+  setChatOpen(document.body.classList.contains("chat-collapsed"), true);
+});
+
+let chatOpenSaved = "1";
+try { chatOpenSaved = localStorage.getItem(CHAT_OPEN_KEY) || "1"; } catch (e) {}
+setChatOpen(chatOpenSaved !== "0", false);
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -1329,10 +1433,10 @@ function setUpGuest() {
       "You are watching as a guest. Sign in or use an invite code for an account.";
   }
   // The home link goes nowhere useful for a guest; point it at the way in.
-  const homeLink = document.querySelector(".chat-head a[href='/home']");
+  const homeLink = document.getElementById("home-link");
   if (homeLink) {
     homeLink.setAttribute("href", "/");
-    homeLink.setAttribute("aria-label", "Sign in");
+    homeLink.textContent = "Sign in";
   }
   guestTimer.hidden = false;
   renderGuestTimer();
@@ -1351,6 +1455,10 @@ function setVideoShown(show) {
   if (show === !videoHidden) return;    // already there; ignore repeat asks
   videoHidden = !show;
   document.body.classList.toggle("chat-only", videoHidden);
+  // Chat-only and collapsed together would leave the frame showing a rail and
+  // nothing else, so asking for chat alone opens it. The saved preference is
+  // left alone: this is the dashboard's view, not the viewer's choice.
+  if (videoHidden) setChatOpen(true, false);
   if (show) {
     // Rebuilds the player at the live edge, rather than resuming seconds behind
     // where it was paused.
@@ -1375,7 +1483,7 @@ window.addEventListener("message", (event) => {
 // In a frame, the home link would load the home page inside that frame. Send it
 // to the top window instead.
 if (window.top !== window.self) {
-  const framedHome = document.querySelector(".chat-head a[href='/home']");
+  const framedHome = document.getElementById("home-link");
   if (framedHome) framedHome.setAttribute("target", "_top");
 }
 

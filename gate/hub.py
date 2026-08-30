@@ -170,9 +170,10 @@ class Hub:
             returning.cancel()
         await socket.send_json({"type": "hello", "you": who, "history": history})
         await self.broadcast(self.presence_message())
-        # One line per person arriving, not one per socket, and nothing at all
-        # for someone who only dropped out for a moment.
-        if not already_here and not returning:
+        # One line per person arriving, not one per socket, nothing at all for
+        # someone who only dropped out for a moment, and nothing for the channel
+        # owner, who is in and out of their own room all night.
+        if not already_here and not returning and not who.get("owner"):
             await self.broadcast(
                 {"type": "system", "text": f"{who['name']} joined", "ts": int(time.time())}
             )
@@ -185,8 +186,10 @@ class Hub:
             except Exception:
                 logger.debug("end_watch_session failed on leave", exc_info=True)
         await self.broadcast(self.presence_message())
-        # Still here in another tab, so there is nothing to announce.
-        if not who or self._here(who["username"]):
+        # Still here in another tab, so there is nothing to announce. The owner
+        # is never announced either way: a departure with no matching arrival
+        # reads worse than saying nothing at all.
+        if not who or who.get("owner") or self._here(who["username"]):
             return
         # A grace of zero turns the wait off: say it now and hold no task, which
         # is also what keeps a test suite from waiting out a real minute.

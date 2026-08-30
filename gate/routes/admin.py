@@ -17,8 +17,10 @@ from config import (
     GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
     MAX_GAME_NAME, MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_OVERLAY_TICKER,
     MAX_SCHEDULE_NOTE, MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
-    MAX_STREAM_TITLE, MIN_PASSWORD, SITE_URL, SMTP_FROM, SMTP_HOST,
+    MAX_STREAM_TITLE, MAX_VIEWER_LIMIT, MIN_PASSWORD, SITE_URL, SMTP_FROM,
+    SMTP_HOST,
 )
+import watchers
 from hub import hub
 from media import (
     enforce_retention, fetch_path, media_usage, ready_epoch, recording_status,
@@ -82,6 +84,17 @@ async def set_stream_info(request: Request):
     # handling.
     if "game" in body:
         db.set_now_playing(str(body.get("game") or "").strip()[:MAX_GAME_NAME])
+    # So does the viewer limit, and for the same reason: 0 is a real value here
+    # (it turns the limit off), which is exactly what the text fields above
+    # refuse, so it cannot share their None-means-unset handling.
+    if "max_viewers" in body:
+        try:
+            limit = max(0, min(MAX_VIEWER_LIMIT, int(body["max_viewers"])))
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "Viewer limit must be a whole number."}, status_code=400
+            )
+        db.set_max_viewers(limit)
     # The overlay ticker rides this channel-settings route too, but is saved and
     # pushed separately: cleaned to a single safe line, stored, then broadcast to
     # the overlay sockets ONLY so a live source updates without a reconnect. It is
@@ -110,6 +123,13 @@ async def admin_stream(request: Request):
         "since": ready_epoch(data.get("readyTime")) if live else None,
         "watching": len(hub.viewers()),
         "recording": recording_status(),
+        # What the broadcast is costing. MediaMTX counts the bytes it has sent
+        # since the path went live, so this is tonight rather than all time,
+        # which is the number a streamer actually wants. watchers.count() is
+        # people pulling video, which is not the same as people in chat.
+        "sent_bytes": int((data or {}).get("bytesSent") or 0) if live else 0,
+        "video_watchers": watchers.count(),
+        "max_viewers": db.get_max_viewers(),
         # The console's Playing row rides this poll rather than a second
         # endpoint: it is dashboard-only state and this already runs every ten
         # seconds while the page is open.

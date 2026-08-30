@@ -44,6 +44,17 @@ In Settings, then Output, set Output Mode to `Advanced`, then the Streaming tab:
 NVENC keeps the load off your processor while you game, which is why it is worth
 using over x264 if you have it.
 
+**What the bitrate costs.** Your server does not re-encode anything: it hands
+every viewer the stream exactly as you send it, so whatever you set here is what
+each of them downloads. At 8000 Kbps that is about 3.9 GB per person per hour,
+at 6000 Kbps about 2.9 GB. Multiply by however many people watch and by how long
+you are on, and that is your bandwidth for the night. If that number is
+uncomfortable, the two levers are this setting and the room limit under
+Broadcast on the dashboard (see `docs/06-accounts-and-chat.md`).
+
+Your own upload is one copy of the stream and nothing more, however many people
+are watching: viewers pull from the server, never from you.
+
 ## 3.3 Audio
 
 Your audio is sent automatically inside the same stream, so there is nothing

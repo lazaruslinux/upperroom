@@ -301,12 +301,29 @@ automatically after that window. Change the retention by setting
 Messages are limited to 500 characters, and there is a small flood guard that
 drops anything past five messages in three seconds.
 
+## The chat bar
+
+The bar across the top of the chat panel holds four things:
+
+- **the collapse arrow**, on the left, which folds the whole panel down to a
+  thin rail so the picture gets the width. On a phone held upright it folds down
+  to its own bar instead, since there the chat costs height rather than width.
+  The choice is remembered in that browser.
+- **Stream Chat**, which is a label and nothing else
+- **the people icon**, which opens the list of everyone watching
+- **the gear**, which opens the settings panel
+
+There is no link off the page in the bar. Getting home is a row inside the
+settings panel, which is where the rest of the account-level links already
+pointed.
+
 ## Presence, who is watching
 
 The watching list is the safety and fun feature. Everyone signed in can see:
 
-- a live count, for example "3 watching"
 - the names of everyone currently watching, with "(you)" next to their own
+- the count, on the people icon's tooltip: "3 watching" while live, "3 in chat"
+  between streams, because people hang around in the room either way
 - a short line in chat when someone joins or leaves
 
 Those lines are one per person, not one per tab, and a brief disappearance never
@@ -316,7 +333,37 @@ departure and an arrival every time. A departure is now held for a minute
 (`SELFSTREAM_JOIN_GRACE`) and cancelled if they return inside it, which means a
 glance at another app is silent and only a real leaving is announced.
 
-Tap or click the count at the top of the chat panel to show or hide the full
-list of names. The count updates the moment someone opens or closes the page.
-Because every viewer has a named account, you always know exactly who is on the
-other side of the stream.
+**The channel owner is never announced, arriving or leaving.** They are in and
+out of their own room all evening, often only to read it, and a running
+commentary on the host coming and going is noise. They still appear in the
+watching list and still count towards it: silent is not invisible. Everyone
+else, moderators included, is announced as before.
+
+Click the people icon at the top of the chat panel to show or hide the full list
+of names. It updates the moment someone opens or closes the page. Because every
+viewer has a named account, you always know exactly who is on the other side of
+the stream.
+
+## Limiting how many people watch at once
+
+Everyone watching pulls their own copy of the broadcast from your server, so the
+number of viewers is what your bandwidth bill is made of. At the 1080p and
+6000 Kbps the theater projector publishes, that is roughly **2.9 GB per person
+per hour**; at 8000 Kbps from OBS, roughly 3.9 GB.
+
+**Broadcast -> Room limit** on the dashboard sets how many people may watch at
+once. `0`, the default, means no limit. Past the limit, the video is refused and
+the page says the room is full; the person is not signed out and **chat still
+works for them**, so they can wait in the room and the video starts on its own
+when a place opens up. A place opens up about thirty seconds after somebody
+stops watching.
+
+Two things the limit deliberately does not do. It never counts or refuses an
+admin, so you cannot lock yourself out of your own broadcast. And it does not
+touch saved broadcasts or clips, which are files served off the disk and cost
+nothing per viewer.
+
+The stream strip at the top of the dashboard shows what the current broadcast
+has sent while it runs, so the limit can be set against a real number rather
+than a guess. That figure is for this broadcast, not for the month; your host's
+control panel is where the monthly total lives.

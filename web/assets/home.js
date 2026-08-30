@@ -390,9 +390,39 @@ mineOnlyToggle.addEventListener("change", () => {
   renderLibrary();
 });
 
+// ---- what changed in this release ----
+// Shown once, on the page people land on after signing in, and only for the
+// release actually running. Acknowledging it is what marks it read, so closing
+// the tab instead means it is still waiting next time rather than lost.
+
+function showWhatsNew(info) {
+  if (!info || !info.notes || !info.notes.length) return;
+  const modal = document.getElementById("whats-new");
+  if (!modal) return;
+  document.getElementById("whats-new-title").textContent =
+    `upperroom has been updated to v${info.version}`;
+  const list = document.getElementById("whats-new-list");
+  list.innerHTML = "";
+  info.notes.forEach((note) => {
+    const item = document.createElement("li");
+    item.textContent = note;
+    list.appendChild(item);
+  });
+  const ok = document.getElementById("whats-new-ok");
+  ok.addEventListener("click", async () => {
+    modal.hidden = true;
+    // Best effort: a failed acknowledgement just means it is offered again,
+    // which is the harmless direction to fail in.
+    try { await fetch("/api/whats-new/seen", { method: "POST" }); } catch (e) {}
+  });
+  modal.hidden = false;
+  ok.focus();
+}
+
 async function boot() {
   if (!(await requireAuth())) return;
   mountNav(me, { current: "home", onProfileChange, promptEmail: true });
+  showWhatsNew(me.whats_new);
   renderGreeting();
   loadChannel();
   renderLibrary();

@@ -387,11 +387,17 @@ async def chat_socket(websocket: WebSocket):
         )
         await websocket.close(code=4429)
         return
+    # The channel owner comes and goes from their own room all evening, often
+    # just to read it, so their arrivals and departures are not news. The hub
+    # reads this flag; presence is untouched, so they still show in the watching
+    # list like anybody else.
+    owner = db.channel_owner()
     who = {
         "username": session["sub"],
         "name": user["display_name"],
         "admin": bool(user["is_admin"]),
         "mod": bool(user["is_moderator"]),
+        "owner": bool(owner and owner["username"] == session["sub"]),
         "avatar": user["avatar_version"],
         "font": user["chat_font"],
         "name_color": user["name_color"],

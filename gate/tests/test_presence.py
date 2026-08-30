@@ -31,9 +31,9 @@ class Socket:
         return [m["text"] for m in self.sent if m.get("type") == "system"]
 
 
-def who(username, name=None):
+def who(username, name=None, owner=False):
     return {"username": username, "name": name or username.title(),
-            "admin": False, "mod": False}
+            "admin": False, "mod": False, "owner": owner}
 
 
 @pytest.fixture
@@ -168,3 +168,75 @@ def test_the_page_explains_every_wipe_reason_the_gate_sends():
     ).read()
     for reason in sent:
         assert f'msg.reason === "{reason}"' in watch_js, reason
+
+
+# ---- the channel owner ----
+# They are in and out of their own room all evening, often only to read it, so
+# their arrivals are not news. Everyone else is announced exactly as before, and
+# the owner still shows up in the watching list.
+
+
+def test_the_owner_arrives_without_a_word(client, grace):
+    async def run():
+        watcher, host = Socket(), Socket()
+        await hub.join(watcher, who("watcher"))
+        await hub.join(host, who("rafe", "Rafe", owner=True))
+        return watcher.lines()
+
+    # The watcher hears its own arrival; what matters is that the owner's is
+    # not in there with it.
+    assert [line for line in asyncio.run(run()) if "Rafe" in line] == []
+
+
+def test_the_owner_leaves_without_a_word(client, grace):
+    async def run():
+        watcher, host = Socket(), Socket()
+        await hub.join(watcher, who("watcher"))
+        await hub.join(host, who("rafe", "Rafe", owner=True))
+        await hub.leave(host)
+        # Well past the grace, so a pending departure would have spoken by now.
+        await asyncio.sleep(0.4)
+        return watcher.lines()
+
+    assert [line for line in asyncio.run(run()) if "Rafe" in line] == []
+
+
+def test_a_grace_of_zero_still_says_nothing_for_the_owner(client, monkeypatch):
+    # The immediate path is a separate branch from the delayed one, so it needs
+    # its own guard and its own test.
+    monkeypatch.setattr(hub_module, "JOIN_GRACE_SECONDS", 0)
+
+    async def run():
+        watcher, host = Socket(), Socket()
+        await hub.join(watcher, who("watcher"))
+        await hub.join(host, who("rafe", "Rafe", owner=True))
+        await hub.leave(host)
+        return watcher.lines()
+
+    assert [line for line in asyncio.run(run()) if "Rafe" in line] == []
+
+
+def test_everybody_else_is_still_announced(client, grace):
+    async def run():
+        watcher, host, guest = Socket(), Socket(), Socket()
+        await hub.join(watcher, who("watcher"))
+        await hub.join(host, who("rafe", "Rafe", owner=True))
+        await hub.join(guest, who("nell", "Nell"))
+        return watcher.lines()
+
+    lines = asyncio.run(run())
+    assert "Nell joined" in lines
+    assert [line for line in lines if "Rafe" in line] == []
+
+
+def test_the_owner_is_still_in_the_watching_list(client, grace):
+    # Silent is not invisible: the point of saying nothing is that they can read
+    # the room, and the room can still see they are there.
+    async def run():
+        host = Socket()
+        await hub.join(host, who("rafe", "Rafe", owner=True))
+        return hub.presence_message()
+
+    message = asyncio.run(run())
+    assert message["count"] == 1
+    assert [v["username"] for v in message["viewers"]] == ["rafe"]

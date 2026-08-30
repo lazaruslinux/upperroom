@@ -1865,7 +1865,59 @@ const streamStrip = document.getElementById("stream-strip");
 const streamState = document.getElementById("stream-state");
 const streamSince = document.getElementById("stream-since");
 const streamWatching = document.getElementById("stream-watching");
+const streamSent = document.getElementById("stream-sent");
 const streamRec = document.getElementById("stream-rec");
+const roomLimit = document.getElementById("room-limit");
+const roomLimitNow = document.getElementById("room-limit-now");
+const roomLimitMsg = document.getElementById("room-limit-msg");
+// What the box last told us, so a poll landing mid-edit cannot overwrite what
+// is being typed. Same reason the game field keeps savedGame.
+let savedRoomLimit = null;
+
+function sentLabel(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB sent`;
+  return `${Math.round(bytes / 1024 ** 2)} MB sent`;
+}
+
+function showRoomLimitMsg(text, ok) {
+  roomLimitMsg.textContent = text;
+  roomLimitMsg.classList.toggle("good", !!ok);
+  roomLimitMsg.classList.toggle("bad", !ok);
+  roomLimitMsg.hidden = !text;
+}
+
+async function saveRoomLimit() {
+  showRoomLimitMsg("", true);
+  const raw = Number.parseInt(roomLimit.value, 10);
+  if (!Number.isFinite(raw) || raw < 0) {
+    showRoomLimitMsg("That has to be a whole number, 0 or more.", false);
+    return;
+  }
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_viewers: raw }),
+    });
+    const data = await reply.json().catch(() => ({}));
+    if (!reply.ok) {
+      showRoomLimitMsg(data.error || "Could not save that.", false);
+      return;
+    }
+    savedRoomLimit = raw;
+    showRoomLimitMsg(raw === 0 ? "Saved. No limit." : `Saved. ${raw} at a time.`, true);
+    loadStream();
+  } catch {
+    showRoomLimitMsg("Could not reach the server.", false);
+  }
+}
+
+if (roomLimit) {
+  document.getElementById("room-limit-save").addEventListener("click", saveRoomLimit);
+  roomLimit.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveRoomLimit();
+  });
+}
 
 function uptimeLabel(since) {
   const secs = Math.max(0, Math.floor(Date.now() / 1000) - since);
@@ -1883,6 +1935,7 @@ function renderStream(data) {
   if (!live) {
     streamSince.hidden = true;
     streamWatching.hidden = true;
+    streamSent.hidden = true;
     streamRec.hidden = true;
     return;
   }
@@ -1891,6 +1944,11 @@ function renderStream(data) {
   const n = typeof data.watching === "number" ? data.watching : 0;
   streamWatching.textContent = n === 1 ? "1 watching" : `${n} watching`;
   streamWatching.hidden = false;
+  // Only worth a line once there is something to report; a broadcast that has
+  // just started reads better without "0 MB sent" beside it.
+  const sent = typeof data.sent_bytes === "number" ? data.sent_bytes : 0;
+  streamSent.textContent = sentLabel(sent);
+  streamSent.hidden = sent <= 0;
   // The recorder state is the headline: a live broadcast that is not being
   // recorded is a problem to surface, not one to leave the streamer guessing at.
   if (data.recording === "ok") {
@@ -1904,6 +1962,23 @@ function renderStream(data) {
     streamRec.className = "stream-strip-rec is-notrecording";
   }
   streamRec.hidden = false;
+}
+
+// The viewer limit rides this poll too rather than /api/channel, which any
+// signed-in viewer can read: how full the room may get is the operator's
+// business. The count beside it is people pulling video, which is not the same
+// as people in chat.
+function renderRoomLimit(data) {
+  if (!roomLimit) return;
+  const limit = typeof data.max_viewers === "number" ? data.max_viewers : 0;
+  if (limit !== savedRoomLimit && document.activeElement !== roomLimit) {
+    savedRoomLimit = limit;
+    roomLimit.value = String(limit);
+  }
+  const now = typeof data.video_watchers === "number" ? data.video_watchers : 0;
+  roomLimitNow.textContent = limit > 0
+    ? `${now} of ${limit} watching now`
+    : `${now} watching now`;
 }
 
 // The game rides the same poll. Only written into the box when the operator is
@@ -1926,6 +2001,7 @@ async function loadStream() {
       const data = await reply.json();
       renderStream(data);
       renderGame(data);
+      renderRoomLimit(data);
     }
   } catch { /* keep the last state rather than flashing offline on a blip */ }
 }

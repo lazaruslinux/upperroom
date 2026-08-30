@@ -66,10 +66,17 @@ def ws_connect(client):
 
 
 def drain_join(ws):
-    """Consume the three frames every socket gets on join: hello, the presence
-    list, and the 'joined' system line."""
-    for _ in range(3):
-        ws.receive_json()
+    """Consume the frames a socket gets on join: hello, the presence list, and
+    the 'joined' system line.
+
+    The channel owner is not announced, so their socket gets two frames rather
+    than three and waiting for a third would hang. The hello frame says which
+    this is, so read that rather than asking every call site to know.
+    """
+    hello = ws.receive_json()
+    ws.receive_json()                       # the presence list
+    if not (hello.get("you") or {}).get("owner"):
+        ws.receive_json()                   # "<name> joined"
 
 
 def recv_system(ws):
@@ -847,11 +854,17 @@ def test_admin_stream_reports_the_broadcast_shape(client):
     body = client.get("/api/admin/stream").json()
     assert set(body) == {
         "live", "since", "watching", "recording", "game", "recent_games",
+        "sent_bytes", "video_watchers", "max_viewers",
     }
     assert body["live"] is False
     assert body["since"] is None
     assert body["watching"] == 0
     assert body["recording"] == "off"
+    # What the broadcast has cost and how full the room may get. Nothing is on
+    # air, nobody is pulling video, and a fresh channel has no limit set.
+    assert body["sent_bytes"] == 0
+    assert body["video_watchers"] == 0
+    assert body["max_viewers"] == 0
     # The console's Playing row rides this poll. A fresh channel is playing
     # nothing and has nothing to offer back.
     assert body["game"] == ""

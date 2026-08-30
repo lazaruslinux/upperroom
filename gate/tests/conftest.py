@@ -50,6 +50,7 @@ import auth  # noqa: E402
 import db  # noqa: E402
 import main  # noqa: E402
 import projector  # noqa: E402
+import watchers  # noqa: E402
 from hub import hub  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -94,4 +95,7 @@ def client(tmp_path, monkeypatch):
     projector.link._socket = None
     projector.link._pending.clear()
     projector.link._last_seen = 0
+    # Who is pulling video is process-global as well, so a test that filled the
+    # room would leave the next one at its limit.
+    watchers.reset()
     return make_client()

@@ -8,6 +8,7 @@ own account.
 
 import io
 import ipaddress
+import logging
 import os
 import secrets
 import time
@@ -16,6 +17,7 @@ from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, ImageOps
 
+import changelog
 import db
 from auth import (
     GUEST_REFUSED, _clean_username, client_ip, country_allowed, guest_expired,
@@ -25,9 +27,12 @@ from auth import (
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
     MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_SITE_NAME, MIN_PASSWORD,
-    SAFE_USERNAME, SESSION_HOURS, sanitize_chat_color,
+    SAFE_USERNAME, SESSION_HOURS, VERSION, sanitize_chat_color,
 )
+import watchers
 from hub import hub
+
+logger = logging.getLogger("upperroom.auth.routes")
 
 router = APIRouter()
 
@@ -89,7 +94,34 @@ def me(request: Request):
         # Absolute, so the countdown does not drift with a slow page load and
         # does not care about the visitor's clock being wrong by minutes.
         "guest_expires_at": user["guest_expires_at"] if user else 0,
+        # The one-time "what changed" notice, or None once it has been read.
+        # Only ever the running release: somebody who skips three of them gets
+        # the newest and nothing else.
+        "whats_new": _whats_new(user),
     }
+
+
+def _whats_new(user):
+    """The release notice this person has not read yet, or None.
+
+    None covers all the ordinary cases: they have already acknowledged this
+    release, the release ships no notes, or the row is gone.
+    """
+    if not user or user["last_seen_version"] == VERSION:
+        return None
+    return changelog.current()
+
+
+@router.post("/api/whats-new/seen")
+def whats_new_seen(request: Request):
+    # Acknowledging the notice. Stamped with the running version rather than
+    # with whatever the page sends, so a stale tab cannot mark a later release
+    # as read and skip its notice.
+    session = read_session(request.cookies.get(COOKIE_NAME, ""))
+    if not session:
+        return Response(status_code=401)
+    db.mark_version_seen(session["sub"], VERSION)
+    return {"ok": True}
 
 
 @router.get("/api/channel")
@@ -121,6 +153,25 @@ def channel(request: Request):
     }
 
 
+def _room_is_full(username, is_admin):
+    """Whether this person should be turned away from the live video.
+
+    The limit is on people pulling the stream, because that is what the
+    bandwidth bill is made of; chat is left alone so a full room can still be
+    hung around in. Someone already watching is never thrown out mid-title, and
+    an admin is never refused at all: locking the operator out of their own
+    broadcast is a worse failure than one viewer over the line.
+    """
+    if is_admin:
+        return False
+    limit = db.get_max_viewers()
+    if limit <= 0:
+        return False
+    if watchers.active(username):
+        return False
+    return watchers.count() >= limit
+
+
 @router.get("/api/verify")
 def verify(request: Request):
     # Caddy calls this before serving any video segment. A valid cookie whose
@@ -136,6 +187,21 @@ def verify(request: Request):
     user = db.get_user(session["sub"])
     if not user or guest_expired(user):
         return Response(status_code=401)
+    # The same check guards the saved recordings and clips under /media/, which
+    # are files on disk and not the thing a viewer limit is about. Caddy's
+    # forward_auth passes the path it is authorizing, so the limit applies to
+    # the live stream only. No header means an older or hand-edited proxy
+    # config: count nothing and refuse nobody, because a limit that locks the
+    # whole channel out of its own video is worse than no limit.
+    path = request.headers.get("x-forwarded-uri", "")
+    if not path.startswith("/live/"):
+        return Response(status_code=200)
+    is_admin = bool(user["is_admin"])
+    if _room_is_full(session["sub"], is_admin):
+        logger.info("viewer limit reached; turned away %s", session["sub"])
+        return Response(status_code=403)
+    if not is_admin:
+        watchers.note(session["sub"])
     return Response(status_code=200)
 
 

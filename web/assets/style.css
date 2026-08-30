@@ -270,7 +270,7 @@ body.center { flex-direction: column; }
 button { font-family: var(--mono); cursor: pointer; }
 
 .ghost-btn, .solid-btn, .pill, .chip-btn, .danger-btn, .lib-tab,
-.activity-tabs .tab, .font-option, .icon-btn, #viewer-toggle, .unmute,
+.activity-tabs .tab, .font-option, .icon-btn, .unmute,
 button[type="submit"] {
   display: inline-flex;
   align-items: center;
@@ -292,8 +292,7 @@ button[type="submit"] {
 
 /* ghost hover: text + border go to --text */
 .ghost-btn:hover, .pill:hover, .chip-btn:hover, .lib-tab:hover,
-.activity-tabs .tab:hover, .font-option:hover, .icon-btn:hover,
-#viewer-toggle:hover {
+.activity-tabs .tab:hover, .font-option:hover, .icon-btn:hover {
   color: var(--text);
   border-color: var(--text);
 }
@@ -350,9 +349,20 @@ button[type="submit"], .solid-btn, .pill.primary, .danger-btn,
 /* square icon buttons (28x28) */
 .icon-btn { width: 28px; padding: 0; }
 
-/* the watching count keeps its accent text and stretches to fill the row */
-#viewer-toggle { flex: 1; color: var(--accent); }
-#viewer-toggle:hover { color: var(--accent); border-color: var(--accent); }
+/* Text that only a screen reader needs: the watching count, which the chat bar
+   used to spell out and now carries on the people button instead. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 /* ---- form inputs (exempt from the type scale: 16px avoids iOS zoom) ---- */
 
@@ -840,6 +850,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   min-height: 0;
 }
 .chat-head {
+  position: relative;        /* the title is centred against this, see below */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -848,12 +859,55 @@ form { display: flex; flex-direction: column; gap: 12px; }
   flex: none;
 }
 .chat-head .icon-btn { flex: none; }
+/* One button on the left and two on the right would leave a flexed title
+   sitting off centre, so it is centred against the bar itself instead. It never
+   takes a click: the buttons underneath it stay reachable edge to edge. */
+.chat-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+/* The title is out of the flow, so nothing separates the collapse button from
+   the pair on the right. This is what pushes them apart. */
+#chat-collapse { margin-right: auto; }
+#viewer-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+
+/* ---- collapsed chat ---- */
+/* The column folds to a rail so the picture can have the width. Everything but
+   the collapse button goes, and the button's chevron turns to point back out.
+   Never while the dashboard is showing chat alone: a rail would be the entire
+   view. watch.js reopens the chat in that case too, so this is the brace to
+   that belt rather than the only guard. */
+.chat-collapsed:not(.chat-only) .chat { width: 40px; }
+.chat-collapsed:not(.chat-only) .chat-head {
+  padding: 8px 6px;
+  border-bottom: none;
+}
+.chat-collapsed:not(.chat-only) .chat-title,
+.chat-collapsed:not(.chat-only) .guest-timer,
+.chat-collapsed:not(.chat-only) #viewer-toggle,
+.chat-collapsed:not(.chat-only) #settings-toggle,
+.chat-collapsed:not(.chat-only) .host-strip,
+.chat-collapsed:not(.chat-only) .settings-panel,
+.chat-collapsed:not(.chat-only) .viewer-list,
+.chat-collapsed:not(.chat-only) .messages,
+.chat-collapsed:not(.chat-only) .chat-form { display: none; }
+.chat-collapsed:not(.chat-only) .collapse-icon { transform: scaleX(-1); }
 
 .viewer-list {
   list-style: none;
   margin: 0;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
+  /* Reads as a panel dropped from the people button rather than as the first
+     few chat lines, which is what a bare list looked like. */
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--accent);
   max-height: 30vh;
   overflow-y: auto;
 }
@@ -991,6 +1045,8 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
    watching list and the host strip all still work. */
 .watch.chat-only .stage { display: none; }
 .watch.chat-only .chat { width: 100%; border-left: none; }
+/* Collapsing is meaningless when chat is the whole view. */
+.watch.chat-only #chat-collapse { display: none; }
 
 /* On portrait phones, stack the video on top and the chat below it. A small
    phone held sideways stays in the side-by-side layout so the video keeps its
@@ -999,6 +1055,11 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
   .watch { flex-direction: column; }
   .stage { flex: 2; }
   .chat { width: 100%; flex: 3; border-left: none; border-top: 1px solid var(--border); }
+  /* Stacked, the chat costs height rather than width, so collapsing folds it
+     down to its own bar and gives the rest of the screen to the picture. */
+  .watch.chat-collapsed:not(.chat-only) .chat { width: 100%; flex: none; }
+  .watch.chat-collapsed:not(.chat-only) .chat-head { padding: 8px 12px; }
+  .watch.chat-collapsed:not(.chat-only) .chat-title { display: block; }
 }
 
 /* ---- settings panel (in the watch chat) ---- */
@@ -1674,6 +1735,22 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 }
 .modal-close:hover { color: var(--text); }
 .modal-card h3 { font-family: var(--sans); font-size: 15px; font-weight: 600; letter-spacing: 0; margin: 0 0 14px; }
+
+/* The one-time release notice. Five short lines at most, tightly spaced, so
+   the whole thing and its button fit a phone screen without scrolling. */
+.whats-new-card { max-width: 360px; }
+.whats-new-list {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  list-style: disc;
+}
+.whats-new-list li {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.whats-new-list li:last-child { margin-bottom: 0; }
 
 .profile-card { text-align: center; }
 .profile-avatar { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }

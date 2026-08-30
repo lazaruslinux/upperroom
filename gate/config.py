@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -173,6 +173,17 @@ CHAT_IDLE_WIPE_SECONDS = int(
 # departure and an arrival every time somebody glanced at another app. Both
 # lines wait this long now, so a flap is silent and a real departure still reads.
 JOIN_GRACE_SECONDS = int(os.environ.get("SELFSTREAM_JOIN_GRACE", "60"))
+
+# How many people may pull the video at once. The setting itself lives in
+# channel_settings (0 means no limit) so it can be changed from the dashboard
+# without a restart; this is only the ceiling a typo cannot get past. Every
+# viewer pulls the full broadcast bitrate from this server, so the viewer count
+# is what the bandwidth bill is made of.
+MAX_VIEWER_LIMIT = 500
+# How long after their last segment somebody still counts as watching. HLS
+# players fetch about once a second, so this is generous: it forgives a slow
+# network without holding a slot for somebody who closed the tab.
+WATCHER_WINDOW_SECONDS = 30
 
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
