@@ -87,9 +87,10 @@ Playing: Ashfall Delta
 Your description
 ```
 
-That line shows only while you are live. The label itself stays set until you
-change it, so it is worth clearing when you stop. What the frame in the preview
-means for privacy is spelled out in `docs/05-security.md`.
+That line shows only while you are live, and a theater session hides it: during
+a film night the room is watching a title, not playing a game. The label itself
+stays set until you change it, so it is worth clearing when you stop. What the
+frame in the preview means for privacy is spelled out in `docs/05-security.md`.
 
 ## A note on latency
 

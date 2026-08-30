@@ -136,8 +136,9 @@ cookie, so two things have to answer without one.
   page reads it, refuses anyone without a session. Anyone holding your watch
   link can therefore see what you are showing tonight without an account. That
   is deliberate, so a share says something worth reading, and it tells a
-  stranger no more than the frame beside it already does. Between titles there
-  is no film in the tags, only whatever you last set as the game.
+  stranger no more than the frame beside it already does. A session hides the
+  game label entirely, between titles included: the room is at a film night,
+  not back to whatever was set for some earlier broadcast.
 - The country gate, if you set one, applies to both. So does the rate limiting
   and the fail2ban jail below.
 

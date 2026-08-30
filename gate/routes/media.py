@@ -105,18 +105,19 @@ def _absolute(request, path):
     return f"{proto}://{host}{path}"
 
 
-def _showing():
-    """The film on the projector as `Title (Year)`, or None if none is playing.
+def _on_the_projector():
+    """(a session is running, the film as `Title (Year)` or None).
 
-    Reuses the theater module's own idea of what a viewer may see, so the
-    preview can never show more than the watch page does. Note that this one
-    line is PUBLIC: /api/theater, the only other place a title appears, needs an
-    account. Naming the film in a share is deliberate and documented in
+    Reuses the theater module's own idea of what a viewer may see, so nothing
+    here can show more than the watch page does. Note that the film's name is
+    PUBLIC wherever this is used: /api/theater, the only other place a title
+    appears, needs an account. That is deliberate and documented in
     `docs/05-security.md`."""
-    now = theater.public_state()["now"]
+    state = theater.public_state()
+    now = state["now"]
     if not now:
-        return None
-    return f"{now['title']} ({now['year']})" if now["year"] else now["title"]
+        return state["active"], None
+    return True, (f"{now['title']} ({now['year']})" if now["year"] else now["title"])
 
 
 def _preview_text():
@@ -131,13 +132,13 @@ def _preview_text():
     if hub.is_live():
         headline = info["stream_title"] or "Live now"
         title = f"{site}: {headline}"
-        # A film on the projector wins: it is what the room is actually
-        # watching, and the game label is left over from the last broadcast.
-        # Between titles there is no film, so the game speaks again.
-        showing = _showing()
+        # A film on the projector wins. The game label has nothing to do with a
+        # theater night, so a session silences it whether or not a title is on:
+        # between films the room is at an intermission, not back to a game.
+        in_theater, showing = _on_the_projector()
         if showing:
             description = f"playing {showing}"
-        elif game:
+        elif not in_theater and game:
             description = f"playing {game}"
         else:
             description = info["stream_description"] or "Live now."
@@ -682,8 +683,10 @@ async def status():
             # itself persists between broadcasts, but "Playing" on an offline
             # card would be describing a stream that is not running. It is public
             # here because it is already public in the watch page's link preview,
-            # which is the whole reason it exists.
-            "game": db.get_now_playing(),
+            # which is the whole reason it exists. A theater session silences it
+            # outright: the room is watching a film, and the game is whatever was
+            # set for some earlier broadcast.
+            "game": "" if _on_the_projector()[0] else db.get_now_playing(),
             # The running release, public here so the dashboard footer and any
             # external check can read it without a number baked into the markup.
             "version": VERSION,

@@ -297,13 +297,27 @@ def test_a_film_with_no_year_is_named_without_empty_brackets(client):
     assert 'content="playing Field Recordings"' in client.get("/watch").text
 
 
-def test_between_titles_the_game_speaks_again(client):
-    # A session with nothing playing is an intermission, not a film.
+def test_a_session_silences_the_game_between_titles_too(client):
+    # An intermission is not a return to a game: the label belongs to some
+    # earlier broadcast, so a session silences it whether or not a film is on.
     setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_stream_info(description="Films on Thursdays.")
     db.set_now_playing("Ashfall Delta")
     db.create_theater_session(int(time.time()))
     go_live()
-    assert 'content="playing Ashfall Delta"' in client.get("/watch").text
+    body = client.get("/watch").text
+    assert "Ashfall Delta" not in body
+    assert '<meta property="og:description" content="Films on Thursdays.">' in body
+
+
+def test_the_home_card_shows_no_game_during_a_theater_session(client, publisher):
+    # /api/status feeds the home card's "Playing" line. It ran right through a
+    # film, naming a game nobody in the room was playing.
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_now_playing("Ashfall Delta")
+    assert client.get("/api/status").json()["game"] == "Ashfall Delta"
+    start_showing("The Long Afternoon", 2019)
+    assert client.get("/api/status").json()["game"] == ""
 
 
 def test_an_offline_channel_never_names_a_film(client):

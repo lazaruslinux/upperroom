@@ -15,6 +15,9 @@ While a theater session is open:
 - **Nothing is recorded.** A session is somebody else's film, and building a
   library of it is not what this is for.
 - **Clips are refused**, and say so, for the same reason.
+- **The game label is hidden.** Whatever you set as what you are playing is
+  about a broadcast, not a film night, so a session takes it off the home card
+  and out of the link preview until the session ends.
 - **Chat is never wiped by a session.** Not between titles, and not when you
   end it. Chat belongs to the night rather than to one broadcast, so an evening
   that runs from a stream into a film reads as one conversation. The room
