@@ -54,6 +54,12 @@ def test_watch_page_is_served_without_a_session(client):
     assert 'id="video"' in resp.text          # the real page, not a stub
 
 
+def test_watch_page_carries_the_home_button(client):
+    # The chat bar's one way off the page. watch.js removes it for a guest and
+    # inside the dashboard frame, so the served markup must always ship it.
+    assert 'id="home-btn"' in client.get("/watch").text
+
+
 def test_preview_is_the_channel_and_title_over_the_game(client):
     # The two lines say different things: the headline is what tonight is
     # called, the line under it is what is being played.

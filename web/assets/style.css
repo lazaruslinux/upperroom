@@ -890,6 +890,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 }
 .chat-collapsed:not(.chat-only) .chat-title,
 .chat-collapsed:not(.chat-only) .guest-timer,
+.chat-collapsed:not(.chat-only) #home-btn,
 .chat-collapsed:not(.chat-only) #viewer-toggle,
 .chat-collapsed:not(.chat-only) #settings-toggle,
 .chat-collapsed:not(.chat-only) .host-strip,

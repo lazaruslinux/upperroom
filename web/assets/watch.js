@@ -1427,6 +1427,10 @@ function setUpGuest() {
     .forEach((row) => row.remove());
   const colorNote = document.getElementById("color-msg");
   if (colorNote) colorNote.remove();
+  // /home redirects a guest straight back here, so the button would be a link
+  // to nowhere. Remove it rather than leave a dead affordance in the bar.
+  const homeBtn = document.getElementById("home-btn");
+  if (homeBtn) homeBtn.remove();
   const note = document.querySelector("#settings-panel .settings-note.muted");
   if (note) {
     note.textContent =
@@ -1475,6 +1479,12 @@ window.addEventListener("message", (event) => {
 });
 
 async function boot() {
+  // The dashboard frames this page, and a home link inside that frame would
+  // load the whole site into a panel of itself.
+  if (window.top !== window.self) {
+    const framedHome = document.getElementById("home-btn");
+    if (framedHome) framedHome.remove();
+  }
   if (!(await requireAuth())) return;
   // Let moderators and admins know the commands exist, without cluttering chat
   // for everyone else.

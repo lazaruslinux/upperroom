@@ -303,9 +303,10 @@ drops anything past five messages in three seconds.
 
 ## The chat bar
 
-The bar across the top of the chat panel holds four things:
+The bar across the top of the chat panel holds five things:
 
-- **the collapse arrow**, on the left, which folds the whole panel down to a
+- **the house icon**, at the far left, which goes back to the home page
+- **the collapse arrow**, which folds the whole panel down to a
   thin rail so the picture gets the width. On a phone held upright it folds down
   to its own bar instead, since there the chat costs height rather than width.
   The choice is remembered in that browser.
@@ -313,9 +314,10 @@ The bar across the top of the chat panel holds four things:
 - **the people icon**, which opens the list of everyone watching
 - **the gear**, which opens the settings panel
 
-There is no link off the page in the bar. Getting home is a row inside the
-settings panel, which is where the rest of the account-level links already
-pointed.
+The house icon is for members only. A guest has no home page to go to, and the
+dashboard shows this page in a frame, so in both cases the button is dropped
+from the bar rather than left as a link to nowhere. Collapsing the panel is
+still the way to give the picture the width without leaving the stream.
 
 ## Presence, who is watching
 

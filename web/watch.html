@@ -31,7 +31,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <!-- og:end -->
-  <link rel="stylesheet" href="/assets/style.css?v=57">
+  <link rel="stylesheet" href="/assets/style.css?v=58">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -82,9 +82,17 @@
 
   <aside class="chat">
     <header class="chat-head">
-      <!-- Collapse rather than a way off the page: this is the one bar a viewer
-           reads all night, and the old home link led away from the stream. Home
-           lives in the settings panel now. -->
+      <!-- A member gets one way off the page, and it is this icon. Guests cannot
+           visit /home and the dashboard frames this page, so watch.js removes the
+           button in both cases. Collapse is still the affordance for a viewer who
+           wants the width back without leaving the stream. -->
+      <a id="home-btn" class="icon-btn" href="/home" title="Home" aria-label="Home">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 10.5L12 3l9 7.5"></path>
+          <path d="M5 9.5V21h14V9.5"></path>
+          <path d="M9 21v-6h6v6"></path>
+        </svg>
+      </a>
       <button id="chat-collapse" type="button" class="icon-btn" aria-label="Collapse chat" aria-expanded="true" title="Collapse chat">
         <svg class="collapse-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M10 17l5-5-5-5"></path><path d="M4 4v16"></path>
@@ -238,6 +246,6 @@
   </div>
 
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/watch.js?v=36"></script>
+  <script src="/assets/watch.js?v=37"></script>
 </body>
 </html>

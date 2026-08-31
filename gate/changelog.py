@@ -16,6 +16,9 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.15.0": [
+        "The chat bar has a home button again, so the watch page is no longer a dead end.",
+    ],
     "0.14.2": [
         "A movie night no longer ends by mistake when the projector hiccups.",
         "A title that will not play returns to the intermission card and says so.",
