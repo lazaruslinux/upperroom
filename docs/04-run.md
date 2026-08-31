@@ -188,6 +188,46 @@ volumes:
 Docker merges this automatically; nothing else changes. Keep your real path only
 here, never in a committed file.
 
+Docker reads these options when it creates the volume, not on every start, so if
+the volume already exists you have to remove it (`docker compose down`, then
+`docker volume rm <project>_media_data`) before the new location takes effect.
+Move the files across first if there are any you want to keep.
+
+### Keeping them on another machine
+
+The same mount can come from a NAS or a home server rather than a local disk. For
+an NFS export:
+
+```yaml
+# docker-compose.override.yml  (git-ignored)
+volumes:
+  media_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=10.0.0.2,nfsvers=4.2,rw,soft,timeo=600,retrans=3,noatime"
+      device: ":/export/upperroom/media"
+```
+
+Two things are worth setting deliberately here:
+
+- **`soft`, not `hard`.** A hard mount retries for ever, so a storage outage
+  leaves the archive stuck rather than failing; `soft` returns an error after
+  `timeo` x `retrans`, which is what lets the retry below do its job.
+- **Reach it over a private network.** Point `addr` at the storage machine's
+  address on a VPN or tunnel the two already share, not at a public one, and bind
+  the export to that interface. `docs/05-security.md` has the rest of the
+  reasoning, including what to lock down on the storage side.
+
+### When the store cannot be written
+
+A broadcast is recorded to local scratch and only moved into the media store when
+it ends, so an unreachable store never interrupts a live stream. If that move
+fails, the recording is **kept, not discarded**: it stays on scratch and the
+server tries again when it next starts and once an hour after that. The Storage
+panel on the dashboard says when one is waiting, and the line goes away by itself
+once the archive lands. Nothing is expected of you beyond fixing the storage.
+
 ## 4.6 Updating
 
 Pull the newest images and rebuild:

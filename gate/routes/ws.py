@@ -253,17 +253,6 @@ async def overlay_socket(websocket: WebSocket, key):
         await websocket.close(code=4401)
         return
     hub.add_watcher(websocket)
-    # Hand the overlay the current ticker line the moment it connects, so a
-    # source that (re)connects mid-broadcast shows the operator's message without
-    # waiting for the next change. Sent over this key-authed socket only; the
-    # ticker is never on a public endpoint. Best effort: a read failure must not
-    # stop the overlay from receiving live chat.
-    try:
-        await websocket.send_json(
-            {"type": "ticker", "text": db.get_overlay_ticker()}
-        )
-    except Exception:
-        logger.debug("sending the ticker on overlay connect failed", exc_info=True)
     try:
         while True:
             # Drain and discard anything the source sends; the overlay is

@@ -511,6 +511,16 @@ function renderRetention(data) {
   state.classList.toggle("good", off);
   state.classList.toggle("bad", !off);
   state.hidden = false;
+  // Recordings held back because the media store could not be written. Shown
+  // only when there are any: the rest of the time it is not a thing to think
+  // about, and the bytes are still on the server's own scratch disk.
+  const pending = document.getElementById("storage-pending");
+  const waiting = data.pending || 0;
+  pending.textContent = waiting
+    ? `${waiting} recording${waiting === 1 ? " is" : "s are"} waiting to be saved. `
+      + "This retries on its own."
+    : "";
+  pending.hidden = !waiting;
 }
 
 async function loadRetention() {
@@ -559,50 +569,17 @@ function showOverlayMsg(text, ok) {
   overlayMsg.hidden = false;
 }
 
-// The "Set up in OBS" rows are the same overlay URL with extra query options.
-// Each button carries its own suffix in the markup; the key is filled in here so
-// a regenerate refreshes every row along with the field above.
-const overlaySetupBtns = document.querySelectorAll("[data-overlay-query]");
-
 function setOverlayUrl(key) {
   // Origin so the URL is copy-paste ready into OBS on the same network as here.
-  const base = `${window.location.origin}/overlay?key=${key}`;
-  overlayUrlInput.value = base;
-  overlaySetupBtns.forEach((btn) => {
-    btn.dataset.url = base + btn.dataset.overlayQuery;
-  });
+  overlayUrlInput.value = `${window.location.origin}/overlay?key=${key}`;
 }
-
-const overlayTicker = document.getElementById("overlay-ticker");
 
 async function loadOverlay() {
   try {
     const data = await (await fetch("/api/admin/overlay")).json();
     if (data.key) setOverlayUrl(data.key);
-    if (typeof data.ticker === "string") overlayTicker.value = data.ticker;
   } catch { /* leave the field blank */ }
 }
-
-// Save the ticker over the channel-settings route; the server cleans it and
-// pushes the new line to any connected overlay at once.
-document.getElementById("overlay-ticker-save").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  overlayMsg.hidden = true;
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ overlay_ticker: overlayTicker.value }),
-    });
-    if (reply.ok) {
-      showOverlayMsg("Ticker saved.", true);
-    } else {
-      showOverlayMsg("Could not save the ticker.", false);
-    }
-  } catch { showOverlayMsg("Could not reach the server.", false); }
-  btn.disabled = false;
-});
 
 // Test-fire buttons: send one synthetic event to any connected overlay so the
 // operator can confirm their OBS browser source is wired up. The event goes to
@@ -636,21 +613,6 @@ document.getElementById("overlay-copy").addEventListener("click", async (e) => {
   } catch {
     overlayUrlInput.select();
     showOverlayMsg("Copy failed; the URL is selected so you can copy it.", false);
-  }
-});
-
-// One delegated handler for the "Set up in OBS" rows, rather than seven copies of
-// the same listener. Same feedback as the Copy URL button above.
-document.getElementById("overlay-setup").addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-overlay-query]");
-  if (!btn || !btn.dataset.url) return;
-  try {
-    await navigator.clipboard.writeText(btn.dataset.url);
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    showOverlayMsg("Copy failed; your browser blocked the clipboard.", false);
   }
 });
 

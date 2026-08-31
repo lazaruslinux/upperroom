@@ -22,7 +22,7 @@ import auth
 import db
 import notify
 from config import (
-    COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH, MAX_OVERLAY_TICKER,
+    COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH,
 )
 from conftest import make_client
 from hub import hub
@@ -634,7 +634,7 @@ def test_ws_overlay_bad_key_is_refused(client):
     assert excinfo.value.code == 4401
 
 
-# ---- 6b-ii. Overlay ticker and test-fire ----------------------------------
+# ---- 6b-ii. Overlay test-fire ---------------------------------------------
 
 class _OverlayCapture:
     """A stand-in socket that records the messages it is sent, used to prove which
@@ -649,23 +649,24 @@ class _OverlayCapture:
 
 def test_send_overlays_reaches_watchers_only_never_a_viewer_socket(client):
     # hub.send_overlays must touch the overlay sockets and nothing else: a viewer's
-    # chat socket must never see a test-fire or a ticker push.
+    # chat socket must never see a test-fire.
     import asyncio
     setup_admin(client, username="owner")
     watcher = _OverlayCapture()
     viewer_socket = _OverlayCapture()
     hub.add_watcher(watcher)
     hub._sockets[viewer_socket] = {"username": "viewer", "name": "Viewer"}
+    sample = {"type": "clip", "by": "test", "name": "a test clip"}
     try:
-        asyncio.run(hub.send_overlays({"type": "ticker", "text": "hi"}))
+        asyncio.run(hub.send_overlays(sample))
     finally:
         hub.remove_watcher(watcher)
         hub._sockets.pop(viewer_socket, None)
-    assert watcher.sent == [{"type": "ticker", "text": "hi"}]
+    assert watcher.sent == [sample]
     assert viewer_socket.sent == []            # a viewer never sees an overlay send
 
 
-@pytest.mark.parametrize("kind", ["chat", "join", "clip", "highlight", "ticker"])
+@pytest.mark.parametrize("kind", ["chat", "join", "clip", "highlight"])
 def test_overlay_test_fire_reaches_the_overlay_only(client, kind):
     # Each kind returns 200, lands one clearly-labelled event on the overlay
     # socket, and never writes to the chat log or a viewer's socket.
@@ -718,63 +719,6 @@ def test_overlay_test_fire_refuses_anon_guest_viewer_and_mod(client):
     guest = make_client()
     assert redeem(guest, make_pass()).status_code == 200
     assert guest.post("/api/admin/overlay/test", json={"kind": "chat"}).status_code in (401, 403)
-
-
-def test_saving_the_ticker_clamps_length_and_strips_control_characters(client):
-    setup_admin(client, username="owner")
-    # Control characters (newline, tab, a bell) become single spaces so pasted
-    # multi-line text keeps its word breaks, and runs collapse to one space.
-    client.post("/api/stream-info", json={"overlay_ticker": "hi\nthere\tworld\x07!"})
-    assert db.get_overlay_ticker() == "hi there world !"
-    # Over-length input is capped at the limit.
-    client.post("/api/stream-info", json={"overlay_ticker": "a" * (MAX_OVERLAY_TICKER + 50)})
-    assert len(db.get_overlay_ticker()) == MAX_OVERLAY_TICKER
-    # Empty (and whitespace-only) is allowed and clears the ticker.
-    client.post("/api/stream-info", json={"overlay_ticker": "   "})
-    assert db.get_overlay_ticker() == ""
-
-
-def test_saving_the_ticker_broadcasts_to_overlay_sockets_only(client):
-    setup_admin(client, username="owner")
-    watcher = _OverlayCapture()
-    viewer_socket = _OverlayCapture()
-    hub.add_watcher(watcher)
-    hub._sockets[viewer_socket] = {"username": "viewer", "name": "Viewer"}
-    try:
-        resp = client.post("/api/stream-info", json={"overlay_ticker": "Northwind Live"})
-    finally:
-        hub.remove_watcher(watcher)
-        hub._sockets.pop(viewer_socket, None)
-    assert resp.status_code == 200
-    assert watcher.sent == [{"type": "ticker", "text": "Northwind Live"}]
-    assert viewer_socket.sent == []            # the ticker never reaches a viewer
-
-
-def test_ticker_is_never_on_the_public_status(client):
-    # A logged-out stranger must not be able to read the ticker before it is on the
-    # broadcast: it rides only the key-authed overlay socket, never /api/status.
-    setup_admin(client, username="owner")
-    client.post("/api/stream-info", json={"overlay_ticker": "secret line"})
-    body = make_client().get("/api/status").json()
-    assert "overlay_ticker" not in body
-    assert "ticker" not in body
-
-
-def test_a_new_overlay_socket_receives_the_current_ticker_on_connect(client):
-    setup_admin(client, username="owner")
-    key = db.regenerate_overlay_key()
-    db.set_overlay_ticker("Welcome to Northwind Live")
-    with client.websocket_connect(f"/ws?overlay={key}") as overlay:
-        frame = overlay.receive_json()
-        assert frame == {"type": "ticker", "text": "Welcome to Northwind Live"}
-
-
-def test_overlay_admin_get_returns_the_current_ticker(client):
-    setup_admin(client, username="owner")
-    db.set_overlay_ticker("on air")
-    data = client.get("/api/admin/overlay").json()
-    assert data["ticker"] == "on air"
-    assert data["key"]
 
 
 # ---- 6c. MediaMTX publish/read auth callback ------------------------------

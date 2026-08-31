@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.14.0": [
+        "More broadcasts stay saved, on a much bigger disk.",
+        "A recording that cannot be saved is now kept and retried instead of lost.",
+    ],
     "0.13.0": [
         "The chat bar folds away, so the picture can have the whole width.",
         "The people icon opens the list of everyone watching.",

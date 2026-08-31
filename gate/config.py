@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.13.0"
+VERSION = "0.14.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -147,8 +147,8 @@ MAX_CLIP_NAME = 80
 # The lengths the watch page offers as chips, and the only values a client may
 # ask for. The viewer's pick is the whole rule: there is no channel-wide cap.
 CLIP_LENGTHS = (60, 45, 30)
-# What a viewer takes when they send no length at all, which is the overlay's
-# clip button rather than the watch page.
+# What a viewer takes when they send no length at all. The watch page always
+# sends one, so this covers a client that does not: a script, or an older page.
 DEFAULT_CLIP_LENGTH = CLIP_LENGTHS[0]
 
 # Seconds between one person's clips: the same for viewers and moderators, and
@@ -187,7 +187,6 @@ WATCHER_WINDOW_SECONDS = 30
 
 MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
-MAX_OVERLAY_TICKER = 200        # the operator's overlay message line, kept short
 
 # Channel points. Viewers earn this many points per minute while the stream is
 # live and they are connected to the watch page. Deliberately a fixed constant,

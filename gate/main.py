@@ -31,8 +31,8 @@ import config
 import db
 from hub import chat_purge_worker, hub
 from media import (
-    cleanup_record_scratch, retention_worker, stream_watcher, sweep_orphan_media,
-    sweep_orphan_shared,
+    cleanup_record_scratch, retention_worker, retry_pending_archives,
+    stream_watcher, sweep_orphan_media, sweep_orphan_shared,
     thumbnail_worker,
 )
 from routes import admin as admin_routes
@@ -83,8 +83,15 @@ async def lifespan(_app):
     except Exception:
         logger.warning("clear_unfinished_vods failed at startup", exc_info=True)
     # Their scratch files can outlive the rows (a restart mid-recording), so sweep
-    # the recording scratch dir of anything not tied to an active recording.
+    # the recording scratch dir of anything not tied to an active recording. A
+    # recording parked by a failed archive is spared by the sweep itself.
     cleanup_record_scratch()
+    # And then try to archive those parked recordings, so a restart after the
+    # media store comes back is all it takes to get them in.
+    try:
+        await retry_pending_archives()
+    except Exception:
+        logger.warning("pending archive retry failed at startup", exc_info=True)
     # And the archived side: files whose rows were dropped above are bytes
     # nothing points at, which would otherwise count against the size cap.
     sweep_orphan_media()

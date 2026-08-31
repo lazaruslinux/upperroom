@@ -440,29 +440,6 @@ def test_overlay_key_generate_persist_and_regenerate(fresh_db):
     assert db.get_overlay_key() == key2
 
 
-def test_overlay_ticker_defaults_empty_and_persists(fresh_db):
-    # A fresh channel has no ticker; setting one reads back, and clearing it works.
-    assert db.get_overlay_ticker() == ""
-    db.set_overlay_ticker("Welcome to Northwind Live")
-    assert db.get_overlay_ticker() == "Welcome to Northwind Live"
-    db.set_overlay_ticker("")
-    assert db.get_overlay_ticker() == ""
-
-
-def test_overlay_ticker_column_added_on_an_old_database(fresh_db):
-    # A database from before the ticker shipped has no column; init_db must add it
-    # via _ensure_column, and the getter must read the empty default rather than
-    # raise. Dropping the column reproduces the older schema.
-    with db.connect() as conn:
-        conn.execute("ALTER TABLE channel_settings DROP COLUMN overlay_ticker")
-    db.init_db()
-    assert db.get_overlay_ticker() == ""
-    # And an operator's own value survives a re-init either way.
-    db.set_overlay_ticker("still here")
-    db.init_db()
-    assert db.get_overlay_ticker() == "still here"
-
-
 def test_stream_key_generate_persist_and_regenerate(fresh_db):
     # A fresh channel has no publish key until one is generated.
     assert db.get_stream_key() is None

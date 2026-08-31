@@ -178,12 +178,8 @@ The OBS chat overlay cannot sign in, so it authenticates with a long random key 
 its URL (see `docs/08-overlay.md`). It is worth being clear about what that key
 does and does not unlock:
 
-- It is **read-only**. The overlay receives chat, join notices, clip and highlight
-  alerts, and your ticker line. It can never send chat or run a command.
-- The **ticker** you set on the dashboard travels **only** over this key-authed
-  connection. It is deliberately kept off `/api/status` and every other public
-  endpoint, so a logged-out visitor cannot read your ticker before it is on the
-  broadcast.
+- It is **read-only**. The overlay receives chat, join notices, and clip and
+  highlight alerts. It can never send chat or run a command.
 - The overlay **test buttons** (which send a fake chat, join, clip or highlight so
   you can line up your browser source) are **admin only**, and the fake events go
   to the overlay alone. A test never reaches real chat or the chat history.
@@ -221,6 +217,37 @@ with a long random key the same way the overlay does.
 
 The key is a bearer secret: treat it like a password, and regenerate it from the
 dashboard if it leaks.
+
+## Putting the media store on another machine
+
+Recordings and clips do not have to live on the server that serves them. The
+media store is one directory (`SELFSTREAM_MEDIA_DIR`, `media_data` in Docker) and
+it can be a network mount from a NAS or a home server, which is often the only
+practical way to keep more than a few broadcasts. `docs/04-run.md` covers how.
+What it changes, security-wise, is worth being explicit about:
+
+- **The server becomes a client of your storage.** It opens the connection; your
+  storage does not reach into it. Nothing new listens on the streaming server,
+  and its public surface is unchanged.
+- **Anyone who takes the server takes that access with them.** So export one
+  dedicated directory, never a whole pool or a home directory. Everything else on
+  that machine then stays out of reach even in the worst case.
+- **Make the storage side enforce the limits, not the client.** On ZFS, a
+  dedicated dataset with `exec=off`, `setuid=off` and `devices=off` means a file
+  written there can never be run on the storage machine whatever the client
+  sends, and a `quota` means a runaway server cannot fill the pool and take your
+  other services down with it. Squash the client to an unprivileged user so
+  nothing lands owned by root.
+- **Reach it over a private network, not the internet.** A WireGuard tunnel or
+  similar (both machines already reachable to each other, nothing forwarded at
+  the router) keeps the transfer encrypted and the storage port off the public
+  internet entirely. Bind the storage service to that interface, so it is not
+  reachable from the rest of your LAN either.
+- **A storage outage is not a data loss.** Recording is written to local scratch
+  first and only moved to the store when the broadcast ends, so an unreachable
+  store never interrupts a live stream. If the move fails the recording is kept
+  and retried rather than discarded; the dashboard's Storage panel says when one
+  is waiting.
 
 ## What this does not do
 

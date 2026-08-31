@@ -15,7 +15,7 @@ import db
 from auth import _clean_username, admin_user
 from config import (
     GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
-    MAX_GAME_NAME, MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL, MAX_OVERLAY_TICKER,
+    MAX_GAME_NAME, MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL,
     MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
     MAX_STREAM_TITLE, MAX_VIEWER_LIMIT, MIN_PASSWORD, SITE_URL, SMTP_FROM,
     SMTP_HOST,
@@ -28,18 +28,6 @@ from media import (
 from notify import notify_live
 
 router = APIRouter()
-
-
-def _clean_ticker(raw):
-    """Reduce an overlay ticker to a single line of safe plain text: control
-    characters (newlines, tabs, and the like) become single spaces so pasted
-    multi-line text keeps its word breaks instead of gluing words together, runs
-    of whitespace collapse to one space, then trimmed and length capped. The
-    overlay renders it with textContent, so this is about shape, not escaping."""
-    text = "".join(
-        ch if ord(ch) >= 32 and ord(ch) != 127 else " " for ch in str(raw or "")
-    )
-    return " ".join(text.split())[:MAX_OVERLAY_TICKER]
 
 
 @router.post("/api/stream-info")
@@ -95,14 +83,6 @@ async def set_stream_info(request: Request):
                 {"error": "Viewer limit must be a whole number."}, status_code=400
             )
         db.set_max_viewers(limit)
-    # The overlay ticker rides this channel-settings route too, but is saved and
-    # pushed separately: cleaned to a single safe line, stored, then broadcast to
-    # the overlay sockets ONLY so a live source updates without a reconnect. It is
-    # never returned by /api/status or any public payload.
-    if "overlay_ticker" in body:
-        ticker = _clean_ticker(body.get("overlay_ticker"))
-        db.set_overlay_ticker(ticker)
-        await hub.send_overlays({"type": "ticker", "text": ticker})
     return {"ok": True}
 
 
@@ -184,6 +164,10 @@ def _retention_payload():
         **db.get_retention(),
         "usage": media_usage(),
         "counts": db.count_media(),
+        # Recordings that finished but could not be written to the media store.
+        # Normally 0; anything else is the one storage problem an operator has to
+        # know about, because those bytes are still sitting on local scratch.
+        "pending": db.count_pending_vods(),
     }
 
 
@@ -539,9 +523,7 @@ def admin_overlay_get(request: Request):
     key = db.get_overlay_key()
     if not key:
         key = db.regenerate_overlay_key()
-    # The ticker rides back here (admin only) so the dashboard's overlay panel can
-    # show the current message; it is never on a public endpoint.
-    return {"key": key, "ticker": db.get_overlay_ticker()}
+    return {"key": key}
 
 
 @router.post("/api/admin/overlay/regenerate")
@@ -575,8 +557,6 @@ def _test_overlay_event(kind, now):
             "admin": False, "mod": False, "avatar": 0, "name_color": "",
             "message": "This is a test highlight.", "cost": 0, "ts": now,
         }
-    if kind == "ticker":
-        return {"type": "ticker", "text": "This is a test ticker message."}
     return None
 
 

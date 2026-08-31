@@ -137,12 +137,9 @@ only repackages the video and stays light.
   alone. The stream title and the game sit right under the frame, and the rest
   of the controls are grouped in five tabs below that.
 - A transparent chat overlay you add to OBS as a browser source, so the
-  broadcast itself shows chat, joins, clips and highlights, with a live status
-  chip and an optional operator ticker line. URL options move it to any corner,
-  scale the text, and filter what it shows, and test buttons let you check it
-  without waiting for a real viewer.
-- Full-screen scene cards from the same overlay page for the moments around a
-  broadcast: a Starting Soon screen with a countdown, Be Right Back, and Ending.
+  broadcast itself shows chat, joins, clips and highlighted messages. URL options
+  move it to any corner, scale the text and cap how many lines it keeps, and test
+  buttons let you check it without waiting for a real viewer.
 - Channel points, earned a point a minute for watching live, spent to highlight
   a short message on stream and on the overlay. Highlights show only while you
   are live.
@@ -269,8 +266,8 @@ explains every value.
 Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
 description, accent color, the stream key, the
-overlay key and its ticker line, slow mode, banned words, the viewer limit, the
-storage limits, and the Discord webhook.
+overlay key, slow mode, banned words, the viewer limit, the storage limits, and
+the Discord webhook.
 
 ## Security model
 

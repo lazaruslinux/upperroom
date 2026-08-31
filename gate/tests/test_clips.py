@@ -88,7 +88,7 @@ def test_the_viewers_pick_is_taken_as_given(client, live, seconds):
 
 
 def test_no_length_at_all_takes_the_default(client, live):
-    # What the overlay's clip button sends, having no picker of its own.
+    # A client with no length picker of its own: a script, or an older page.
     setup_admin(client, username="owner")
     resp = client.post("/api/clip", json={})
     assert resp.status_code == 200

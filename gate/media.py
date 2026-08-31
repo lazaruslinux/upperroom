@@ -510,8 +510,22 @@ def cleanup_record_scratch():
     an in-progress recording. Called at startup, when nothing is recording, so it
     clears the litter a gate restart during a mid-recording leaves behind (e.g.
     /rec/1.mp4 whose VOD row was already dropped by clear_unfinished_vods).
+    Files a pending VOD row points at are spared: those recordings finished and
+    are only waiting on the media store, so deleting them here is exactly the
+    data loss this sweep is otherwise meant to avoid.
+
     Best effort and logged; never raises."""
     active = _rec["tmp_path"] if _rec["active"] else None
+    spared = {os.path.abspath(active)} if active else set()
+    try:
+        for row in db.pending_vods():
+            if row["pending_path"]:
+                spared.add(os.path.abspath(row["pending_path"]))
+    except Exception:
+        # A DB that cannot be read is no reason to start deleting recordings.
+        logger.warning("could not read pending archives; skipping scratch sweep",
+                       exc_info=True)
+        return
     try:
         entries = os.listdir(RECORD_TMP)
     except OSError:
@@ -520,7 +534,7 @@ def cleanup_record_scratch():
         return
     for name in entries:
         path = os.path.join(RECORD_TMP, name)
-        if active and os.path.abspath(path) == os.path.abspath(active):
+        if os.path.abspath(path) in spared:
             continue
         if not os.path.isfile(path):
             continue
@@ -737,6 +751,12 @@ async def retention_worker():
             await sweep_idle_chat()
         except Exception:
             logger.warning("idle chat sweep failed", exc_info=True)
+        # Rides this loop rather than a task of its own: an unreachable media
+        # store is not worth its own timer, and hourly is soon enough.
+        try:
+            await retry_pending_archives()
+        except Exception:
+            logger.warning("pending archive retry failed", exc_info=True)
         await asyncio.sleep(RETENTION_INTERVAL)
 
 
@@ -1029,8 +1049,60 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         # rather than waiting up to an hour for the sweep.
         await enforce_retention()
     except Exception:
+        # The recording itself is fine; only the archive failed, which on a media
+        # store that lives across a network mount usually means the far side is
+        # unreachable. Park it rather than lose it: the row stays, the scratch
+        # file stays, and retry_pending_archives picks it up later.
         logger.warning("recording finalize failed for vod_id=%s", vod_id,
                        exc_info=True)
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                db.mark_vod_pending(vod_id, tmp_path, ended_at)
+                logger.warning(
+                    "recording %s kept at %s, waiting to be archived",
+                    vod_id, tmp_path,
+                )
+        except Exception:
+            logger.warning("could not park unarchived recording %s", vod_id,
+                           exc_info=True)
+
+
+async def retry_pending_archives():
+    """Archive again any recording whose move to the media store failed.
+
+    Skipped while a recording is running: this box is small, and a retry racing a
+    live broadcast for the same disk and CPU is a worse trade than waiting for the
+    next hourly pass. Returns how many were retried."""
+    if _rec["active"]:
+        return 0
+    try:
+        rows = db.pending_vods()
+    except Exception:
+        logger.warning("could not list recordings waiting to be archived",
+                       exc_info=True)
+        return 0
+    retried = 0
+    for row in rows:
+        path = row["pending_path"]
+        if not path or not os.path.exists(path):
+            # The bytes are gone, so there is nothing left to archive and the row
+            # would otherwise sit pending for ever.
+            logger.warning(
+                "recording %s was waiting at %s but the file is gone; dropping it",
+                row["id"], path,
+            )
+            try:
+                db.delete_media("vod", row["id"])
+            except Exception:
+                logger.warning("could not drop pending VOD row %s", row["id"],
+                               exc_info=True)
+            continue
+        logger.info("retrying the archive of recording %s", row["id"])
+        await _finalize_recording(
+            row["id"], path, row["started_at"], row["ended_at"] or int(time.time())
+        )
+        retried += 1
+    return retried
 
 
 def cooldown_for(user):

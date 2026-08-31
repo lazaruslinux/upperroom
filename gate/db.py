@@ -164,7 +164,12 @@ CREATE TABLE IF NOT EXISTS vods (
     -- Pinned by the operator: retention never removes this recording, and it
     -- does not use up a slot in the count limit either. Deleting it by hand
     -- still works; an explicit action always beats the pin.
-    keep INTEGER NOT NULL DEFAULT 0
+    keep INTEGER NOT NULL DEFAULT 0,
+    -- Set when the recording finished but could not be archived, e.g. the media
+    -- store is a network mount and it was unreachable. Holds the scratch path
+    -- still waiting to be moved. A row with this set is NOT an unfinished
+    -- recording and must survive the startup sweeps, or the file is lost.
+    pending_path TEXT
 );
 
 -- A viewer made clip: a short cut of the recent live stream. How much is a
@@ -407,6 +412,9 @@ def init_db():
         _ensure_column(
             conn, "channel_settings", "accent", "TEXT NOT NULL DEFAULT 'green'"
         )
+        # Where an unarchived recording is parked. Null on every existing row,
+        # which is right: anything already archived has nothing pending.
+        _ensure_column(conn, "vods", "pending_path", "TEXT")
         _ensure_column(conn, "channel_settings", "overlay_key", "TEXT")
         _ensure_column(conn, "channel_settings", "stream_key", "TEXT")
         # The projector's bearer key. Nullable until an operator generates one on
@@ -419,12 +427,6 @@ def init_db():
         _ensure_column(conn, "theater_sessions", "now_series", "TEXT")
         _ensure_column(conn, "theater_sessions", "now_season", "INTEGER")
         _ensure_column(conn, "theater_sessions", "now_episode", "INTEGER")
-        # An operator message line the overlay scrolls along the bottom. Empty by
-        # default so an existing channel shows nothing new until it is set, and
-        # NOT NULL so a reader never has to guard for a missing value.
-        _ensure_column(
-            conn, "channel_settings", "overlay_ticker", "TEXT NOT NULL DEFAULT ''"
-        )
         # 1, matching a new install: before this switch existed the channel sent
         # go-live email whenever SMTP was configured, so defaulting it on is what
         # keeps an existing channel behaving exactly as it did yesterday.
@@ -495,11 +497,13 @@ def init_db():
         # redemption (highlight a message), so its table is dropped in place, the
         # same lightweight in-init migration as the column adds above.
         conn.execute("DROP TABLE IF EXISTS rewards")
-        # The announced "next stream" was removed outright, so its columns go
-        # the same way. Guarded because DROP COLUMN wants SQLite 3.35, and an
-        # older library should leave three unused columns behind rather than
-        # refuse to open the database at all.
-        for gone in ("next_stream_at", "next_stream_note", "next_reminded_for"):
+        # Settings whose features were removed outright, so their columns go the
+        # same way: the announced "next stream", and the overlay ticker that went
+        # when the overlay was cut back to chat alone. Guarded because DROP COLUMN
+        # wants SQLite 3.35, and an older library should leave a few unused
+        # columns behind rather than refuse to open the database at all.
+        for gone in ("next_stream_at", "next_stream_note", "next_reminded_for",
+                     "overlay_ticker"):
             try:
                 conn.execute(f"ALTER TABLE channel_settings DROP COLUMN {gone}")
             except sqlite3.OperationalError:
@@ -949,27 +953,6 @@ def regenerate_overlay_key():
             "UPDATE channel_settings SET overlay_key = ? WHERE id = 1", (key,)
         )
     return key
-
-
-def get_overlay_ticker():
-    """The operator's overlay ticker message, or "" if none is set. Deliberately
-    kept off any public endpoint: it rides only the key-authed overlay socket, so
-    a logged-out stranger cannot read it before it goes on the broadcast."""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT overlay_ticker FROM channel_settings WHERE id = 1"
-        ).fetchone()
-        return (row["overlay_ticker"] if row else "") or ""
-
-
-def set_overlay_ticker(text):
-    """Store the overlay ticker message. The caller cleans it (plain text, length
-    capped, control characters stripped); this just writes what it is given."""
-    with connect() as conn:
-        conn.execute(
-            "UPDATE channel_settings SET overlay_ticker = ? WHERE id = 1",
-            (text or "",),
-        )
 
 
 # ---- Stream key -----------------------------------------------------------
@@ -2036,10 +2019,12 @@ def create_vod(title, description, started_at):
 
 
 def finalize_vod(vod_id, ended_at, duration, filename):
+    """Mark a recording archived and playable. Clears pending_path in the same
+    statement, so an archive that succeeded on a retry stops being pending."""
     with connect() as conn:
         conn.execute(
-            "UPDATE vods SET ended_at = ?, duration = ?, filename = ?, ready = 1 "
-            "WHERE id = ?",
+            "UPDATE vods SET ended_at = ?, duration = ?, filename = ?, ready = 1, "
+            "pending_path = NULL WHERE id = ?",
             (ended_at, duration, filename, vod_id),
         )
 
@@ -2099,13 +2084,55 @@ def _delete_media_children(conn, kind, ref_id):
 
 def clear_unfinished_vods():
     """Remove VOD rows whose recording never finished (ready = 0), e.g. if the
-    gate restarted mid broadcast. Called at startup so no half rows linger."""
+    gate restarted mid broadcast. Called at startup so no half rows linger.
+
+    A row with pending_path set is deliberately spared. That recording DID
+    finish; only the archive move failed, and its scratch file is still on disk
+    waiting for a retry. Deleting the row here would orphan the file, and
+    cleanup_record_scratch would then delete the file too."""
     with connect() as conn:
-        rows = conn.execute("SELECT id FROM vods WHERE ready = 0").fetchall()
+        rows = conn.execute(
+            "SELECT id FROM vods WHERE ready = 0 AND pending_path IS NULL"
+        ).fetchall()
         for row in rows:
             _delete_media_children(conn, "vod", row["id"])
-        conn.execute("DELETE FROM vods WHERE ready = 0")
+        conn.execute("DELETE FROM vods WHERE ready = 0 AND pending_path IS NULL")
         return [r["id"] for r in rows]
+
+
+def mark_vod_pending(vod_id, path, ended_at):
+    """Park a finished-but-unarchived recording. Records where the bytes are and
+    when the broadcast ended, so a later retry has everything it needs."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE vods SET pending_path = ?, ended_at = ? WHERE id = ?",
+            (path, ended_at, vod_id),
+        )
+
+
+def pending_vods():
+    """Recordings waiting to be archived, oldest first."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, pending_path, started_at, ended_at FROM vods "
+            "WHERE pending_path IS NOT NULL ORDER BY started_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def clear_vod_pending(vod_id):
+    """Drop the pending mark, once the recording is archived or given up on."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE vods SET pending_path = NULL WHERE id = ?", (vod_id,)
+        )
+
+
+def count_pending_vods():
+    with connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM vods WHERE pending_path IS NOT NULL"
+        ).fetchone()[0]
 
 
 def list_clips():
@@ -2164,6 +2191,12 @@ def snapshot_chat(kind, ref_id, start_ts, end_ts):
     Avatars, fonts, and role flags are taken from the author's account as it
     stands now (a good enough likeness for replay)."""
     with connect() as conn:
+        # Clear first so this is safe to run twice. An archive that failed and was
+        # retried can reach here a second time, and duplicated replay lines would
+        # be the only trace of it.
+        conn.execute(
+            "DELETE FROM replay_chat WHERE kind = ? AND ref_id = ?", (kind, ref_id)
+        )
         conn.execute(
             """
             INSERT INTO replay_chat

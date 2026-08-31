@@ -35,8 +35,11 @@ Not in the archive, on purpose:
   A backup that takes an hour and fills your disk is a backup nobody runs. If
   you restore onto a server without them, your recordings list will still be
   there but the files will not, and the restore tells you how many are missing.
-  To keep the files too, snapshot the `media_data` volume separately, with
-  whatever your host or filesystem already offers.
+  To keep the files too, protect the media store separately with whatever your
+  host or filesystem already offers. If you moved it onto a NAS or a pool (see
+  `docs/04-run.md`), that is already wherever you snapshot; be aware that
+  snapshotting it pins every recording retention deletes, so the space will not
+  come back until the snapshots age out.
 - **Your `.env`.** It holds your session secret and your SMTP password, and
   putting secrets in a file you copy to a laptop is how secrets get out. It also
   lives on the host, outside the container, so this command cannot see it. Keep
