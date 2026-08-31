@@ -37,6 +37,14 @@ deliberate: a film that finishes at midnight used to leave the room sitting on
 the intermission card until somebody pressed end, so the channel looked on air
 until morning and anyone who had left the page open was still pulling from it.
 
+Only a title actually ending does that. A title that **fails** instead, because
+the file will not open or the library blinked, drops the room back to
+intermission and says so in chat; the session stays open and you pick again.
+Nothing is retried for you, and the same title failing twice running is told
+apart from the first time. A projector that **reconnects** mid-film, because its
+process restarted or the link dropped, closes nothing either: the state it
+reports on connecting is where it already is, not news that something happened.
+
 ## 11.2 The projector
 
 The playing is done by a separate small service called the **projector**, in
@@ -187,7 +195,9 @@ A normal evening:
    `playing Silo (2023) S3E1`. The year is the show's, not the year that season
    happened to air, because that is the year anybody knows the show by.
 3. **When the title ends, the session ends.** The room goes offline and chat is
-   untouched. Nothing restarts on its own; the next one is yours to put on.
+   untouched. Nothing restarts on its own; the next one is yours to put on. A
+   title that fails rather than finishes keeps the session: the room goes back
+   to intermission and is told the title would not play.
 4. **Stop** is different, and it is the one for changing your mind mid-film: the
    room drops back to intermission and waits for you to pick the next title,
    with the session still open.

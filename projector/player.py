@@ -134,18 +134,38 @@ def build_play_args(item_url, opts):
     return args
 
 
+# What ffmpeg and libva actually print when hardware encoding is unavailable,
+# lowercased. Matched as signatures rather than on the words "libva" or "vaapi":
+# libva writes "libva info: VA-API version ..." to stderr on a SUCCESSFUL init,
+# so a bare substring read every unrelated early death on a working GPU as a
+# hardware fault and quietly re-encoded the night on the CPU.
+HWACCEL_FAILURES = (
+    "libva error",                       # libva's own failure channel
+    "libva-drm.so",                      # the static ffmpeg cannot dlopen libva
+    "libva.so",
+    "failed to initialise vaapi",        # ffmpeg spells it both ways
+    "failed to initialize vaapi",
+    "failed to create a vaapi device",
+    "no va display found",
+    "device creation failed",
+    "init_hw_device",
+    "option 'vaapi_device'",
+    "no device available for encoder",
+    "no hardware frames context",
+    "a hardware device reference is required",   # hwupload with no device
+)
+
+
 def is_hwaccel_failure(stderr_text):
     """Whether ffmpeg died because hardware encoding is unavailable, so the same
     title can be retried on the CPU instead of not playing at all.
 
     A static ffmpeg loads libva at run time, so a missing runtime, a missing
     driver or a render node the container cannot open all surface here rather
-    than at build time. The libva assertion is the loudest of them and says
-    nothing about VAAPI in words, which is why it is matched by name."""
+    than at build time. The dlopen abort is the loudest of them and never says
+    "vaapi" in words, which is why libva's own filenames are matched too."""
     text = (stderr_text or "").lower()
-    if "libva" in text or "vaapi" in text:
-        return True
-    return "init_hw_device" in text or "hwupload" in text
+    return any(signature in text for signature in HWACCEL_FAILURES)
 
 
 def is_subtitle_failure(stderr_text):

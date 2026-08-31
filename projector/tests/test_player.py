@@ -6,6 +6,8 @@ whose mistakes do not crash anything, they just make the broadcast worse for
 everybody watching, and are invisible from the projector's own logs.
 """
 
+import pytest
+
 import player
 
 
@@ -155,6 +157,38 @@ def test_a_libva_abort_reads_as_a_hardware_failure():
         "ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion `0 && "
         '"Assertion in generated code"\' failed.\n'
     )
+    assert player.is_hwaccel_failure(tail) is True
+
+
+def test_libvas_success_banner_is_not_read_as_a_failure():
+    """libva writes to stderr when it works, not only when it does not: this is
+    what a healthy VAAPI init looks like. Matching the bare word "libva" made
+    every unrelated early death on a working GPU look like a hardware fault, so
+    the night was silently re-encoded on the CPU for no reason."""
+    healthy = (
+        "libva info: VA-API version 1.22.0\n"
+        "libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so\n"
+        "libva info: Found init function __vaDriverInit_1_22\n"
+        "libva info: va_openDriver() returns 0\n"
+        "[in#0 @ 0x55] Error opening input: Connection refused\n"
+        "Error opening input file http://library/file.\n"
+    )
+    assert player.is_hwaccel_failure(healthy) is False
+
+
+@pytest.mark.parametrize("tail", [
+    "libva error: va_getDriverName() failed with unknown libva error",
+    "[AVHWDeviceContext @ 0x55] Failed to initialise VAAPI connection: -1.",
+    "Failed to create a VAAPI device: -22.",
+    "No VA display found for device /dev/dri/renderD128.",
+    "Device creation failed: -5.",
+    "Failed to set value 'vaapi' for option 'init_hw_device'",
+    "Failed to set value '/dev/dri/renderD128' for option 'vaapi_device'",
+    "[h264_vaapi @ 0x55] No device available for encoder.",
+    "[Parsed_hwupload_2 @ 0x55] A hardware device reference is required.",
+])
+def test_the_real_vaapi_failures_are_still_caught(tail):
+    """The CPU fallback has to fire on these, or the showing just stops."""
     assert player.is_hwaccel_failure(tail) is True
 
 

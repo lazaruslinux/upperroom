@@ -15,6 +15,11 @@ The wire format is JSON, three shapes:
 
 Requests only ever go gate -> projector. Events only ever come back the other
 way, and are how the projector reports what it is doing without being asked.
+
+The FIRST event of a connection is special: the projector sends its current
+state the moment it connects, so that frame is where it already is rather than
+something that just happened. It is flagged as such for the handler, because a
+projector restart otherwise looks exactly like a title ending.
 """
 
 import asyncio
@@ -43,6 +48,8 @@ class ProjectorLink:
         self._pending = {}        # request id -> Future waiting for its reply
         self._next_id = 0
         self._last_seen = 0
+        # Whether the next event is this connection's opening state report.
+        self._opening_due = True
         # Set by theater.py at import. Keeping it a hook rather than an import
         # avoids a cycle: theater already imports this module.
         self.on_event = None
@@ -63,6 +70,9 @@ class ProjectorLink:
         previous = self._socket
         self._socket = socket
         self._last_seen = int(time.time())
+        # A new connection opens with a state report, whatever the last one had
+        # already told us.
+        self._opening_due = True
         if previous is not None and previous is not socket:
             logger.info("a new projector connected; closing the previous one")
             try:
@@ -99,9 +109,15 @@ class ProjectorLink:
             else:
                 future.set_result(message.get("result"))
             return
-        if message.get("event") and self.on_event:
+        if not message.get("event"):
+            return
+        # Consumed whether or not anything is listening, so the opening report
+        # cannot be spent twice or carried into the next frame.
+        opening = self._opening_due
+        self._opening_due = False
+        if self.on_event:
             try:
-                await self.on_event(message)
+                await self.on_event(message, opening)
             except Exception:
                 logger.warning("projector event handler failed", exc_info=True)
 

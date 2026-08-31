@@ -153,9 +153,11 @@ async def start_session():
     The go-live announcement fires here, once, rather than when the first title
     starts: from a viewer's side the session is the broadcast, and one message
     per film would be a mailing list nobody asked for."""
+    global _last_error_id
     session_id = db.create_theater_session(int(time.time()))
     if session_id is None:
         return None, "A theater session is already running."
+    _last_error_id = None
     logger.info("theater session %s started", session_id)
     await notify_live()
     db.mark_theater_notified(session_id)
@@ -377,10 +379,17 @@ def _now_showing_line(session):
 # is what tells a title that RAN OUT from one the host stopped: the first closes
 # the session, the second leaves the room in intermission to pick the next.
 _host_stopped_at = -1e9
-# How long after the host's stop an idle report is still read as theirs. The
-# projector answers the stop and reports within a second or two; this is loose
-# enough to survive a slow link and far short of any real title.
-HOST_STOP_GRACE = 15
+# How long after the host's stop an idle report is still read as theirs. It has
+# to outlast the stop itself: the marker is set before the rpc and the rpc waits
+# up to PLAY_TIMEOUT for the projector, so a slow ffmpeg teardown can report
+# idle after the call has already returned. Anything shorter than that plus a
+# margin closes a session the host meant to keep, and even this is far short of
+# any real title.
+HOST_STOP_GRACE = PLAY_TIMEOUT + 10
+
+# The title an error was last reported for, so a source that fails twice running
+# says so plainly instead of repeating itself. Reset per session.
+_last_error_id = None
 
 
 async def stop():
@@ -403,7 +412,34 @@ async def stop():
 
 # ---- Events from the projector --------------------------------------------
 
-async def on_projector_event(message):
+async def _title_failed(session):
+    """A title that died while it was on air. The room goes back to intermission
+    and is told, rather than the night ending on one bad source: a file that
+    will not open or a library that blinked is a reason to pick again, not a
+    reason to close the room on everybody in it.
+
+    Nothing is retried here, deliberately. A title that fails twice running says
+    so plainly instead of repeating the same line at somebody watching it fail.
+    """
+    global _last_error_id
+    session_id = session["id"]
+    failed_id = session["now_jf_id"]
+    again = bool(failed_id) and failed_id == _last_error_id
+    _last_error_id = failed_id
+    db.set_theater_now(session_id)
+    # Set here rather than left to the stream watcher: the card the room is
+    # looking at should change with the news, not a poll later.
+    db.set_theater_state(session_id, "intermission")
+    logger.info("theater session %s back to intermission: the title failed", session_id)
+    await hub.narrate(
+        "That title would not play again. Try a different one." if again else
+        "That title would not play. The room is still open; pick another when "
+        "you are ready."
+    )
+    await broadcast_state(db.get_active_theater_session())
+
+
+async def on_projector_event(message, opening_report=False):
     """Handle one event the projector sent unprompted. Only 'status' matters:
     it says what the projector thinks it is doing, which is how an ffmpeg that
     died on its own reaches the room instead of leaving the page showing a
@@ -413,6 +449,10 @@ async def on_projector_event(message):
     back to the intermission card and stayed there until somebody pressed end,
     which meant a film finishing at midnight left the channel apparently on air
     until morning, with anyone who had left the page open still holding it.
+
+    opening_report says this is the state a freshly connected projector reports
+    about itself. Only a transition on a connection we were already holding can
+    end anything.
     """
     if message.get("event") != "status":
         return
@@ -427,21 +467,28 @@ async def on_projector_event(message):
             "the projector reported an error: %s",
             str(message.get("detail") or "")[:200],
         )
-    # Nothing was on air to end. A session sitting in intermission gets an idle
-    # report whenever the projector reconnects, and that must not close it.
+    # A projector that has just connected is telling us where it already is, not
+    # that something happened. Its process restarting mid-film, or a blip on the
+    # link, would otherwise arrive as a fresh "idle" and close the whole night.
+    if opening_report:
+        logger.info("the projector reconnected and reports %s", state)
+        return
+    # Nothing was on air to end, so there is nothing for this to be the end of.
     if session["state"] != "playing" and not session["now_title"]:
         return
     # The host took it off themselves, so leave them in intermission to pick
-    # the next one rather than making them start a session again.
+    # the next one rather than making them start a session again. Their own stop
+    # explains the exit whatever the projector went on to call it.
     if time.monotonic() - _host_stopped_at < HOST_STOP_GRACE:
         db.set_theater_now(session["id"])
         await broadcast_state(db.get_active_theater_session())
         return
+    if state == "error":
+        await _title_failed(session)
+        return
     logger.info("theater session %s closing: its title ended", session["id"])
     await end_session(
-        narration="That was the end of it. Theater mode is off."
-        if state == "idle"
-        else "The title stopped unexpectedly. Theater mode is off.",
+        narration="That was the end of it. Theater mode is off.",
         # It just told us it is idle, so there is nothing to stop.
         stop_projector=False,
     )

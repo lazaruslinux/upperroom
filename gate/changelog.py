@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.14.2": [
+        "A movie night no longer ends by mistake when the projector hiccups.",
+        "A title that will not play returns to the intermission card and says so.",
+    ],
     "0.14.1": [
         "The site answers again straight away after a restart.",
         "A recording is no longer at risk if saving it fails part way through.",

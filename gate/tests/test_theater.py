@@ -83,8 +83,16 @@ class StubProjector:
         return [m["method"] for m in self.sent]
 
 
-def attach(stub):
+def attach(stub, opening="idle"):
+    """Seat a stub projector, including the state report a real one sends the
+    moment it connects (projector/main.py serve()).
+
+    Skipping that would test a connection no projector ever makes, and it is the
+    frame the reconnect guard turns on: the gate treats it as where the
+    projector already is rather than as something that just happened."""
     asyncio.run(link.attach(stub))
+    if opening:
+        asyncio.run(link.handle({"event": "status", "state": opening}))
     return stub
 
 
@@ -616,14 +624,86 @@ def test_closing_on_an_ended_title_does_not_wait_on_the_projector(client):
     assert "stop" not in stub.methods()
 
 
-def test_a_title_that_dies_closes_the_session_too(client):
-    # An ffmpeg that fell over is still a room nobody is going to come back to.
+def test_an_idle_on_an_established_connection_still_ends_the_night(client):
+    # The genuine end, with the session actually reading "playing": the opening
+    # report is behind us, so this idle is a transition and closes the session.
     setup_admin(client, username="owner")
     start(client)
     working_projector()
     client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
-    asyncio.run(link.handle({"event": "status", "state": "error", "detail": "boom"}))
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+
+    asyncio.run(link.handle({"event": "status", "state": "idle"}))
+
     assert db.get_active_theater_session() is None
+
+
+def test_a_reconnecting_projector_does_not_end_the_night(client):
+    """The projector reports its state on every connect, so a restart of that
+    process, or a blip on the link, delivers a fresh idle while the gate still
+    has a film on. That is a report, not the title ending: closing on it would
+    end the whole night because a container came back."""
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+
+    working_projector()          # reconnects, opening with "idle"
+
+    session = db.get_active_theater_session()
+    assert session is not None
+    assert session["state"] == "playing"
+    assert session["now_title"] == "The Long Afternoon"
+
+
+def test_a_title_that_dies_returns_to_intermission_and_keeps_the_room(client):
+    """An ffmpeg that fell over is a bad source or a library that blinked, not
+    the end of the evening. Ending the session there took the room off everybody
+    watching because one file would not open."""
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+
+    asyncio.run(link.handle({"event": "status", "state": "error", "detail": "boom"}))
+
+    session = db.get_active_theater_session()
+    assert session is not None
+    assert session["state"] == "intermission"
+    assert session["now_title"] is None
+    # And the room is told why, in the backlog so somebody arriving mid-gap
+    # sees it too rather than an intermission card with no explanation.
+    said = hub._history[-1]
+    assert said["type"] == "system"
+    assert said["text"] == (
+        "That title would not play. The room is still open; pick another "
+        "when you are ready."
+    )
+
+
+def test_the_same_title_failing_twice_says_so_instead_of_repeating(client):
+    # Nothing is retried automatically, so the host is the one trying again.
+    # Telling them the same thing twice hides that it is the same failure.
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    for _ in range(2):
+        client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+        db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+        asyncio.run(link.handle({"event": "status", "state": "error"}))
+
+    assert db.get_active_theater_session() is not None
+    assert hub._history[-1]["text"] == (
+        "That title would not play again. Try a different one."
+    )
+
+
+def test_the_grace_outlasts_the_stop_it_covers():
+    # The marker is set before the stop rpc and that rpc waits PLAY_TIMEOUT, so
+    # a grace shorter than it reads a slow teardown as the film ending.
+    assert theater.HOST_STOP_GRACE > projector.PLAY_TIMEOUT
 
 
 def test_the_hosts_own_stop_leaves_the_session_open(client):

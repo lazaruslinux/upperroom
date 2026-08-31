@@ -96,6 +96,10 @@ def client(tmp_path, monkeypatch):
     projector.link._socket = None
     projector.link._pending.clear()
     projector.link._last_seen = 0
+    # Nothing is attached, so a test that hands the link an event directly is
+    # speaking for a settled connection, not for one that has just opened. The
+    # attach helper delivers the opening report the way a real projector does.
+    projector.link._opening_due = False
     # Who is pulling video is process-global as well, so a test that filled the
     # room would leave the next one at its limit.
     watchers.reset()
@@ -103,4 +107,7 @@ def client(tmp_path, monkeypatch):
     # whether an idle report closes the session. One test's stop would otherwise
     # keep the next test's finished title from closing anything.
     theater._host_stopped_at = -1e9
+    # Which title last failed is process-global as well, and it decides whether
+    # the room is told "again".
+    theater._last_error_id = None
     return make_client()
