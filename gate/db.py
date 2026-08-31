@@ -2102,10 +2102,15 @@ def clear_unfinished_vods():
 
 def mark_vod_pending(vod_id, path, ended_at):
     """Park a finished-but-unarchived recording. Records where the bytes are and
-    when the broadcast ended, so a later retry has everything it needs."""
+    when the broadcast ended, so a later retry has everything it needs.
+
+    Clears ready and filename in the same statement. A parked recording is not
+    playable, and an archive that got as far as marking the row finished before
+    failing must not leave the landing page offering a file that is not there."""
     with connect() as conn:
         conn.execute(
-            "UPDATE vods SET pending_path = ?, ended_at = ? WHERE id = ?",
+            "UPDATE vods SET pending_path = ?, ended_at = ?, ready = 0, "
+            "filename = NULL WHERE id = ?",
             (path, ended_at, vod_id),
         )
 
@@ -2363,6 +2368,11 @@ def media_filenames():
                 if row["filename"]:
                     known[kind].add(os.path.basename(row["filename"]))
                 known[kind].add(f"{row['id']}.jpg")
+        # A parked recording still points at its archive: the retry finishes the
+        # same file, named by the recording's id, so sweeping it would only make
+        # the retry redo work it had already done.
+        for row in conn.execute("SELECT id FROM vods WHERE pending_path IS NOT NULL"):
+            known["vod"].add(f"{row['id']}.mp4")
     return known
 
 

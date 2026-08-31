@@ -218,6 +218,25 @@ with a long random key the same way the overlay does.
 The key is a bearer secret: treat it like a password, and regenerate it from the
 dashboard if it leaks.
 
+## Keeping those keys out of the logs
+
+Both of those keys travel in a query string, because neither a browser source
+nor the projector can send a header. That makes them the one credential this
+system writes down every time it is used, and logs travel: they roll, they are
+compressed, they go into backups, and they get pasted into bug reports. Two
+redactions, on both sides of the proxy, keep them out:
+
+- **The gate** strips the query off its own HTTP and WebSocket access lines
+  (`RedactQueryStrings` in `gate/config.py`). The path is kept, so the line is
+  still worth having.
+- **Caddy** deletes the `key` and `overlay` parameters from the `uri` field of
+  its JSON access log, with a `format filter` in the `Caddyfile`. Other
+  parameters are left alone, so the log still shows what was asked for.
+
+Both are needed: they write separate files, and one alone leaves the key in the
+other. If you have logs from before this, treat the keys in them as burned:
+regenerate both from the dashboard and delete the old files.
+
 ## Putting the media store on another machine
 
 Recordings and clips do not have to live on the server that serves them. The

@@ -8,6 +8,8 @@ also guards the saved recordings and clips: those are files on disk, they cost
 nothing per viewer, and they must not be caught by it.
 """
 
+import sys
+import threading
 import time
 
 import pytest
@@ -48,6 +50,44 @@ def test_a_watcher_falls_out_of_the_count_when_they_stop_asking():
     assert watchers.active("nell", now)
     assert watchers.count(now + 31) == 0
     assert not watchers.active("nell", now + 31)
+
+
+def test_the_count_survives_concurrent_segment_checks(monkeypatch):
+    """The route that feeds this is a sync def, so FastAPI runs it in its
+    threadpool and a full room hits this module genuinely in parallel. The prune
+    loop deleting from the same dict another thread was writing to raised a
+    RuntimeError or a KeyError out of an authorization check, which Caddy turns
+    into a refused segment: the video stops for a viewer who did nothing wrong,
+    and only when enough people are watching to make it worth caring about."""
+    watchers.reset()
+    # Nothing outlives a tick, so every call prunes while the others write, and a
+    # short switch interval makes the interpreter change threads inside the loop
+    # instead of finishing it first. Both are needed to provoke it reliably.
+    monkeypatch.setattr(watchers, "WATCHER_WINDOW_SECONDS", 0)
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    errors = []
+
+    def hammer(tag):
+        try:
+            for i in range(300):
+                watchers.note(f"{tag}-{i % 200}")
+                watchers.active(f"{tag}-{i % 200}")
+                watchers.count()
+        except Exception as exc:
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=hammer, args=(f"t{n}",)) for n in range(8)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(interval)
+        watchers.reset()
+
+    assert errors == []
 
 
 def test_one_person_with_several_tabs_is_one_watcher():

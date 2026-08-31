@@ -16,15 +16,23 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.14.1": [
+        "The site answers again straight away after a restart.",
+        "A recording is no longer at risk if saving it fails part way through.",
+        "Fixed an error that could refuse the video while a lot of people watched.",
+    ],
     "0.14.0": [
         "More broadcasts stay saved, on a much bigger disk.",
         "A recording that cannot be saved is now kept and retried instead of lost.",
     ],
     "0.13.0": [
+        "A film reaching its end now closes theater mode instead of running on.",
+        "The scheduled next stream is gone: the room says what is happening now.",
+    ],
+    "0.12.0": [
         "The chat bar folds away, so the picture can have the whole width.",
         "The people icon opens the list of everyone watching.",
         "The channel can now limit how many people watch at once.",
-        "A film ending now closes theater mode instead of running on.",
         "This notice, once per release.",
     ],
 }

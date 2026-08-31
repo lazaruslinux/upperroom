@@ -72,6 +72,23 @@ def _log_startup_summary():
     )
 
 
+async def _startup_archive_retry():
+    """Try once, in the background, to archive the recordings a previous run
+    parked, so a restart after the media store comes back is all it takes.
+
+    A background task and not part of startup on purpose. Per parked recording
+    this is a poster, a remux with a ten-minute ceiling and a move, all against a
+    store that may be a network mount answering at network-outage speed. Awaited
+    before the server starts serving, that is minutes of a site refusing
+    connections, at exactly the moment somebody restarted it to get it back. The
+    hourly retry in retention_worker is the backstop if this one finds the store
+    still away."""
+    try:
+        await retry_pending_archives()
+    except Exception:
+        logger.warning("pending archive retry failed at startup", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(_app):
     _log_startup_summary()
@@ -86,12 +103,6 @@ async def lifespan(_app):
     # the recording scratch dir of anything not tied to an active recording. A
     # recording parked by a failed archive is spared by the sweep itself.
     cleanup_record_scratch()
-    # And then try to archive those parked recordings, so a restart after the
-    # media store comes back is all it takes to get them in.
-    try:
-        await retry_pending_archives()
-    except Exception:
-        logger.warning("pending archive retry failed at startup", exc_info=True)
     # And the archived side: files whose rows were dropped above are bytes
     # nothing points at, which would otherwise count against the size cap.
     sweep_orphan_media()
@@ -100,6 +111,7 @@ async def lifespan(_app):
     # every start rather than trusted to the publish and delete paths alone.
     sweep_orphan_shared()
     tasks = [
+        asyncio.create_task(_startup_archive_retry()),
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
         asyncio.create_task(chat_purge_worker()),

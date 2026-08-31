@@ -310,6 +310,13 @@ _watch = {
 # both spot the same failure, and this lock keeps them from double-restarting.
 _restart_lock = asyncio.Lock()
 
+# True while an archive is in flight. The startup retry, the hourly retry and the
+# archive a finishing broadcast starts can all want the same work at once, and a
+# recording is now parked for the whole of its own archive, so a second pass
+# would find it mid-flight and remux it again. A plain flag rather than a lock:
+# the second caller must give up, not queue behind one vCPU's worth of ffmpeg.
+_archiving = {"busy": False}
+
 # Watchdog decision outcomes.
 WATCHDOG_NONE = "none"        # recording looks healthy; do nothing
 WATCHDOG_WAIT = "wait"        # failed, but still inside the backoff window
@@ -1006,6 +1013,10 @@ async def stop_recording():
 
 
 async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
+    # Saved and restored rather than simply cleared, because the retry loop holds
+    # the flag across the whole pass and calls this for each recording in it.
+    was_busy = _archiving["busy"]
+    _archiving["busy"] = True
     try:
         if not (tmp_path and os.path.exists(tmp_path)
                 and os.path.getsize(tmp_path) > 100_000):
@@ -1014,6 +1025,11 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
                 os.remove(tmp_path)
             return
         filename = f"{vod_id}.mp4"
+        # Park the recording before anything touches it. The pending mark is what
+        # makes clear_unfinished_vods spare the row and cleanup_record_scratch
+        # spare the file, so from here until the row names an archived copy a
+        # crash, a restart or a raised exception costs nothing.
+        db.mark_vod_pending(vod_id, tmp_path, ended_at)
         # Poster first, while the file is still on fast local scratch.
         await _make_poster(tmp_path, os.path.join(VOD_DIR, f"{vod_id}.jpg"))
         dst = os.path.join(VOD_DIR, filename)
@@ -1029,20 +1045,34 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
              "-c", "copy", "-movflags", "+faststart", dst],
             timeout=600,
         )
-        if code == 0 and os.path.exists(dst) and os.path.getsize(dst) > 100_000:
+        remuxed = code == 0 and os.path.exists(dst) and os.path.getsize(dst) > 100_000
+        if not remuxed:
+            logger.warning(
+                "recording remux failed (rc=%s); keeping raw file for %s",
+                code, dst,
+            )
+        # Probe whichever copy exists; the raw scratch is the same recording, so
+        # the fallback path gets the same answer it did when it probed the moved
+        # file instead.
+        duration = (await _probe_duration(dst if remuxed else tmp_path)
+                    or max(0, ended_at - started_at))
+        # The row learns the filename before the scratch copy goes. Releasing the
+        # scratch first left a window where a finalize that raised (a busy
+        # database, a full disk) lost the recording twice over: nothing was left
+        # to park, the next start dropped the unfinished row, and the orphan
+        # sweep then deleted the archived file it no longer pointed at.
+        db.finalize_vod(vod_id, ended_at, duration, filename)
+        if remuxed:
             try:
                 os.remove(tmp_path)
             except OSError:
                 logger.debug("could not remove scratch recording %s", tmp_path,
                              exc_info=True)
         else:
-            logger.warning(
-                "recording remux failed (rc=%s); keeping raw file for %s",
-                code, dst,
-            )
+            # Same rule for the raw-file fallback: the move is what consumes the
+            # scratch, so it happens after the row can name what it produced. A
+            # move that fails here is caught below and re-parks the recording.
             await asyncio.to_thread(shutil.move, tmp_path, dst)
-        duration = await _probe_duration(dst) or max(0, ended_at - started_at)
-        db.finalize_vod(vod_id, ended_at, duration, filename)
         db.snapshot_chat("vod", vod_id, started_at, ended_at)
         logger.info("recording finalized: %s (%ss)", dst, duration)
         # Finalizing is when the media store jumps in size, so reclaim here
@@ -1065,44 +1095,59 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         except Exception:
             logger.warning("could not park unarchived recording %s", vod_id,
                            exc_info=True)
+    finally:
+        _archiving["busy"] = was_busy
 
 
 async def retry_pending_archives():
     """Archive again any recording whose move to the media store failed.
 
-    Skipped while a recording is running: this box is small, and a retry racing a
-    live broadcast for the same disk and CPU is a worse trade than waiting for the
+    Skipped while a recording is running, and while another archive pass is
+    already going: this box is small, and a retry racing a live broadcast or a
+    second retry for the same disk and CPU is a worse trade than waiting for the
     next hourly pass. Returns how many were retried."""
-    if _rec["active"]:
+    if _rec["active"] or _archiving["busy"]:
         return 0
+    _archiving["busy"] = True
     try:
-        rows = db.pending_vods()
-    except Exception:
-        logger.warning("could not list recordings waiting to be archived",
-                       exc_info=True)
-        return 0
-    retried = 0
-    for row in rows:
-        path = row["pending_path"]
-        if not path or not os.path.exists(path):
-            # The bytes are gone, so there is nothing left to archive and the row
-            # would otherwise sit pending for ever.
-            logger.warning(
-                "recording %s was waiting at %s but the file is gone; dropping it",
-                row["id"], path,
+        try:
+            rows = db.pending_vods()
+        except Exception:
+            logger.warning("could not list recordings waiting to be archived",
+                           exc_info=True)
+            return 0
+        retried = 0
+        for row in rows:
+            if _rec["active"]:
+                # A broadcast started while this pass was running. Checking only
+                # at entry meant a long pass kept competing with it; the rest
+                # waits for the next hour instead.
+                logger.info("a broadcast started; leaving the remaining "
+                            "archives for the next pass")
+                break
+            path = row["pending_path"]
+            if not path or not os.path.exists(path):
+                # The bytes are gone, so there is nothing left to archive and the
+                # row would otherwise sit pending for ever.
+                logger.warning(
+                    "recording %s was waiting at %s but the file is gone; "
+                    "dropping it", row["id"], path,
+                )
+                try:
+                    db.delete_media("vod", row["id"])
+                except Exception:
+                    logger.warning("could not drop pending VOD row %s", row["id"],
+                                   exc_info=True)
+                continue
+            logger.info("retrying the archive of recording %s", row["id"])
+            await _finalize_recording(
+                row["id"], path, row["started_at"],
+                row["ended_at"] or int(time.time()),
             )
-            try:
-                db.delete_media("vod", row["id"])
-            except Exception:
-                logger.warning("could not drop pending VOD row %s", row["id"],
-                               exc_info=True)
-            continue
-        logger.info("retrying the archive of recording %s", row["id"])
-        await _finalize_recording(
-            row["id"], path, row["started_at"], row["ended_at"] or int(time.time())
-        )
-        retried += 1
-    return retried
+            retried += 1
+        return retried
+    finally:
+        _archiving["busy"] = False
 
 
 def cooldown_for(user):

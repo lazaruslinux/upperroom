@@ -29,12 +29,29 @@
 	#
 	# Rolled and capped, because this is a small disk and an access log is
 	# exactly the kind of file that quietly fills one.
+	#
+	# Two endpoints authenticate with a secret in the query string, because
+	# neither can send a header: the projector's socket (?key=) and the OBS
+	# overlay browser source (?overlay=). Caddy logs the whole request target,
+	# so without this filter every connection writes a live credential into a
+	# file that is rolled, compressed, copied into backups and pasted into bug
+	# reports. The gate redacts its own access lines already; this is the same
+	# rule on the proxy side, and the two together are what actually keeps keys
+	# out of logs. The path is kept, because it is what makes the line useful.
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 10MB
 			roll_keep 5
 		}
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete key
+					delete overlay
+				}
+			}
+		}
 	}
 
 	# Caching policy. Versioned assets (their URLs carry ?v=N) can be cached hard

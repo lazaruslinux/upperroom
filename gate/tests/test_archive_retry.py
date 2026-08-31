@@ -15,6 +15,7 @@ neither startup sweep touches a parked one, and the retry archives it.
 import asyncio
 import os
 import shutil
+import sqlite3
 
 import pytest
 
@@ -195,6 +196,83 @@ def test_the_retry_waits_while_a_broadcast_is_recording(store, monkeypatch):
     _store_is_back(monkeypatch)
     assert asyncio.run(media.retry_pending_archives()) == 0
     assert [row["id"] for row in db.pending_vods()] == [vod_id]
+
+
+# --- 4. The archive landed and only the database write failed ----------------
+
+def test_a_finalize_that_fails_after_the_remux_loses_nothing(store, monkeypatch):
+    """The narrow window that used to cost a whole recording.
+
+    The scratch copy was released the moment the remux succeeded, before the row
+    was told which file to play. A finalize that raised in between (a busy
+    database, a full disk) left nothing to park: the row was still unfinished, so
+    the next start dropped it, and the archived file was then pointed at by
+    nothing, so the orphan sweep deleted that too."""
+    rec, vods = store
+    vod_id = db.create_vod("A broadcast", "", 1000)
+    path = _recording(rec, vod_id)
+    _store_is_back(monkeypatch)
+    real_finalize = db.finalize_vod
+
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(db, "finalize_vod", locked)
+    asyncio.run(media._finalize_recording(vod_id, path, 1000, 2000))
+
+    archived = vods / f"{vod_id}.mp4"
+    assert archived.exists(), "the remux did land, and it is the archive"
+    assert os.path.exists(path), "the scratch copy must not have been released"
+    assert [row["id"] for row in db.pending_vods()] == [vod_id]
+
+    # The three sweeps a restart runs, in the order main.py runs them.
+    db.clear_unfinished_vods()
+    media.cleanup_record_scratch()
+    media.sweep_orphan_media()
+
+    assert [row["id"] for row in db.pending_vods()] == [vod_id], "the row survives"
+    assert os.path.exists(path), "the recording survives"
+    assert archived.exists(), "and so does what was already archived"
+
+    # And with the database answering again, the retry finishes the job.
+    monkeypatch.setattr(db, "finalize_vod", real_finalize)
+    assert asyncio.run(media.retry_pending_archives()) == 1
+    assert [row["id"] for row in db.list_vods()] == [vod_id]
+    assert not os.path.exists(path)
+
+
+def test_one_archive_pass_runs_at_a_time(store, monkeypatch):
+    # The startup retry, the hourly retry and a broadcast's own archive can all
+    # ask at once, and a recording is parked for the whole of its own archive, so
+    # a second pass would find it mid-flight and remux it again.
+    rec, _ = store
+    vod_id = db.create_vod("Parked", "", 1000)
+    _store_is_gone(monkeypatch)
+    asyncio.run(media._finalize_recording(vod_id, _recording(rec, vod_id), 1000, 2000))
+
+    _store_is_back(monkeypatch)
+    monkeypatch.setitem(media._archiving, "busy", True)
+    assert asyncio.run(media.retry_pending_archives()) == 0
+    assert [row["id"] for row in db.pending_vods()] == [vod_id]
+
+
+def test_a_recording_is_parked_for_the_whole_of_its_own_archive(store, monkeypatch):
+    # What makes the reordering safe: from the first destructive step until the
+    # row names an archived file, both startup sweeps spare the row and the file.
+    rec, _ = store
+    vod_id = db.create_vod("A broadcast", "", 1000)
+    path = _recording(rec, vod_id)
+    seen = {}
+
+    async def note_the_park(src, dst, seek=2):
+        seen["parked"] = [row["id"] for row in db.pending_vods()]
+
+    monkeypatch.setattr(media, "_make_poster", note_the_park)
+    _store_is_back(monkeypatch)
+    asyncio.run(media._finalize_recording(vod_id, path, 1000, 2000))
+
+    assert seen["parked"] == [vod_id], "parked before the archive starts"
+    assert db.pending_vods() == [], "and released once the row names the file"
 
 
 def test_a_retry_does_not_duplicate_the_chat_replay(store, monkeypatch):

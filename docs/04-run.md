@@ -228,6 +228,13 @@ server tries again when it next starts and once an hour after that. The Storage
 panel on the dashboard says when one is waiting, and the line goes away by itself
 once the archive lands. Nothing is expected of you beyond fixing the storage.
 
+The retry at startup runs **beside** the server, not before it. Each waiting
+recording is a poster, a remux and a move against a store that may still be
+answering at outage speed, and the site would otherwise refuse connections for
+as long as that took, at exactly the moment somebody restarted it to get the
+site back. Only one retry runs at a time, and one waits while a broadcast is
+recording: this is usually a small machine, and the live stream comes first.
+
 ## 4.6 Updating
 
 Pull the newest images and rebuild:
