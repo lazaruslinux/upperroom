@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=58">
+  <link rel="stylesheet" href="/assets/style.css?v=59">
 </head>
 <body class="home">
   <div id="site-nav"></div>
@@ -32,7 +32,7 @@
          card is hidden entirely rather than shown as a dead "no signal" tile. -->
     <div id="offline-block" class="offline-block" hidden>
       The broadcaster is currently offline.
-      <a href="/watch">Enter chat</a> or view past broadcasts &amp; clips below.
+      <a href="/watch">Enter chat</a> or <a href="/browse">browse past broadcasts and clips</a>.
     </div>
 
     <button id="stream-card" type="button" class="stream-card" aria-label="Join the stream">
@@ -61,19 +61,6 @@
         </span>
       </div>
     </button>
-
-    <!-- Past broadcasts and viewer clips. -->
-    <section class="library">
-      <div class="lib-tabs">
-        <button type="button" class="lib-tab selected" data-tab="vods">Broadcasts</button>
-        <button type="button" class="lib-tab" data-tab="clips">Clips</button>
-      </div>
-      <label id="clip-filter" class="switch lib-filter" hidden>
-        <input id="mine-only" type="checkbox"> My clips only
-      </label>
-      <div id="lib-grid" class="lib-grid"></div>
-      <p id="lib-empty" class="muted" hidden></p>
-    </section>
   </main>
 
   <!-- The one-time notice after an upgrade. Filled and shown by home.js only
@@ -96,7 +83,7 @@
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
-  <script src="/assets/nav.js?v=7"></script>
-  <script src="/assets/home.js?v=22"></script>
+  <script src="/assets/nav.js?v=8"></script>
+  <script src="/assets/home.js?v=23"></script>
 </body>
 </html>

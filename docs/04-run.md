@@ -93,7 +93,8 @@ Every broadcast is recorded automatically. While you are live the recording is
 written to a local scratch volume (a plain copy of the stream, with no
 re-encoding, pulled over the internal docker network), so it never competes with
 the live stream for bandwidth or quality. When the stream ends, the finished
-file is archived to the media store and shown on the home page under **VODs**.
+file is archived to the media store and shown on the browse page under
+**Broadcasts**.
 Viewers can also clip the recent stream while you are live, and those appear
 under **Clips**, each with synced chat replay. Pressing Clip asks how much to
 take (one minute, 45 seconds or 30 seconds) and saves it straight away; naming

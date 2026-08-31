@@ -614,7 +614,8 @@ async function boot() {
   let status = {};
   try { status = await (await fetch("/api/status")).json(); } catch (e) {}
   applyAccent(status.accent);
-  mountNav(me, { current: "media", siteName: status.site_name });
+  // Playing one item is where the browse page leads, so Browse stays lit.
+  mountNav(me, { current: "browse", siteName: status.site_name });
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
   loadReactions();

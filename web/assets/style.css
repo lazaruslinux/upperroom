@@ -191,17 +191,11 @@ body {
   color: var(--muted);
   margin: 0;
 }
-/* The little u logo sits inline in the credit at text height. In the signed-in
-   chrome it stands alone for the wordmark, so it runs slightly larger there to
-   stay legible at the credit's small size. */
+/* The little u logo sits inline in the credit at text height. */
 .u-logo {
   height: 0.95em;
   width: auto;
   vertical-align: -0.13em;
-}
-.u-logo-solo {
-  height: 1.25em;
-  vertical-align: -0.3em;
 }
 /* "powered by" stays muted and normal weight; only the wordmark is bold. */
 .powered .wordmark { font-weight: 700; }
@@ -242,14 +236,6 @@ body {
 /* The centred card pages make the body itself the flex container, so a footer
    after the card would sit beside it. Stack it underneath instead. */
 body.center { flex-direction: column; }
-/* Compact masthead for the top bars (home, media): the site name keeps the
-   inherited .brand size, the platform credit sits small underneath. */
-.brand-column {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.2;
-}
 .admin-tag {
   font-family: var(--mono);
   color: var(--muted);
@@ -530,47 +516,183 @@ form { display: flex; flex-direction: column; gap: 12px; }
 }
 
 /* =========================================================================
-   Shared top bar (home / media / mod / admin)
+   Shared top bar (home / browse / options / media / mod / admin)
+   Left: the brand and the page links. Middle: search. Right: the personal
+   cluster. Square edges and 1px borders throughout, like everything else here.
    ========================================================================= */
 
-.home-bar {
+.site-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 48px;
-  padding: 0 16px;
+  gap: 12px;
+  height: 50px;
+  padding: 0 14px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.home-actions { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; }
 
-/* Header nav items are real bordered buttons: square, mono, lowercase, picking
-   up the accent on hover. Padding and gap are trimmed so even the admin's five
-   items still fit on one line at 390px without overflow. */
-.home-bar .home-actions { gap: 6px; }
-.home-bar .home-actions .ghost-btn {
-  height: 30px;
-  padding: 0 7px;
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--muted);
+/* The square u glyph and the operator's site name, together one link home. */
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
   font-family: var(--mono);
-  font-size: 11px;
-  text-transform: lowercase;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-brand:hover { color: var(--accent); }
+.nav-glyph { height: 22px; width: auto; flex: none; }
+/* A long site name must never be what pushes the page sideways. */
+.nav-brand #site-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-bar .home-actions .ghost-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+
+.nav-links { display: flex; align-items: center; gap: 4px; flex: none; }
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
 }
-/* The nav is the same on every page, so the page you are on is marked with an
-   accent-filled border rather than dropped from the bar. */
-.home-bar .home-actions .ghost-btn.is-current {
+.nav-link:hover { color: var(--text); border-color: var(--border); }
+/* The bar is the same on every page, so the page you are on is marked rather
+   than dropped from it. */
+.nav-link.is-current {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-tint);
 }
+
+/* Search takes the middle of the bar, capped so it stays a field and not a
+   trough on a wide monitor. */
+.nav-search {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+.nav-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 360px;
+}
+.nav-search-icon {
+  position: absolute;
+  left: 9px;
+  display: inline-flex;
+  color: var(--muted);
+  pointer-events: none;
+}
+.nav-search-field input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 30px;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+/* The magnifier is the phone affordance. On a real screen the field is simply
+   there and the button has nothing to do. */
+.nav-search-toggle { display: none; }
+
+.nav-right { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+.nav-item { position: relative; display: inline-flex; }
+.nav-icon { width: 32px; height: 32px; border-color: transparent; }
+.nav-icon:hover { border-color: var(--border); }
+.nav-points { height: 32px; }
+.nav-avatar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: none;
+}
+.nav-avatar-btn:hover { border-color: var(--border); }
+.nav-avatar-btn .avatar { width: 26px; height: 26px; font-size: 11px; }
+
+/* One popover shape, used by the bell, the inbox, the points chip, the account
+   menu and the search results: a square panel hanging under its trigger. */
+.nav-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.nav-pop-title { font-family: var(--mono); font-size: 13px; color: var(--accent); margin: 0 0 6px; }
+.nav-pop-note { font-family: var(--sans); font-size: 12px; line-height: 1.4; color: var(--muted); margin: 0; }
+.nav-pop-menu { min-width: 180px; padding: 4px; }
+.nav-menu-row {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 13px;
+  text-transform: none;
+  color: var(--muted);
+  text-decoration: none;
+}
+.nav-menu-row:hover { color: var(--text); background: var(--accent-tint); border: none; }
+/* The three page links are in the bar on a wide screen, so the account menu
+   does not repeat them there. */
+.nav-menu-narrow { display: none; }
+
+/* Search results hang under the field and match its width. */
+.nav-pop-search {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 360px;
+  padding: 4px;
+}
+.nav-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-result:hover { background: var(--accent-tint); }
+.nav-result-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-result-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.nav-pop-search .nav-pop-note { padding: 8px 10px; }
 
 /* =========================================================================
    Home (card landing) + library
@@ -731,6 +853,29 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .card-playing { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 .card-desc { font-family: var(--sans); color: var(--muted); font-size: 14px; }
 
+/* =========================================================================
+   Browse (the archive) and Options (your own account)
+   ========================================================================= */
+
+/* The library is the whole page now, so it gets more width than it had at the
+   bottom of home: one more column of cards on a desktop. */
+.browse-main { max-width: 960px; margin: 0 auto; padding: 16px 16px 32px; }
+.browse-main .library { margin-top: 0; }
+
+.options-main { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; }
+.options-section + .options-section { margin-top: 28px; }
+.options-section h2 {
+  margin: 0 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
 /* library (VODs + clips) */
 .library { margin-top: 24px; }
 .lib-tabs, .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
@@ -840,7 +985,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .unmute:hover { color: var(--text); border-color: var(--accent); }
 
 .chat {
-  width: 320px;
+  width: 340px;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
@@ -1113,7 +1258,7 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 /* font chips size to their preview label rather than the fixed control height */
 .font-option { height: auto; padding: 6px 10px; font-size: 15px; text-transform: none; }
 
-/* ---- "Your settings" modal rows ------------------------------------------
+/* ---- settings rows (the options page, and the dashboard) ------------------
    Two row types, and only two, because the old markup had three layouts, three
    gap values and four control heights in one card and nothing lined up.
 
@@ -1126,8 +1271,7 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
    as tall as the input. That height is scoped here rather than changed
    globally: the chat font chips on the watch page deliberately size to their
    own preview text instead. */
-.settings-rows,
-.setting-group {
+.settings-rows {
   --control-h: 36px;
   display: flex;
   flex-direction: column;
@@ -1159,7 +1303,7 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 #my-avatar { display: inline-flex; flex: none; width: var(--control-h); height: var(--control-h); }
 #my-avatar .avatar { width: 100%; height: 100%; }
 
-/* password change (in settings) */
+/* password change (on the options page) */
 .pw-edit { display: flex; flex-direction: column; gap: 8px; }
 .pw-row { display: flex; align-items: center; gap: 10px; }
 .pw-msg { font-size: 13px; }
@@ -1655,28 +1799,46 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
-  /* The bar carries the same five items on every page now, which is more than
-     fits beside the brand on a phone. Let it take a second line rather than
-     pushing the whole document sideways: a body that scrolls horizontally is
-     far worse than a header two rows tall. */
-  .home-bar {
-    height: auto;
-    min-height: 48px;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    padding: 8px 12px;
-    gap: 6px 12px;
+  /* One row on a phone: brand, a magnifier, and the personal cluster. The page
+     links move into the account menu rather than pushing the header onto a
+     second line, and a body that scrolls sideways is worse than either. */
+  .site-bar { gap: 8px; padding: 0 10px; }
+  .nav-links { display: none; }
+  .nav-search { flex: none; }
+  .nav-search-toggle { display: inline-flex; }
+  .nav-search-field { display: none; }
+  /* Asked for, the field covers the whole bar instead of trying to share it. */
+  .nav-search.is-open .nav-search-field {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 45;
+    width: auto;
+    max-width: none;
+    height: 50px;
+    padding: 0 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
   }
-  .home-bar .home-actions { flex-wrap: wrap; gap: 6px 14px; }
+  .nav-search.is-open .nav-search-icon { left: 19px; }
+  .nav-search.is-open .nav-pop-search {
+    position: fixed;
+    top: 51px;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+  .nav-menu-narrow { display: block; }
+  .nav-menu-wide { display: none; }
 }
 
-/* A long site name must never be what pushes the page sideways either. */
-.brand-column { min-width: 0; }
-.brand-column #site-title {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Below this the name alone would crowd the bar, so the glyph carries it. */
+@media (max-width: 400px) {
+  .nav-brand #site-title { display: none; }
 }
 
 /* =========================================================================

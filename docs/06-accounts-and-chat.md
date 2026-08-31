@@ -206,12 +206,48 @@ starts refusing ordinary messages, and a viewer who cannot say "class" has no
 idea why and will not tell you, whereas a message that slips through is one your
 moderators remove in seconds.
 
+## The top bar
+
+Every signed in page except the watch page carries the same bar, in the same
+order. Left to right:
+
+- **The site name**, with the little u glyph beside it. Together they are the
+  way back to the home page.
+- **Home**, **Browse** and **Options**. Home is the live card, Browse is the
+  archive of past broadcasts and clips, and Options is your own account. The
+  page you are on is marked rather than dropped from the bar, so the bar never
+  changes shape as you move around.
+- **Search**, in the middle. It matches the titles of past broadcasts and clips
+  as you type and opens the one you pick. It searches the archive, not chat.
+- **The bell** and **the envelope**, on the right. Both are placeholders today:
+  there are no notifications and no messages yet, and each says so when tapped.
+- **Your points**, as a `pts N` chip, with a note on how they are earned.
+  Anyone with no balance to show does not get the chip at all. Spending points
+  is still done from the chat bar on the watch page.
+- **Your avatar**, which opens the account menu: Options, then **Dashboard**
+  and **Analytics** for an admin, **Mod** for a moderator who is not one, and
+  **Sign out**.
+
+On a phone the bar stays one row. The three page links move to the top of the
+account menu, the search field folds down to its magnifier and expands over the
+bar when tapped, and on the narrowest screens the glyph carries the site name on
+its own.
+
+## Options, your own account
+
+`/options` is where anyone signed in changes their own things: the **theme**,
+the **go-live email** and whether they want one, their **display name**,
+**avatar** and **bio**, and their **password**. This used to be a panel that
+dropped out of the top bar; it is a page now, and the bar carries a link to it.
+
+The gear on the watch page is a different thing and stays where it is: it is for
+what only affects how chat looks to that person, the theme, their chat font, and
+their name and message colors.
+
 ## Changing your own password
 
-Anyone signed in can change their own password from **Settings** on the home
-page. They enter their current password and a new one. This does not need an
-admin. The gear on the watch page is for the things that only affect how chat
-looks to them: the theme, their chat font, and their name and message colors.
+Anyone signed in can change their own password under **Options**. They enter
+their current password and a new one. This does not need an admin.
 
 ## Accounts (command line, recovery only)
 

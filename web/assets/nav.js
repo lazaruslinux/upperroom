@@ -1,45 +1,38 @@
-// The site header and the personal settings that hang off it.
+// The site header shared by every signed-in page.
 //
-// Every signed-in page shows the same nav in the same order, so this builds it
-// in one place instead of each page hand-rolling its own. The settings modal
-// comes with it: settings is a nav item on every page, so it has to work on
-// every page, and duplicating this much markup and behaviour per page would be
-// a maintenance trap. That makes this the one genuinely shared component in
-// web/assets, a deliberate exception to the copy-per-page convention the small
-// helpers here still follow.
+// One bar, built in one place, so the pages do not each hand-roll their own:
+// brand and page links on the left, a search field in the middle, and the
+// personal cluster (notifications, messages, points, you) on the right.
+//
+// Account settings used to hang off this file as a modal. They are a page now,
+// /options, so all that lives in options.js instead. What is left here is the
+// bar itself plus the first-login email nudge, which has to fire on the page
+// people land on and nowhere else.
 //
 // The watch page is not covered: its bar is icon-only and lives inside the chat
 // column because the video needs the room.
 //
 // Usage, after the page has its own /api/me result:
-//   mountNav(me, { current: "dashboard", onProfileChange, promptEmail: true })
+//   mountNav(me, { current: "browse", siteName, promptEmail: true })
 
 (function () {
-  const CROP = 256;
-  const THEME_KEY = "selfstream_theme";
   const EMAIL_PROMPT_KEY = "selfstream_email_prompt_dismissed";
+  const SEARCH_MIN = 2;
+  const SEARCH_DEBOUNCE = 200;
+  const SEARCH_LIMIT = 8;
 
-  // Nav items in fixed order. Every page renders all of them; `show` decides
-  // who sees which, and the item matching `current` is marked rather than
-  // dropped, so the bar never changes shape as you move around.
-  // A guest sees only the way back to the stream and the way out. They have no
-  // dashboard, no analytics, and nothing in settings that would persist past
-  // their pass, so offering any of it would be offering a dead end. Pages send
-  // guests to /watch anyway; this is the second lock on the same door.
-  const ITEMS = [
-    { key: "home", label: "home", href: "/home", show: (me) => !me.guest },
-    { key: "watch", label: "watch", href: "/watch", show: (me) => me.guest },
-    { key: "dashboard", label: "dashboard", href: "/admin", show: (me) => me.admin },
-    { key: "analytics", label: "analytics", href: "/analytics", show: (me) => me.admin },
-    // An admin already has every moderator power and the dashboard is a
-    // superset, so only a plain moderator needs this.
-    { key: "mod", label: "mod", href: "/mod", show: (me) => me.mod && !me.admin },
-    { key: "settings", label: "settings", action: "settings", show: (me) => !me.guest },
-    { key: "logout", label: "sign out", action: "logout" },
+  // The three destinations everyone has. Role pages are not here: they live in
+  // the avatar menu, where an admin looks for them once and a viewer never has
+  // to read past them.
+  const LINKS = [
+    { key: "home", label: "Home", href: "/home" },
+    { key: "browse", label: "Browse", href: "/browse" },
+    { key: "options", label: "Options", href: "/options" },
   ];
 
   let me = null;
   let opts = {};
+  let openPanel = null;
 
   // ---- small helpers (private copies, same as every other page keeps) ----
 
@@ -80,116 +73,103 @@
     }
   }
 
-  function flash(button, text) {
-    button.textContent = text;
-    setTimeout(() => { button.textContent = "Save"; }, 1500);
-  }
+  // ---- icons ----
+
+  const ICON = {
+    bell: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>`,
+    inbox: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v14H3z"></path><polyline points="3 6 12 13 21 6"></polyline></svg>`,
+    search: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16" y2="16"></line></svg>`,
+  };
 
   // ---- markup ----
 
-  function headerMarkup() {
-    const links = ITEMS
-      .filter((item) => !item.show || item.show(me))
-      .map((item) => {
-        const current = item.key === opts.current ? " is-current" : "";
-        if (item.action) {
-          return `<button type="button" class="ghost-btn${current}" data-nav="${item.action}">${item.label}</button>`;
-        }
-        return `<a href="${item.href}" class="ghost-btn${current}">${item.label}</a>`;
-      })
-      .join("\n      ");
-    // In the signed-in chrome the credit is just the u logo: everyone here has
-    // already seen the full wordmark on the sign-in page, so the glyph carries
-    // the name (alt text for screen readers). The credit links the developer
-    // site; the dashboard footer keeps the direct source link beside the
-    // version, which is the AGPL section-13 written offer.
-    return `
-    <div class="brand brand-column">
-      <span id="site-title">upperroom</span>
-      <span class="powered">powered by <a class="brand-link" href="https://lazaruslinux.com" target="_blank" rel="noopener" title="Lazarus Labs"><img class="u-logo u-logo-solo" src="/assets/icons/icon.svg?v=1" alt="upperroom"></a></span>
+  function barMarkup() {
+    // A guest never reaches a page that mounts this bar; every one of them
+    // redirects to /watch first. If one ever does, they get the way out and
+    // nothing that would 401 on them.
+    const links = me.guest ? "" : LINKS.map((item) => {
+      const current = item.key === opts.current ? " is-current" : "";
+      return `<a href="${item.href}" class="nav-link${current}">${item.label}</a>`;
+    }).join("\n      ");
+
+    const menuRows = [];
+    if (!me.guest) {
+      // The three bar links again, for the phone layout where the bar has no
+      // room for them. Hidden by CSS on anything wider.
+      LINKS.forEach((item) => {
+        menuRows.push(`<a href="${item.href}" class="nav-menu-row nav-menu-narrow">${item.label}</a>`);
+      });
+      menuRows.push(`<a href="/options" class="nav-menu-row nav-menu-wide">Options</a>`);
+      if (me.admin) {
+        menuRows.push(`<a href="/admin" class="nav-menu-row">Dashboard</a>`);
+        menuRows.push(`<a href="/analytics" class="nav-menu-row">Analytics</a>`);
+      }
+      // An admin already has every moderator power and the dashboard is a
+      // superset, so only a plain moderator needs this.
+      if (me.mod && !me.admin) menuRows.push(`<a href="/mod" class="nav-menu-row">Mod</a>`);
+    }
+    menuRows.push(`<button type="button" class="nav-menu-row" data-nav="logout">Sign out</button>`);
+
+    const search = me.guest ? "" : `
+    <div class="nav-search">
+      <button type="button" class="icon-btn nav-search-toggle" aria-label="Search" aria-expanded="false">${ICON.search}</button>
+      <div class="nav-search-field">
+        <span class="nav-search-icon" aria-hidden="true">${ICON.search}</span>
+        <input id="nav-search" type="search" maxlength="64" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="nav-search-results"
+               placeholder="Search broadcasts and clips" aria-label="Search broadcasts and clips">
+      </div>
+      <div id="nav-search-results" class="nav-pop nav-pop-search" role="listbox" hidden></div>
+    </div>`;
+
+    const points = me.guest ? "" : `
+    <div class="nav-item">
+      <button type="button" id="nav-points" class="points-chip nav-points" aria-expanded="false" aria-label="Your points" hidden>pts 0</button>
+      <div class="nav-pop" hidden>
+        <p class="nav-pop-title" id="nav-points-balance">pts 0</p>
+        <p class="nav-pop-note">Points are earned by watching and chatting while the stream is live.</p>
+      </div>
+    </div>`;
+
+    const bells = me.guest ? "" : `
+    <div class="nav-item">
+      <button type="button" class="icon-btn nav-icon" aria-label="Notifications" aria-expanded="false">${ICON.bell}</button>
+      <div class="nav-pop" hidden><p class="nav-pop-note">No notifications yet.</p></div>
     </div>
-    <nav class="home-actions">
+    <div class="nav-item">
+      <button type="button" class="icon-btn nav-icon" aria-label="Messages" aria-expanded="false">${ICON.inbox}</button>
+      <div class="nav-pop" hidden><p class="nav-pop-note">Messages are coming soon.</p></div>
+    </div>`;
+
+    return `
+    <a class="nav-brand" href="/home">
+      <img class="nav-glyph" src="/assets/icons/icon.svg?v=1" alt="">
+      <span id="site-title">upperroom</span>
+    </a>
+    <nav class="nav-links">
       ${links}
-    </nav>`;
+    </nav>
+    ${search}
+    <div class="nav-right">
+      ${bells}
+      ${points}
+      <div class="nav-item nav-account">
+        <button type="button" id="nav-avatar" class="nav-avatar-btn" aria-label="Your account" aria-expanded="false"></button>
+        <div class="nav-pop nav-pop-menu" hidden>
+          ${menuRows.join("\n          ")}
+        </div>
+      </div>
+    </div>`;
   }
 
-  const MODALS = `
-  <div id="user-modal" class="modal" hidden>
-    <div class="modal-card admin-modal">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3>Your settings</h3>
-      <div class="settings-rows">
-        <div class="setting">
-          <span>Theme</span>
-          <button id="theme-toggle" type="button" class="pill">Dark</button>
-        </div>
-        <!-- Go-live email is a viewer setting. The server never emails admins
-             that their own stream is live, so this whole block is hidden for
-             them rather than offering a control that cannot do anything. -->
-        <div id="notify-settings" class="setting-group">
-          <div class="setting setting-field">
-            <span>Go-live email</span>
-            <div class="field-edit">
-              <input id="email-input" type="email" placeholder="name@example.com" autocomplete="email">
-              <button id="email-save" type="button" class="pill">Save</button>
-            </div>
-          </div>
-          <div class="setting setting-check">
-            <label class="switch">
-              <input id="notify-toggle" type="checkbox">
-              Receive an email when streams start
-            </label>
-          </div>
-        </div>
-        <div class="setting setting-field">
-          <span>Display name</span>
-          <div class="field-edit">
-            <input id="name-input" type="text" maxlength="40" placeholder="Shown in chat" autocomplete="off">
-            <button id="name-save" type="button" class="pill">Save</button>
-          </div>
-        </div>
-        <div class="setting">
-          <span>Avatar</span>
-          <span class="avatar-edit">
-            <span id="my-avatar"></span>
-            <button id="avatar-button" type="button" class="pill">Change</button>
-            <input id="avatar-input" type="file" accept="image/*" hidden>
-          </span>
-        </div>
-        <div class="setting setting-field">
-          <span>Bio</span>
-          <div class="field-edit">
-            <textarea id="bio-input" maxlength="200" rows="2" placeholder="A short bio others see when they tap your avatar"></textarea>
-            <button id="bio-save" type="button" class="pill">Save</button>
-          </div>
-        </div>
-        <div class="setting">
-          <span>Password</span>
-          <button id="pw-open" type="button" class="pill">Change password</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="password-modal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3>Change password</h3>
-      <div class="pw-edit">
-        <input id="pw-current" type="password" placeholder="Current password" autocomplete="current-password">
-        <input id="pw-new" type="password" placeholder="New password (8+ characters)" autocomplete="new-password">
-        <div class="pw-row">
-          <button id="pw-save" type="button" class="pill primary">Change password</button>
-          <span id="pw-msg" class="pw-msg"></span>
-        </div>
-      </div>
-    </div>
-  </div>
-
+  // The one modal the bar still owns: the first-login nudge for viewers with no
+  // address on file. Only the page that asks for it runs this, so it fires once
+  // at the landing page rather than on every navigation.
+  const EMAIL_MODAL = `
   <div id="email-modal" class="modal" hidden>
     <div class="modal-card">
       <h3>Get a heads-up when the stream goes live?</h3>
-      <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime in Settings.</p>
+      <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime on the options page.</p>
       <input id="email-prompt-input" type="email" placeholder="name@example.com" autocomplete="email">
       <p id="email-prompt-msg" class="pw-msg"></p>
       <label class="check-line"><input id="email-dont-show" type="checkbox" checked> Don't show this again</label>
@@ -198,244 +178,161 @@
         <button id="email-prompt-save" type="button" class="pill primary">Save</button>
       </div>
     </div>
-  </div>
-
-  <div id="crop-modal" class="modal" hidden>
-    <div class="modal-card crop-card">
-      <div class="crop-stage">
-        <canvas id="crop-canvas" width="256" height="256"></canvas>
-        <div class="crop-ring"></div>
-      </div>
-      <input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
-      <div class="crop-actions">
-        <button type="button" class="pill" data-close>Cancel</button>
-        <button id="crop-save" type="button" class="pill primary">Save</button>
-      </div>
-    </div>
   </div>`;
 
-  // ---- wiring ----
+  // ---- popover primitive ----
+  // Every popover in the bar is a trigger button followed by a hidden panel.
+  // One open at a time, closed by Escape or a click anywhere else.
 
-  function wireTheme() {
-    const themeToggle = document.getElementById("theme-toggle");
-    function applyTheme(theme) {
-      document.documentElement.dataset.theme = theme;
-      try { localStorage.setItem(THEME_KEY, theme); } catch {}
-      themeToggle.textContent = theme === "light" ? "Light" : "Dark";
-    }
-    let saved = "dark";
-    try { saved = localStorage.getItem(THEME_KEY) || "dark"; } catch {}
-    applyTheme(saved);
-    themeToggle.addEventListener("click", () => {
-      applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  function closePanel() {
+    if (!openPanel) return;
+    openPanel.panel.hidden = true;
+    openPanel.trigger.setAttribute("aria-expanded", "false");
+    openPanel = null;
+  }
+
+  function showPanel(trigger, panel) {
+    closePanel();
+    panel.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    openPanel = { trigger, panel };
+  }
+
+  function wirePopover(trigger, panel, onOpen) {
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (openPanel && openPanel.panel === panel) return closePanel();
+      showPanel(trigger, panel);
+      if (onOpen) onOpen();
+    });
+    panel.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  function wireDismissal() {
+    document.addEventListener("click", closePanel);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closePanel();
     });
   }
 
-  function wireSettings() {
-    const userModal = document.getElementById("user-modal");
-    const passwordModal = document.getElementById("password-modal");
-    const myAvatar = document.getElementById("my-avatar");
-    const nameInput = document.getElementById("name-input");
-    const nameSave = document.getElementById("name-save");
-    const bioInput = document.getElementById("bio-input");
-    const bioSave = document.getElementById("bio-save");
-    const emailInput = document.getElementById("email-input");
-    const emailSave = document.getElementById("email-save");
-    const notifyToggle = document.getElementById("notify-toggle");
-    const notifySettings = document.getElementById("notify-settings");
-    const pwCurrent = document.getElementById("pw-current");
-    const pwNew = document.getElementById("pw-new");
-    const pwSave = document.getElementById("pw-save");
-    const pwMsg = document.getElementById("pw-msg");
+  // ---- search ----
+  // Titles only, matched in the browser. The listings are small and already
+  // fetched wholesale by the browse page, so a search endpoint would be a
+  // backend for something the client can do without one.
 
-    function renderMyAvatar() {
-      myAvatar.innerHTML = "";
-      myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
+  function wireSearch(host) {
+    const wrap = host.querySelector(".nav-search");
+    if (!wrap) return;
+    const input = host.querySelector("#nav-search");
+    const results = host.querySelector("#nav-search-results");
+    const toggle = host.querySelector(".nav-search-toggle");
+    let items = null;
+    let loading = null;
+    let timer = null;
+
+    function load() {
+      if (items) return Promise.resolve(items);
+      if (loading) return loading;
+      loading = Promise.all([
+        fetch("/api/vods").then((r) => (r.ok ? r.json() : { vods: [] })).catch(() => ({ vods: [] })),
+        fetch("/api/clips").then((r) => (r.ok ? r.json() : { clips: [] })).catch(() => ({ clips: [] })),
+      ]).then(([v, c]) => {
+        items = []
+          .concat((v.vods || []).map((x) => ({ id: x.id, kind: "vod", title: x.title || "" })))
+          .concat((c.clips || []).map((x) => ({ id: x.id, kind: "clip", title: x.name || "" })));
+        return items;
+      });
+      return loading;
     }
 
-    function renderNotifySetting() {
-      // The recipient query filters admins out, so the server has never emailed
-      // a host that their own stream is live. Showing them the address and the
-      // opt-in would offer a control that cannot change anything. The stored
-      // address is left untouched, so demoting them restores it intact.
-      notifySettings.hidden = !!me.admin;
-      if (me.admin) return;
-      notifyToggle.checked = me.notify_live !== false;
-      emailInput.value = me.email || "";
-    }
-
-    document.querySelector('[data-nav="settings"]').addEventListener("click", () => {
-      nameInput.value = me.name || "";
-      bioInput.value = me.bio || "";
-      renderMyAvatar();
-      renderNotifySetting();
-      openModal(userModal);
-    });
-
-    document.getElementById("pw-open").addEventListener("click", () => {
-      pwCurrent.value = "";
-      pwNew.value = "";
-      pwMsg.textContent = "";
-      pwMsg.className = "pw-msg";
-      openModal(passwordModal);
-      pwCurrent.focus();
-    });
-
-    emailSave.addEventListener("click", async () => {
-      const email = emailInput.value.trim();
-      if (email && !email.includes("@")) return flash(emailSave, "Invalid");
-      const ok = await saveProfile({ email });
-      if (ok) me.email = email;
-      flash(emailSave, ok ? "Saved" : "Error");
-    });
-
-    notifyToggle.addEventListener("change", async () => {
-      const on = notifyToggle.checked;
-      const ok = await saveProfile({ notify_live: on });
-      if (ok) me.notify_live = on;
-      else notifyToggle.checked = !on;   // revert if the save failed
-    });
-
-    nameSave.addEventListener("click", async () => {
-      const next = nameInput.value.trim();
-      if (!next) return flash(nameSave, "Empty");
-      const ok = await saveProfile({ display_name: next });
-      if (ok) {
-        me.name = next;
-        if (opts.onProfileChange) opts.onProfileChange("name", next);
+    function render(list) {
+      results.innerHTML = "";
+      if (!list.length) {
+        const empty = document.createElement("p");
+        empty.className = "nav-pop-note";
+        empty.textContent = "Nothing matches that.";
+        results.appendChild(empty);
+        return;
       }
-      flash(nameSave, ok ? "Saved" : "Error");
-    });
-
-    bioSave.addEventListener("click", async () => {
-      me.bio = bioInput.value;
-      const ok = await saveProfile({ bio: me.bio });
-      flash(bioSave, ok ? "Saved" : "Error");
-    });
-
-    function showPwMsg(text, ok) {
-      pwMsg.textContent = text;
-      pwMsg.className = "pw-msg " + (ok ? "ok" : "bad");
+      list.forEach((item) => {
+        const row = document.createElement("a");
+        row.className = "nav-result";
+        row.setAttribute("role", "option");
+        row.href = `/media?type=${item.kind}&id=${item.id}`;
+        const title = document.createElement("span");
+        title.className = "nav-result-title";
+        title.textContent = item.title || "(untitled)";
+        const tag = document.createElement("span");
+        tag.className = "nav-result-tag";
+        tag.textContent = item.kind;
+        row.append(title, tag);
+        results.appendChild(row);
+      });
     }
 
-    pwSave.addEventListener("click", async () => {
-      const next = pwNew.value;
-      if (next.length < 8) return showPwMsg("Use at least 8 characters.", false);
-      pwSave.disabled = true;
-      try {
-        const reply = await fetch("/api/password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ current_password: pwCurrent.value, new_password: next }),
-        });
-        if (reply.ok) {
-          pwCurrent.value = "";
-          pwNew.value = "";
-          showPwMsg("Password changed.", true);
-          setTimeout(() => closeModal(passwordModal), 1200);
-        } else {
-          const data = await reply.json().catch(() => ({}));
-          showPwMsg(data.error || "Could not change password.", false);
-        }
-      } catch {
-        showPwMsg("Could not change password.", false);
-      } finally {
-        pwSave.disabled = false;
+    async function search() {
+      const q = input.value.trim().toLowerCase();
+      if (q.length < SEARCH_MIN) return closePanel();
+      const all = await load();
+      const hits = all.filter((x) => x.title.toLowerCase().includes(q)).slice(0, SEARCH_LIMIT);
+      render(hits);
+      showPanel(input, results);
+    }
+
+    input.addEventListener("focus", load, { once: true });
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(search, SEARCH_DEBOUNCE);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const first = results.querySelector(".nav-result");
+        if (first) window.location.href = first.href;
+      }
+      if (e.key === "Escape") {
+        closePanel();
+        input.blur();
       }
     });
+    results.addEventListener("click", (e) => e.stopPropagation());
 
-    return { renderMyAvatar, renderNotifySetting };
+    // On a phone the field is collapsed to its magnifier until asked for.
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = wrap.classList.toggle("is-open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) input.focus();
+      else closePanel();
+    });
   }
 
-  function wireCrop(renderMyAvatar) {
-    const cropModal = document.getElementById("crop-modal");
-    const cropCanvas = document.getElementById("crop-canvas");
-    const cropZoom = document.getElementById("crop-zoom");
-    const cropSave = document.getElementById("crop-save");
-    const avatarButton = document.getElementById("avatar-button");
-    const avatarInput = document.getElementById("avatar-input");
-    const ctx = cropCanvas.getContext("2d");
-    let img = null;
-    let scaleBase = 1;
-    let x = 0;
-    let y = 0;
+  // ---- points ----
 
-    function draw() {
-      if (!img) return;
-      const scale = scaleBase * parseFloat(cropZoom.value);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      x = Math.min(0, Math.max(CROP - w, x));
-      y = Math.min(0, Math.max(CROP - h, y));
-      ctx.clearRect(0, 0, CROP, CROP);
-      ctx.drawImage(img, x, y, w, h);
+  async function wirePoints(host) {
+    const chip = host.querySelector("#nav-points");
+    if (!chip) return;
+    const panel = chip.parentElement.querySelector(".nav-pop");
+    const balance = host.querySelector("#nav-points-balance");
+    let data = null;
+    try {
+      const reply = await fetch("/api/points");
+      if (!reply.ok) return;                // guests and signed-out: no balance
+      data = await reply.json();
+    } catch {
+      return;
     }
-
-    avatarButton.addEventListener("click", () => avatarInput.click());
-    avatarInput.addEventListener("change", () => {
-      const file = avatarInput.files[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        scaleBase = Math.max(CROP / img.width, CROP / img.height);
-        cropZoom.value = "1";
-        x = (CROP - img.width * scaleBase) / 2;
-        y = (CROP - img.height * scaleBase) / 2;
-        draw();
-        openModal(cropModal);
-      };
-      img.src = url;
-      avatarInput.value = "";
-    });
-
-    cropZoom.addEventListener("input", draw);
-
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
-    cropCanvas.addEventListener("pointerdown", (e) => {
-      dragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      cropCanvas.setPointerCapture(e.pointerId);
-    });
-    cropCanvas.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
-      const rect = cropCanvas.getBoundingClientRect();
-      x += (e.clientX - lastX) * (CROP / rect.width);
-      y += (e.clientY - lastY) * (CROP / rect.height);
-      lastX = e.clientX;
-      lastY = e.clientY;
-      draw();
-    });
-    cropCanvas.addEventListener("pointerup", () => { dragging = false; });
-
-    cropSave.addEventListener("click", () => {
-      cropCanvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const form = new FormData();
-        form.append("image", blob, "avatar.png");
-        const reply = await fetch("/api/avatar", { method: "POST", body: form });
-        if (reply.ok) {
-          const data = await reply.json();
-          me.avatar = data.avatar;
-          renderMyAvatar();
-          if (opts.onProfileChange) opts.onProfileChange("avatar", data.avatar);
-          closeModal(cropModal);
-        } else {
-          const data = await reply.json().catch(() => ({}));
-          alert(data.error || "Could not update your avatar.");
-        }
-      }, "image/png");
-    });
+    const text = `pts ${data.points}`;
+    chip.textContent = text;
+    balance.textContent = text;
+    chip.hidden = false;
+    wirePopover(chip, panel);
   }
 
-  // The first-login nudge for viewers with no address on file. Only the page
-  // that asks for it runs this, so it fires once at the landing page rather
-  // than on every navigation.
-  function wireEmailPrompt(renderNotifySetting) {
+  // ---- email nudge ----
+
+  function wireEmailPrompt() {
     const emailModal = document.getElementById("email-modal");
     const input = document.getElementById("email-prompt-input");
     const msg = document.getElementById("email-prompt-msg");
@@ -466,7 +363,6 @@
         me.email = email;
         try { localStorage.removeItem(EMAIL_PROMPT_KEY); } catch {}
         closeModal(emailModal);
-        renderNotifySetting();        // keep the settings panel in sync
       } else {
         msg.textContent = "Could not save. Try again.";
       }
@@ -479,6 +375,9 @@
     input.focus();
   }
 
+  // Click the backdrop or press Escape to close any modal on the page. Shared
+  // because every page that mounts the bar can carry one (the email nudge here,
+  // the release notice on home) and none of them should hand-roll this.
   function wireModalDismissal() {
     document.querySelectorAll(".modal").forEach((m) => {
       m.addEventListener("click", (e) => {
@@ -511,23 +410,31 @@
 
     const host = document.getElementById("site-nav");
     if (!host) return;
-    host.className = "home-bar";
-    host.innerHTML = headerMarkup();
+    host.className = "site-bar";
+    host.innerHTML = barMarkup();
 
-    const modals = document.createElement("div");
-    modals.innerHTML = MODALS;
-    while (modals.firstChild) document.body.appendChild(modals.firstChild);
+    const holder = document.createElement("div");
+    holder.innerHTML = EMAIL_MODAL;
+    while (holder.firstChild) document.body.appendChild(holder.firstChild);
 
-    document.querySelector('[data-nav="logout"]').addEventListener("click", async () => {
+    const avatarBtn = host.querySelector("#nav-avatar");
+    avatarBtn.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
+    wirePopover(avatarBtn, avatarBtn.parentElement.querySelector(".nav-pop"));
+
+    host.querySelectorAll(".nav-icon").forEach((btn) => {
+      wirePopover(btn, btn.parentElement.querySelector(".nav-pop"));
+    });
+
+    host.querySelector('[data-nav="logout"]').addEventListener("click", async () => {
       try { await fetch("/api/logout", { method: "POST" }); } catch {}
       window.location.href = "/";
     });
 
-    wireTheme();
-    const { renderMyAvatar, renderNotifySetting } = wireSettings();
-    wireCrop(renderMyAvatar);
+    wireSearch(host);
+    wirePoints(host);
+    wireDismissal();
     wireModalDismissal();
-    if (opts.promptEmail) wireEmailPrompt(renderNotifySetting);
+    if (opts.promptEmail) wireEmailPrompt();
     applySiteName();
   };
 })();

@@ -16,6 +16,11 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.16.0": [
+        "A new top bar: search, your points, and your account all in one place.",
+        "Past broadcasts and clips moved to their own Browse page.",
+        "Your account settings are now a page of their own, Options.",
+    ],
     "0.15.0": [
         "The chat bar has a home button again, so the watch page is no longer a dead end.",
     ],

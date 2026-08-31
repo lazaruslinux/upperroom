@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.15.0**. Releases are tagged in git, and the running version
+Current version: **0.16.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -26,7 +26,7 @@ The home page while the channel is live:
 
 Past broadcasts and clips, kept to whatever retention you configure:
 
-![The home page broadcasts grid with past streams](docs/screenshots/home-broadcasts.png)
+![The browse page broadcasts grid with past streams](docs/screenshots/home-broadcasts.png)
 
 The analytics page, composed entirely from data the site already has:
 
@@ -49,7 +49,7 @@ only repackages the video and stays light.
 - A one-time notice after an update, naming the new version and listing what
   changed in at most five lines. Once per person per release, newest only.
 - Records every broadcast (a recording you can replay later), and lets viewers
-  clip the recent stream. Past broadcasts and clips show in the library.
+  clip the recent stream. Past broadcasts and clips show on the browse page.
   The viewer picks how much to take (thirty, forty-five or sixty seconds), and
   waits a few minutes before the next one. A clip captures the moment they
   pressed the button, not the moment they finished naming it. Both carry a view
