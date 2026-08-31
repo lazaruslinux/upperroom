@@ -213,8 +213,10 @@ order. Left to right:
 
 - **The site name**, with the little u glyph beside it. Together they are the
   way back to the home page.
-- **Home**, **Browse** and **Options**. Home is the live card, Browse is the
-  archive of past broadcasts and clips, and Options is your own account. The
+- **Home**, **Browse** and **Options**. Home is the live card, which plays the
+  broadcast muted while you are on the page: click it to join with sound and
+  chat. Browse is the archive of past broadcasts and clips, and Options is your
+  own account. The
   page you are on is marked rather than dropped from the bar, so the bar never
   changes shape as you move around.
 - **Search**, in the middle. It matches the titles of past broadcasts and clips
@@ -395,6 +397,12 @@ the page says the room is full; the person is not signed out and **chat still
 works for them**, so they can wait in the room and the video starts on its own
 when a place opens up. A place opens up about thirty seconds after somebody
 stops watching.
+
+The preview playing in the home card is the real stream, so somebody sitting on
+the home page counts exactly like somebody watching: same bandwidth, same place
+in the room. When the room is full the preview is refused like any other viewer
+and the card quietly falls back to the still frame, which is also what happens
+when the tab is hidden. Nothing keeps playing in a tab nobody is looking at.
 
 Two things the limit deliberately does not do. It never counts or refuses an
 admin, so you cannot lock yourself out of your own broadcast. And it does not

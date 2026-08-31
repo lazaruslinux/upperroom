@@ -1,9 +1,11 @@
 // Home page. The card-style landing shown right after sign in. It confirms the
-// viewer is logged in, shows whether the stream is live with a real preview
-// thumbnail, and sends them into the player when they tap the card.
+// viewer is logged in, plays the live stream muted inside the card, and sends
+// them into the player, where the sound is, when they tap it.
 //
 // The header belongs to nav.js, which every signed-in page shares. The archive
 // of past broadcasts and clips is its own page now, /browse.
+
+const STREAM_URL = "/live/index.m3u8";
 
 const greeting = document.getElementById("greeting");
 const card = document.getElementById("stream-card");
@@ -13,6 +15,7 @@ const cardPlaying = document.getElementById("card-playing");
 const cardDesc = document.getElementById("card-desc");
 const thumb = document.getElementById("thumb");
 const thumbFallback = document.getElementById("thumb-fallback");
+const cardVideo = document.getElementById("card-video");
 const streamBadge = document.getElementById("stream-badge");
 const badgeLabel = document.getElementById("badge-label");
 const statusPill = document.getElementById("status-pill");
@@ -21,6 +24,8 @@ const offlineBlock = document.getElementById("offline-block");
 let me = null;
 let channel = null;          // the streamer shown on the card
 let online = false;
+let hls = null;
+let previewOn = false;       // a player is built (it may not have picture yet)
 
 function avatarColor(seed) {
   let hash = 0;
@@ -151,7 +156,9 @@ function showLive(isLive, watching) {
 }
 
 function refreshThumb() {
-  if (!online) return;
+  // The preview covers the still frame, so there is no point paying for one,
+  // and neither costs anything worth paying in a tab nobody is looking at.
+  if (!online || previewOn || document.hidden) return;
   // Cache-bust so each refresh pulls the freshest captured frame.
   const next = new Image();
   next.onload = () => {
@@ -166,6 +173,80 @@ function refreshThumb() {
   };
   next.src = `/api/thumbnail?t=${Date.now()}`;
 }
+
+// ---- live preview ----
+// The card plays the real stream, muted, the way a front page does. It is the
+// same HLS the watch page plays, so it costs the same bandwidth and takes a
+// place in the room: a full room refuses it with a 403, and that is correct.
+// Every failure path here is silent and ends at the still frame the card showed
+// before, and every one of them tears the player all the way down.
+
+function showPreview() {
+  if (!previewOn) return;
+  cardVideo.hidden = false;
+  thumb.hidden = true;
+  thumbFallback.hidden = true;
+  card.classList.add("is-previewing");
+}
+
+function stopPreview() {
+  previewOn = false;
+  if (hls) { hls.destroy(); hls = null; }
+  cardVideo.pause();
+  // Dropping the source is what actually stops the download; pausing alone
+  // leaves the player filling its buffer.
+  cardVideo.removeAttribute("src");
+  cardVideo.load();
+  cardVideo.hidden = true;
+  card.classList.remove("is-previewing");
+  if (online) {
+    refreshThumb();
+  } else {
+    thumb.hidden = true;
+    thumbFallback.hidden = false;
+  }
+}
+
+function startPreview() {
+  // A hidden tab must never start one, and a fatal is not retried on the poll:
+  // the next try comes when the tab is looked at again, or on a reload.
+  if (previewOn || !online || document.hidden) return;
+  if (window.Hls && Hls.isSupported()) {
+    previewOn = true;
+    hls = new Hls({ lowLatencyMode: true, backBufferLength: 10 });
+    hls.loadSource(STREAM_URL);
+    hls.attachMedia(cardVideo);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      // A refused autoplay is a fallback, not an error: show the still frame.
+      cardVideo.play().catch(() => stopPreview());
+    });
+    hls.on(Hls.Events.ERROR, (event, data) => {
+      // Any fatal, a full room's 403 included, drops back to the thumbnail.
+      if (data.fatal) stopPreview();
+    });
+  } else if (cardVideo.canPlayType("application/vnd.apple.mpegurl")) {
+    // Safari plays HLS natively and needs no hls.js.
+    previewOn = true;
+    cardVideo.src = STREAM_URL;
+    cardVideo.play().catch(() => stopPreview());
+  }
+}
+
+// Picture has arrived: swap the still frame out. Bound once, so it serves both
+// the hls.js and the native path.
+cardVideo.addEventListener("playing", showPreview);
+// A native-path failure (a 403 among them) arrives here. Guarded by previewOn
+// so the empty-source error that teardown itself raises is not a second pass.
+cardVideo.addEventListener("error", () => { if (previewOn) stopPreview(); });
+
+// Bandwidth guards. A backgrounded tab keeps a muted video running otherwise,
+// which is a full viewer's bandwidth and a room slot for a card nobody is
+// looking at.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopPreview();
+  else if (online) startPreview();
+});
+window.addEventListener("pagehide", () => stopPreview());
 
 async function refreshStatus() {
   let data = { online: false };
@@ -184,7 +265,13 @@ async function refreshStatus() {
   }
   const wasOnline = online;
   showLive(!!data.online, data.watching);
-  if (data.online && !wasOnline) refreshThumb();
+  if (data.online && !wasOnline) {
+    refreshThumb();
+    startPreview();
+  } else if (!data.online && wasOnline) {
+    // The stream ended: tear the player down and go back to the offline state.
+    stopPreview();
+  }
   // Going live retires the schedule server-side; hide it here at the same time.
 }
 

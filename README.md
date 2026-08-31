@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.16.0**. Releases are tagged in git, and the running version
+Current version: **0.17.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -46,6 +46,10 @@ only repackages the video and stays light.
 - An optional limit on how many people may watch at once. Every viewer pulls
   their own copy of the stream, so this is the setting that bounds the bandwidth
   bill; past it the video is refused and chat still works while they wait.
+- The home card plays the live stream muted, the way a front page does, and one
+  click joins with sound and chat. It is the real stream, so it costs what a
+  viewer costs and takes a place in the room; it falls back to a still frame
+  when the room is full, and it stops entirely in a hidden tab.
 - A one-time notice after an update, naming the new version and listing what
   changed in at most five lines. Once per person per release, newest only.
 - Records every broadcast (a recording you can replay later), and lets viewers

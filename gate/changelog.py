@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.17.0": [
+        "The home page now plays the stream, muted, right in the card.",
+        "Click the card to join with sound and chat, the way you always did.",
+    ],
     "0.16.0": [
         "A new top bar: search, your points, and your account all in one place.",
         "Past broadcasts and clips moved to their own Browse page.",

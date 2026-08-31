@@ -17,14 +17,12 @@
   <meta name="theme-color" content="#0b0c0b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=59">
+  <link rel="stylesheet" href="/assets/style.css?v=60">
 </head>
 <body class="home">
   <div id="site-nav"></div>
 
   <main class="home-main">
-    <p id="greeting" class="home-greeting muted"></p>
-
     <!-- Divider above the stream area: a rule with a centered mono label. -->
     <div class="stream-divider"><span>live stream</span></div>
 
@@ -41,6 +39,10 @@
           <span class="thumb-mark">no signal</span>
         </div>
         <img id="thumb" class="thumb" alt="" hidden>
+        <!-- The live preview. Muted and without controls: the card is one click
+             target, and sound lives on the watch page. Hidden until it actually
+             plays, so the still frame stays up if it cannot. -->
+        <video id="card-video" class="thumb card-video" muted autoplay playsinline hidden></video>
         <span id="stream-badge" class="stream-badge is-offline">
           <span class="badge-dot"></span><span id="badge-label">Offline</span>
         </span>
@@ -61,6 +63,8 @@
         </span>
       </div>
     </button>
+
+    <p id="greeting" class="home-greeting muted"></p>
   </main>
 
   <!-- The one-time notice after an upgrade. Filled and shown by home.js only
@@ -83,7 +87,8 @@
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
+  <script src="/assets/vendor/hls.min.js?v=1"></script>
   <script src="/assets/nav.js?v=8"></script>
-  <script src="/assets/home.js?v=23"></script>
+  <script src="/assets/home.js?v=24"></script>
 </body>
 </html>

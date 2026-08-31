@@ -80,8 +80,11 @@ people watching costs your home connection exactly what one person costs.
 
 Your *server's* bandwidth is the other story. It does not re-encode either, so
 each viewer downloads the full 6 Mbps: about 2.9 GB per person per hour. A
-two-hour film for ten people is roughly 58 GB. If that matters on your host's
-plan, lower `PROJECTOR_VIDEO_BITRATE`, or cap the audience under
+two-hour film for ten people is roughly 58 GB. Count the home page in that: its
+card plays the real stream rather than a still, so a viewer parked there costs
+the same as one watching and takes the same place in the room. It drops back to
+the still frame when the room is full or the tab is hidden. If that matters on
+your host's plan, lower `PROJECTOR_VIDEO_BITRATE`, or cap the audience under
 **Broadcast -> Room limit** on the dashboard (see
 `docs/06-accounts-and-chat.md`). The stream strip on the dashboard shows what
 the running broadcast has sent so far.

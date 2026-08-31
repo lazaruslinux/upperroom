@@ -698,17 +698,20 @@ form { display: flex; flex-direction: column; gap: 12px; }
    Home (card landing) + library
    ========================================================================= */
 
+/* The live card is the page, so it gets the same width the archive grid gets. */
 .home-main {
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 16px 16px 32px;
 }
-/* Greeting: "signed in as name" in dim text, the name in the accent color. */
+/* Greeting: "signed in as name" in dim text, the name in the accent color. It
+   sits under the card now, so the stream leads the page and this is a footnote
+   to it rather than the first thing read. */
 .home-greeting {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
-  margin: 0 0 16px;
+  margin: 14px 0 0;
 }
 .home-greeting b { color: var(--accent); font-weight: 400; }
 
@@ -717,7 +720,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 4px 0 14px;
+  margin: 0 0 14px;
   color: var(--muted);
 }
 .stream-divider::before,
@@ -768,6 +771,9 @@ form { display: flex; flex-direction: column; gap: 12px; }
 
 .thumb-wrap { position: relative; aspect-ratio: 16 / 9; background: #050605; overflow: hidden; }
 .thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The muted live preview fills the same box the still frame does. It carries no
+   controls, so nothing inside it competes with the card's own click. */
+.card-video { background: #050605; pointer-events: none; }
 
 /* Fallback thumb: flat very-dark block with a dim centered mono mark. */
 .thumb-fallback, .media-thumb-fallback {
@@ -803,6 +809,10 @@ form { display: flex; flex-direction: column; gap: 12px; }
 }
 .stream-card:hover .play-overlay { opacity: 1; }
 .stream-card.is-live .play-overlay { opacity: 0.9; }
+/* Once the preview is playing the glyph would sit on moving picture, so it goes
+   back to being a hover affordance. */
+.stream-card.is-previewing .play-overlay { opacity: 0; }
+.stream-card.is-previewing:hover .play-overlay { opacity: 1; }
 
 /* LIVE / offline tag over the thumbnail. Colors are fixed (always on black).
    The swap between states fades via the color/background transition. */
@@ -1799,6 +1809,8 @@ body.home, body.admin, body.media { min-height: 100vh; min-height: 100dvh; backg
 
 @media (max-width: 560px) {
   .stat-strip { grid-template-columns: repeat(2, 1fr); }
+  /* On a phone the card is the page: give it the width and lose the gutter. */
+  .home-main { padding: 12px 10px 24px; }
   /* One row on a phone: brand, a magnifier, and the personal cluster. The page
      links move into the account menu rather than pushing the header onto a
      second line, and a body that scrolls sideways is worse than either. */
