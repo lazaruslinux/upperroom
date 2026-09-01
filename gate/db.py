@@ -493,6 +493,13 @@ def init_db():
         _ensure_column(
             conn, "channel_settings", "max_viewers", "INTEGER NOT NULL DEFAULT 0"
         )
+        # Whether a theater play burns in subtitles when the host does not say.
+        # Off on purpose, on an existing channel as well as a fresh one: the burn
+        # is only as good as the library's subtitle timing, and a film that is
+        # seconds out is seconds out for the whole room.
+        _ensure_column(
+            conn, "channel_settings", "theater_subtitles", "INTEGER NOT NULL DEFAULT 0"
+        )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
         # same lightweight in-init migration as the column adds above.
@@ -801,6 +808,26 @@ def set_max_viewers(count):
         conn.execute(
             "UPDATE channel_settings SET max_viewers = ? WHERE id = 1",
             (max(0, int(count)),),
+        )
+
+
+def get_theater_subtitles():
+    """Whether a theater play burns in subtitles when the request does not say.
+    The per-play box overrides it for one showing; this is what it starts from."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT theater_subtitles FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return bool(row["theater_subtitles"]) if row else False
+
+
+def set_theater_subtitles(on):
+    """Set the subtitle default. False is a real value here rather than an unset
+    one, so this cannot ride set_stream_info's None-means-unset keys either."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET theater_subtitles = ? WHERE id = 1",
+            (1 if on else 0,),
         )
 
 

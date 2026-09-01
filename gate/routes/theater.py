@@ -63,10 +63,27 @@ async def play(request: Request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     body = await request.json()
     subtitles = body.get("subtitles")
+    # No box in the body is not "burn them": it is whatever the channel is set
+    # to. The box is an override for one showing.
+    if subtitles is None:
+        subtitles = db.get_theater_subtitles()
     try:
-        state, error = await theater.play(
-            body.get("jf_id"), subtitles=True if subtitles is None else bool(subtitles)
-        )
+        state, error = await theater.play(body.get("jf_id"), subtitles=bool(subtitles))
+    except ProjectorError:
+        return _unavailable()
+    if error:
+        return JSONResponse({"error": error}, status_code=409)
+    return state
+
+
+@router.post("/api/admin/theater/restart")
+async def restart(request: Request):
+    """Play what is on again from the start, without the subtitle burn. One
+    click, because a room is watching subtitles run out of sync while it takes."""
+    if not admin_user(request):
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    try:
+        state, error = await theater.restart_without_subtitles()
     except ProjectorError:
         return _unavailable()
     if error:

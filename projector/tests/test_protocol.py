@@ -4,6 +4,7 @@ wire format exactly, and it is small enough that the agreement can just be
 asserted here.
 """
 
+import asyncio
 import json
 
 import demo
@@ -84,3 +85,102 @@ def test_play_options_only_burn_subtitles_a_title_actually_has():
     assert not main.play_options({"has_subtitles": False}, True)["subtitles"]
     assert main.play_options({"has_subtitles": True}, True)["subtitles"]
     assert not main.play_options({"has_subtitles": True}, False)["subtitles"]
+
+
+# ---- which showing a supervisor belongs to --------------------------------
+# Nothing here runs ffmpeg either: the player is replaced with something that
+# answers the four questions the supervisor asks it. What is being asserted is
+# which showing a report belongs to, which is invisible from the projector's own
+# logs and shows up as a room being closed on a film that just started.
+
+class FakePlayer:
+    """A publish that is already over. Enough of Player for the supervisor."""
+
+    def __init__(self, running=False, code=0):
+        self._running = running
+        self.code = code
+        self.starts = []
+
+    def running(self):
+        return self._running
+
+    def stderr_text(self):
+        return ""
+
+    async def start(self, args):
+        self.starts.append(args)
+        self._running = True
+
+    async def wait(self):
+        return self.code
+
+    async def stop(self):
+        self._running = False
+
+    def ended(self):
+        """ffmpeg went away on its own."""
+        self._running = False
+
+
+class FakeSocket:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, raw):
+        self.sent.append(json.loads(raw))
+
+    def states(self):
+        return [f.get("state") for f in self.sent if f.get("event") == "status"]
+
+
+def test_a_replay_of_the_same_title_silences_the_old_supervisor(monkeypatch):
+    """Putting the SAME title back on used to end the night.
+
+    Starting a title stops whatever was publishing, and the supervisor watching
+    that one wakes up inside the new start to find its ffmpeg gone. The library
+    id cannot tell the two showings apart, so it reported the room idle over a
+    film that had just begun, and the gate closed the session. Each start
+    carries a number instead."""
+    monkeypatch.setattr(main.config, "DEMO", True)
+    fake = FakePlayer()
+    monkeypatch.setattr(main, "_player", fake)
+    monkeypatch.setattr(main, "item_detail", _detail)
+    socket = FakeSocket()
+
+    async def scenario():
+        await main.start_playing(socket, "demo-one", False)
+        first = main._state["generation"]
+        await main.start_playing(socket, "demo-one", False)   # the same title
+        main._supervisor.cancel()
+        # Where the first showing's supervisor actually resumes: the ffmpeg it
+        # was watching is gone, and it is about to account for how that ended.
+        fake.ended()
+        await main._supervise(socket, "demo-one", {}, None, first)
+
+    asyncio.run(scenario())
+    # Two starts and not one word about anything being idle.
+    assert socket.states() == ["starting", "starting"]
+    assert main._state["jf_id"] == "demo-one"
+
+
+def test_stop_bumps_the_generation(monkeypatch):
+    """A stop ends the showing as surely as a replay does, so the supervisor
+    watching it is stale from here on. Both stops count: the one the gate asks
+    for, and the quiet one that runs when the link drops."""
+    monkeypatch.setattr(main, "_player", FakePlayer())
+    socket = FakeSocket()
+
+    async def scenario():
+        before = main._state["generation"]
+        await main.stop_playing(socket)
+        stopped = main._state["generation"]
+        await main.stop_playing_quietly()
+        return before, stopped, main._state["generation"]
+
+    before, stopped, quiet = asyncio.run(scenario())
+    assert stopped == before + 1
+    assert quiet == stopped + 1
+
+
+async def _detail(jf_id):
+    return {"jf_id": jf_id, "title": "A Demo Title", "has_subtitles": False}

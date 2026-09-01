@@ -31,9 +31,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("projector")
 
-# One ffmpeg, one thing playing, and one task watching it.
+# One ffmpeg, one thing playing, and one task watching it. "generation" counts
+# the starts and stops: it is what tells one showing from the next when both are
+# the same title, which the library id cannot do (see _supervise).
 _player = player.Player()
-_state = {"state": "idle", "jf_id": None, "started_at": 0.0, "detail": ""}
+_state = {
+    "state": "idle", "jf_id": None, "started_at": 0.0, "detail": "",
+    "generation": 0,
+}
 _supervisor = None
 
 
@@ -158,20 +163,26 @@ async def start_playing(socket, jf_id, subtitles):
         opts["subtitles"] = bool(opts["subtitle_source"])
     _state["jf_id"] = jf_id
     _state["started_at"] = asyncio.get_running_loop().time()
+    # Bumped before the start, not after: starting stops the previous ffmpeg,
+    # and the supervisor watching THAT one wakes up inside this call.
+    _state["generation"] += 1
+    generation = _state["generation"]
     await _player.start(player.build_play_args(source, opts))
     await send_status(socket, "starting")
-    _start_supervisor(socket, jf_id, opts, source)
+    _start_supervisor(socket, jf_id, opts, source, generation)
     return detail
 
 
-def _start_supervisor(socket, jf_id, opts, source):
+def _start_supervisor(socket, jf_id, opts, source, generation):
     global _supervisor
     if _supervisor:
         _supervisor.cancel()
-    _supervisor = asyncio.create_task(_supervise(socket, jf_id, opts, source))
+    _supervisor = asyncio.create_task(
+        _supervise(socket, jf_id, opts, source, generation)
+    )
 
 
-async def _supervise(socket, jf_id, opts, source):
+async def _supervise(socket, jf_id, opts, source, generation):
     """Report the showing while it runs, and account for how it ended."""
     started = asyncio.get_running_loop().time()
     position = 0
@@ -189,8 +200,12 @@ async def _supervise(socket, jf_id, opts, source):
         logger.warning("the play supervisor failed", exc_info=True)
         return
     ran_for = asyncio.get_running_loop().time() - started
-    if _state["jf_id"] != jf_id:
-        return                                   # something else is playing now
+    # Something else has started or stopped since this showing began, so its
+    # ending is not news. Counted rather than compared by id: putting the SAME
+    # title back on (the gate's restart-without-subtitles) reads as unchanged
+    # from here, and this supervisor would report the new showing idle.
+    if _state["generation"] != generation:
+        return
     tail = _player.stderr_text()
     died_early = code not in (0, None) and ran_for < player.EARLY_EXIT_SECONDS
     if (died_early and opts.get("subtitles")
@@ -201,7 +216,8 @@ async def _supervise(socket, jf_id, opts, source):
         await send_status(
             socket, "starting", detail="subtitles could not be burned in"
         )
-        _start_supervisor(socket, jf_id, retry, source)
+        # The same generation: this is the same showing, retried.
+        _start_supervisor(socket, jf_id, retry, source, generation)
         return
     # Same idea one step down: a GPU that will not encode should cost the
     # picture quality, not the showing. Without this the room just falls back to
@@ -214,7 +230,7 @@ async def _supervise(socket, jf_id, opts, source):
         await send_status(
             socket, "starting", detail="hardware encoding unavailable, using the CPU"
         )
-        _start_supervisor(socket, jf_id, retry, source)
+        _start_supervisor(socket, jf_id, retry, source, generation)
         return
     _state["jf_id"] = None
     if code in (0, None) or ran_for >= player.EARLY_EXIT_SECONDS:
@@ -234,6 +250,8 @@ async def stop_playing(socket):
         _supervisor.cancel()
         _supervisor = None
     _state["jf_id"] = None
+    # A stop ends this showing too, so anything still watching it is stale.
+    _state["generation"] += 1
     await _player.stop()
     await send_status(socket, "idle")
 
@@ -335,6 +353,7 @@ async def stop_playing_quietly():
         _supervisor = None
     _state["jf_id"] = None
     _state["state"] = "idle"
+    _state["generation"] += 1
     await _player.stop()
 
 

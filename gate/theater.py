@@ -455,6 +455,39 @@ async def stop():
     return public_state(session), None
 
 
+async def restart_without_subtitles():
+    """Put the same title back on from the start, with the burn off. Returns
+    (state, None) or (None, error).
+
+    Subtitles that are out of sync are only visible once a film is running, and
+    fixing it used to mean stop, search, find the title again, play it without
+    the box: four steps, with the room watching every one.
+
+    Deliberately not routed through play(): nothing about what is showing has
+    changed, so the poster is not fetched again and the room is not told what is
+    on for a second time. The host's stop marker is set first for the same reason
+    stop() sets it, and as a belt against a projector that predates the
+    generation counter: its idle for the old ffmpeg would otherwise read as the
+    title ending and close the night on a film that is starting."""
+    global _host_stopped_at
+    session = db.get_active_theater_session()
+    if not session or not session["now_jf_id"]:
+        return None, "Nothing is playing."
+    _host_stopped_at = time.monotonic()
+    await link.rpc(
+        "play", {"jf_id": session["now_jf_id"], "subtitles": False},
+        timeout=PLAY_TIMEOUT,
+    )
+    # Read again: the call was awaited, and an old projector's idle may have
+    # parked the room in intermission while we waited.
+    session = db.get_active_theater_session()
+    if not session:
+        return public_state(None), None
+    await hub.narrate("Restarting without subtitles.")
+    await broadcast_state(session)
+    return public_state(session), None
+
+
 # ---- Events from the projector --------------------------------------------
 
 async def _title_failed(session):

@@ -83,6 +83,11 @@ async def set_stream_info(request: Request):
                 {"error": "Viewer limit must be a whole number."}, status_code=400
             )
         db.set_max_viewers(limit)
+    # And the theater subtitle default, for the third time: False is a real value
+    # here (it is the shipped default), so it cannot ride the None-means-unset
+    # handling above either.
+    if "theater_subtitles" in body:
+        db.set_theater_subtitles(bool(body["theater_subtitles"]))
     return {"ok": True}
 
 
@@ -115,6 +120,10 @@ async def admin_stream(request: Request):
         # seconds while the page is open.
         "game": db.get_now_playing(),
         "recent_games": db.recent_games(),
+        # So does the theater subtitle default: both surfaces that can put a
+        # title on seed their per-play box from it, and neither has a poll of
+        # its own to read it from.
+        "theater_subtitles": db.get_theater_subtitles(),
     }
 
 

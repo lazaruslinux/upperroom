@@ -128,6 +128,7 @@
       <button id="host-start" type="button" class="chip-btn">theater</button>
       <button id="host-play" type="button" class="chip-btn" hidden>play</button>
       <button id="host-stop" type="button" class="chip-btn" hidden>stop</button>
+      <button id="host-nosubs" type="button" class="chip-btn" hidden>no subs</button>
       <button id="host-end" type="button" class="chip-btn danger-chip" hidden>end</button>
       <span id="host-msg" class="host-msg" hidden></span>
     </div>
@@ -243,13 +244,13 @@
         <input id="ts-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
         <button id="ts-search" type="button" class="pill primary">Search</button>
       </div>
-      <label class="checkrow"><input id="ts-subs" type="checkbox" checked> Burn in subtitles</label>
+      <label class="checkrow"><input id="ts-subs" type="checkbox"> Burn in subtitles</label>
       <p id="ts-msg" class="pw-msg" hidden></p>
       <div id="ts-results" class="ts-results"></div>
     </div>
   </div>
 
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/watch.js?v=38"></script>
+  <script src="/assets/watch.js?v=39"></script>
 </body>
 </html>

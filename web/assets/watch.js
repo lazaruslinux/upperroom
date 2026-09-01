@@ -348,6 +348,7 @@ const hostState = document.getElementById("host-state");
 const hostStart = document.getElementById("host-start");
 const hostPlay = document.getElementById("host-play");
 const hostStop = document.getElementById("host-stop");
+const hostNoSubs = document.getElementById("host-nosubs");
 const hostEnd = document.getElementById("host-end");
 const hostMsg = document.getElementById("host-msg");
 const searchModal = document.getElementById("theater-search-modal");
@@ -371,6 +372,8 @@ function renderHostStrip() {
   hostStart.hidden = theaterActive;
   hostPlay.hidden = !theaterActive;
   hostStop.hidden = !theaterActive || !theaterNow;
+  // Only worth offering while there is a title to put back on.
+  hostNoSubs.hidden = !theaterActive || !theaterNow;
   hostEnd.hidden = !theaterActive;
 }
 
@@ -476,6 +479,9 @@ function setUpHost() {
   hostStrip.hidden = false;
   hostStart.addEventListener("click", () => hostAction("/api/admin/theater/session"));
   hostStop.addEventListener("click", () => hostAction("/api/admin/theater/stop"));
+  // One click, no confirmation: the room is watching subtitles run out of sync
+  // while it takes, and the worst case is the same film from the start.
+  hostNoSubs.addEventListener("click", () => hostAction("/api/admin/theater/restart"));
   hostEnd.addEventListener("click", () => {
     if (!confirm("End the theater session? Chat is kept.")) return;
     hostAction("/api/admin/theater/end");
@@ -491,6 +497,16 @@ function setUpHost() {
     if (e.key === "Enter") runSearch();
   });
   document.getElementById("ts-search").addEventListener("click", runSearch);
+  // The channel's subtitle default, read once. Unchecked is the safe answer, so
+  // a failure here leaves the box alone rather than reporting anything.
+  fetch("/api/admin/stream")
+    .then((reply) => (reply.ok ? reply.json() : null))
+    .then((data) => {
+      if (data && typeof data.theater_subtitles === "boolean") {
+        tsSubs.checked = data.theater_subtitles;
+      }
+    })
+    .catch(() => {});
   renderHostStrip();
 }
 

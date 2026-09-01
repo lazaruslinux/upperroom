@@ -714,8 +714,10 @@ const theaterStatus = document.getElementById("theater-status");
 const theaterStart = document.getElementById("theater-start");
 const theaterEnd = document.getElementById("theater-end");
 const theaterStop = document.getElementById("theater-stop");
+const theaterNoSubs = document.getElementById("theater-nosubs");
 const theaterQuery = document.getElementById("theater-query");
 const theaterSubs = document.getElementById("theater-subs");
+const theaterSubsDefault = document.getElementById("theater-subs-default");
 const theaterResults = document.getElementById("theater-results");
 const theaterMsg = document.getElementById("theater-msg");
 const projectorStatus = document.getElementById("projector-status");
@@ -754,6 +756,21 @@ function renderTheater(data) {
   theaterStart.hidden = theaterActive;
   theaterEnd.hidden = !theaterActive;
   theaterStop.hidden = !theaterActive || !now;
+  // Only worth offering while there is a title to put back on.
+  theaterNoSubs.hidden = !theaterActive || !now;
+}
+
+// The channel's subtitle default, applied to the boxes ONCE from the first poll
+// that carries it. The stream poll runs every ten seconds, and putting the
+// default back each time would undo a per-play override mid-session.
+let subsDefaultApplied = false;
+
+function renderTheaterSubs(data) {
+  if (!theaterSubsDefault || subsDefaultApplied) return;
+  if (typeof data.theater_subtitles !== "boolean") return;
+  subsDefaultApplied = true;
+  theaterSubsDefault.checked = data.theater_subtitles;
+  theaterSubs.checked = data.theater_subtitles;
 }
 
 function renderProjector(data) {
@@ -877,6 +894,35 @@ theaterStart.addEventListener("click", async () => {
 });
 
 theaterStop.addEventListener("click", () => theaterAction("/api/admin/theater/stop"));
+
+// One click, no confirmation: the room is watching subtitles run out of sync
+// while it takes, and the worst case is the same film from the start.
+theaterNoSubs.addEventListener("click", async () => {
+  if (await theaterAction("/api/admin/theater/restart")) {
+    showTheaterMsg("Restarted without subtitles.", true);
+  }
+});
+
+theaterSubsDefault.addEventListener("change", async () => {
+  const on = theaterSubsDefault.checked;
+  try {
+    const reply = await fetch("/api/stream-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theater_subtitles: on }),
+    });
+    if (!reply.ok) {
+      theaterSubsDefault.checked = !on;
+      showTheaterMsg("Could not save that.", false);
+      return;
+    }
+    theaterSubs.checked = on;
+    showTheaterMsg(on ? "Subtitles on by default." : "Subtitles off by default.", true);
+  } catch {
+    theaterSubsDefault.checked = !on;
+    showTheaterMsg("Could not reach the server.", false);
+  }
+});
 
 theaterEnd.addEventListener("click", async () => {
   if (!confirm(
@@ -1898,6 +1944,7 @@ async function loadStream() {
       renderStream(data);
       renderGame(data);
       renderRoomLimit(data);
+      renderTheaterSubs(data);
     }
   } catch { /* keep the last state rather than flashing offline on a blip */ }
 }

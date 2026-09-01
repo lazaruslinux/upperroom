@@ -428,6 +428,7 @@ def test_api_status_is_unchanged_by_a_session(client):
     ("POST", "/api/admin/theater/session", None),
     ("POST", "/api/admin/theater/end", None),
     ("POST", "/api/admin/theater/play", {"jf_id": "abc123"}),
+    ("POST", "/api/admin/theater/restart", None),
     ("POST", "/api/admin/theater/stop", None),
     ("GET", "/api/admin/theater/search?q=afternoon", None),
     ("GET", "/api/admin/theater/projector", None),
@@ -520,6 +521,105 @@ def test_stopping_clears_the_title_without_ending_the_session(client):
     body = client.post("/api/admin/theater/stop").json()
     assert body["active"] is True and body["now"] is None
     assert db.get_active_theater_session() is not None
+
+
+# ---- subtitles: the channel's default, and the way out mid-film ------------
+# Burned-in subtitles are only as good as the library's timing, and a film that
+# is seconds out is seconds out for everybody. So the burn is off unless the
+# channel says otherwise, and there is one button for changing your mind about
+# it while the room is watching.
+
+def test_play_without_a_subtitles_field_follows_the_channel_setting(client):
+    setup_admin(client, username="owner")
+    start(client)
+    stub = working_projector()
+
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    assert stub.sent[-1]["params"] == {"jf_id": "abc123", "subtitles": False}
+
+    db.set_theater_subtitles(True)
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    assert stub.sent[-1]["params"] == {"jf_id": "abc123", "subtitles": True}
+
+    # The box is an override for one showing, so it still wins when it is sent.
+    client.post(
+        "/api/admin/theater/play", json={"jf_id": "abc123", "subtitles": False}
+    )
+    assert stub.sent[-1]["params"] == {"jf_id": "abc123", "subtitles": False}
+
+
+def test_restart_replays_the_same_title_without_subtitles(client):
+    """The same title from the start with the burn off, and nothing else.
+
+    Not a fresh play: the poster is not fetched again and the room is not told
+    what is on all over again, because nothing about what is on has changed."""
+    setup_admin(client, username="owner")
+    start(client)
+    stub = working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123", "subtitles": True})
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+
+    body = client.post("/api/admin/theater/restart").json()
+
+    assert stub.sent[-1]["method"] == "play"
+    assert stub.sent[-1]["params"] == {"jf_id": "abc123", "subtitles": False}
+    said = [m["text"] for m in hub._history if m["type"] == "system"]
+    assert said.count("Restarting without subtitles.") == 1
+    assert len([t for t in said if "Enjoy the show!" in t]) == 1
+    # The session and what it is showing are untouched.
+    session = db.get_active_theater_session()
+    assert session is not None and session["now_title"] == "The Long Afternoon"
+    assert body["now"]["title"] == "The Long Afternoon"
+
+
+def test_restart_with_nothing_playing_is_refused(client):
+    setup_admin(client, username="owner")
+    working_projector()
+    assert client.post("/api/admin/theater/restart").status_code == 409
+    start(client)
+    resp = client.post("/api/admin/theater/restart")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "Nothing is playing."
+
+
+def test_a_stray_idle_during_a_restart_leaves_the_session_open(client):
+    """A projector that predates the generation counter reports itself idle as
+    the old ffmpeg goes away, which lands in the middle of the replay that caused
+    it. The host stop marker is set before the call for exactly this: the room
+    parks in intermission rather than the night closing on a title that is
+    starting."""
+    setup_admin(client, username="owner")
+    start(client)
+
+    class IdlesMidPlay(StubProjector):
+        idle_on_play = False
+
+        async def send_json(self, message):
+            if message["method"] == "play" and self.idle_on_play:
+                await link.handle({"event": "status", "state": "idle"})
+            await StubProjector.send_json(self, message)
+
+    stub = attach(IdlesMidPlay(replies={"play": PLAY_DETAIL, "art": {}}))
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+    stub.idle_on_play = True
+
+    assert client.post("/api/admin/theater/restart").status_code == 200
+    assert db.get_active_theater_session() is not None
+
+
+def test_stream_info_saves_the_theater_subtitles_default(client):
+    setup_admin(client, username="owner")
+    # Off on a fresh channel, and reported to the dashboard that way.
+    assert db.get_theater_subtitles() is False
+    assert client.get("/api/admin/stream").json()["theater_subtitles"] is False
+
+    assert client.post(
+        "/api/stream-info", json={"theater_subtitles": True}
+    ).status_code == 200
+
+    assert db.get_theater_subtitles() is True
+    assert client.get("/api/admin/stream").json()["theater_subtitles"] is True
 
 
 def test_ending_a_session_stops_the_projector_first(client):

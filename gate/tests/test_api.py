@@ -857,7 +857,7 @@ def test_admin_stream_reports_the_broadcast_shape(client):
     body = client.get("/api/admin/stream").json()
     assert set(body) == {
         "live", "since", "watching", "recording", "game", "recent_games",
-        "sent_bytes", "video_watchers", "max_viewers",
+        "sent_bytes", "video_watchers", "max_viewers", "theater_subtitles",
     }
     assert body["live"] is False
     assert body["since"] is None

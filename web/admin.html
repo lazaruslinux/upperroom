@@ -98,14 +98,20 @@
           <button type="button" id="theater-start" class="solid-btn">Start session</button>
           <button type="button" id="theater-end" class="danger-btn" hidden>End session</button>
           <button type="button" id="theater-stop" class="ghost-btn" hidden>Stop the title</button>
+          <button type="button" id="theater-nosubs" class="ghost-btn" hidden>Restart without subtitles</button>
         </div>
         <div class="ts-search">
           <input id="theater-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
           <button type="button" id="theater-search" class="solid-btn">Search</button>
         </div>
         <label class="checkrow">
-          <input id="theater-subs" type="checkbox" checked> Burn in subtitles
+          <input id="theater-subs" type="checkbox"> Burn in subtitles
         </label>
+        <label class="checkrow">
+          <input id="theater-subs-default" type="checkbox"> Enable subtitles (Unstable, might be out of sync)
+        </label>
+        <p class="muted">Sets the default for every play. The box above overrides
+          it for one showing.</p>
         <div id="theater-results" class="ts-results"></div>
         <p id="theater-msg" class="notify-msg" hidden></p>
       </div>
@@ -515,6 +521,6 @@
 
   <script src="/assets/nav.js?v=8"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/admin.js?v=46"></script>
+  <script src="/assets/admin.js?v=47"></script>
 </body>
 </html>

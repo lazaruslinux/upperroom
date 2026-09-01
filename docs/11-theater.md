@@ -159,9 +159,22 @@ one modern core can hold at 1080p.
 
 ### Subtitles
 
-The **Burn in subtitles** box is on by default. Subtitles are burned into the
-picture rather than sent alongside it, because the viewer's player has no
-separate track to switch on: everyone is watching one video.
+Subtitles are **off by default**, on a channel that has been running for a year
+as well as a fresh one. **Enable subtitles (Unstable, might be out of sync)** in
+the dashboard's Theater panel turns them on: that is the default every play
+starts from, and it is remembered. The **Burn in subtitles** box beside the
+search overrides it for one showing, either way.
+
+The label means what it says. Subtitles are burned into the picture rather than
+sent alongside it, because the viewer's player has no separate track to switch
+on: everyone is watching one video. That also means the timing is whatever the
+library's subtitle file says it is, and a file that runs a few seconds out runs
+a few seconds out for the whole room, with no way for anybody to turn it off.
+
+That is what **Restart without subtitles** is for, on the dashboard and as **no
+subs** on the watch page's host strip. One click, no confirmation: the same
+title goes back on from the start without the burn, the session stays open, and
+the room is told once. Nothing else about the showing changes.
 
 Only titles that actually carry a subtitle track are burned; for the rest the
 box does nothing. Text subtitles (SRT, ASS) work. If the burn fails, the
@@ -173,8 +186,8 @@ than leaving you with nothing playing.
 Two places, the same controls:
 
 - **The dashboard**, under **Theater** on the **Broadcast** tab. Start the
-  session, search your library, press play on a row, stop the title, end the
-  session.
+  session, search your library, press play on a row, restart it without
+  subtitles, stop the title, end the session.
 - **The watch page**, on a strip above chat, visible to admins only. Same
   buttons, so you can run the evening from the page you are watching on.
 

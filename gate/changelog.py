@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.19.0": [
+        "Subtitles are off unless the host turns them on.",
+        "A film whose subtitles drift can be restarted without them in one press.",
+    ],
     "0.18.0": [
         "Notices from the room now show the time, like any message.",
         "Chat shows a line while the stream is offline.",
