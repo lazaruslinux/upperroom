@@ -45,7 +45,7 @@ def is_active():
     return db.get_active_theater_session() is not None
 
 
-def stream_transition(going_online, theater_active):
+def stream_transition(going_online, theater_active, theater_recently_closed=False):
     """What the stream watcher should do on a live/offline transition (pure).
 
     Kept apart from the watcher for the same reason watchdog_action is: these
@@ -54,7 +54,12 @@ def stream_transition(going_online, theater_active):
 
     During a session the gate skips recording and the go-live announcement (the
     session start already made it). `state` is the session state the transition
-    implies, or None when there is no session to move."""
+    implies, or None when there is no session to move.
+
+    theater_recently_closed covers the seconds after a session ends: the video
+    path outlives the session by a poll or two, so the watcher sees it drop when
+    there is no session left to suppress the announcement, and the room was told
+    the night was over in its own words moments earlier."""
     if going_online:
         return {
             "record": not theater_active,
@@ -64,7 +69,7 @@ def stream_transition(going_online, theater_active):
     return {
         # Only a real broadcast ending is worth saying out loud. During a session
         # the path dropping is just the gap between titles.
-        "announce_end": not theater_active,
+        "announce_end": not theater_active and not theater_recently_closed,
         "state": "intermission" if theater_active else None,
     }
 
@@ -178,27 +183,45 @@ async def end_session(narration="Theater mode disabled.", stop_projector=True):
     stop_projector is False when the projector has just reported itself idle:
     it has nothing left to stop, does not answer a stop it cannot act on, and
     waiting out the timeout would hold the room open for another twenty seconds
-    after the very thing that ended it."""
+    after the very thing that ended it.
+
+    The room hears one line per ending, whichever way it ended. That is what
+    _ending is for: stopping the projector makes it report idle, and the report
+    arrives before the reply to the stop that caused it."""
+    global _ending, _last_closed_at
     session = db.get_active_theater_session()
     if not session:
         return None, "No theater session is running."
-    if stop_projector and (session["state"] == "playing" or session["now_title"]):
-        try:
-            await link.rpc("stop", timeout=PLAY_TIMEOUT)
-        except ProjectorError as exc:
-            # The session ends either way. A projector that cannot be told to
-            # stop is a problem for the operator's machine, not a reason to
-            # leave the room stuck in a session nobody can close.
-            logger.warning("could not stop the projector at session end: %s", exc)
-    ended = int(time.time())
-    db.end_theater_session(session["id"], ended)
-    logger.info("theater session %s ended", session["id"])
-    # The night is over as far as the channel is concerned, so this is what a
-    # later broadcast measures its gap from.
-    db.set_last_air_ended_at(ended)
-    await hub.narrate(narration)
-    await broadcast_state(None)
-    return public_state(None), None
+    _ending = True
+    try:
+        if stop_projector and (session["state"] == "playing" or session["now_title"]):
+            try:
+                await link.rpc("stop", timeout=PLAY_TIMEOUT)
+            except ProjectorError as exc:
+                # The session ends either way. A projector that cannot be told to
+                # stop is a problem for the operator's machine, not a reason to
+                # leave the room stuck in a session nobody can close.
+                logger.warning("could not stop the projector at session end: %s", exc)
+            # Read again: the stop was awaited, and anything that closed the
+            # session while we waited has already told the room so.
+            session = db.get_active_theater_session()
+            if not session:
+                return public_state(None), None
+        ended = int(time.time())
+        # Whoever wins this race is the one that narrates. A session that is
+        # already closed is not closed twice, and is not announced twice either.
+        if not db.end_theater_session(session["id"], ended):
+            return public_state(None), None
+        logger.info("theater session %s ended", session["id"])
+        # The night is over as far as the channel is concerned, so this is what a
+        # later broadcast measures its gap from.
+        db.set_last_air_ended_at(ended)
+        _last_closed_at = time.monotonic()
+        await hub.narrate(narration)
+        await broadcast_state(None)
+        return public_state(None), None
+    finally:
+        _ending = False
 
 
 async def set_stage(state):
@@ -387,9 +410,31 @@ _host_stopped_at = -1e9
 # any real title.
 HOST_STOP_GRACE = PLAY_TIMEOUT + 10
 
+# True while end_session is closing a session. Stopping the projector makes it
+# report idle, and that report reaches on_projector_event before the reply to
+# the stop that caused it, so without this the ending is narrated twice: once by
+# the auto-close path reading the idle as a title running out, once by the close
+# that asked for it.
+_ending = False
+# When a session last closed, on the monotonic clock. The stream watcher polls
+# every few seconds, so the video path drops after the session is already gone
+# and there is nothing left to tell the watcher this was theater rather than a
+# broadcast ending.
+_last_closed_at = -1e9
+# How long after a close the dropping path is still that session's. Generous on
+# purpose: it only has to outlast a poll or two, and nothing else is going live
+# in the seconds after a movie night ends.
+SESSION_CLOSE_GRACE = 30
+
 # The title an error was last reported for, so a source that fails twice running
 # says so plainly instead of repeating itself. Reset per session.
 _last_error_id = None
+
+
+def recently_closed():
+    """Whether a theater session closed just now, so the stream watcher can tell
+    a night that ended in the room's own words from a broadcast going off air."""
+    return time.monotonic() - _last_closed_at < SESSION_CLOSE_GRACE
 
 
 async def stop():
@@ -472,6 +517,10 @@ async def on_projector_event(message, opening_report=False):
     # link, would otherwise arrive as a fresh "idle" and close the whole night.
     if opening_report:
         logger.info("the projector reconnected and reports %s", state)
+        return
+    # The session is already being closed, and the close says its own line. This
+    # idle is the projector answering the stop that close asked for.
+    if _ending:
         return
     # Nothing was on air to end, so there is nothing for this to be the end of.
     if session["state"] != "playing" and not session["now_title"]:

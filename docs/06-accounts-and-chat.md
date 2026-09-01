@@ -155,9 +155,15 @@ handled privately and never shown to other viewers:
   admin can lift any.
 - `/mod <user>` and `/unmod <user>`: grant or remove the moderator role
   (admins only).
+- `/wipe`: clear the whole chat for everyone. It asks first, privately, with a
+  **Wipe chat** button on the reply; nothing happens until you press it. The
+  room then empties on every page and the overlay with no announcement, so
+  viewers see the chat clear rather than a line saying it was cleared.
 - `/help`: list the commands available to your account.
 
 A moderator cannot act on an admin's messages, and cannot grant moderators.
+
+Every system line in chat carries the time it was said, the same as a message.
 
 Single messages can also be removed without typing anything: hover a line in
 chat and a small delete control appears. A highlighted message deletes the same

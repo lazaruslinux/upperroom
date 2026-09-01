@@ -1052,6 +1052,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .chat-collapsed:not(.chat-only) .settings-panel,
 .chat-collapsed:not(.chat-only) .viewer-list,
 .chat-collapsed:not(.chat-only) .messages,
+.chat-collapsed:not(.chat-only) .chat-offline,
 .chat-collapsed:not(.chat-only) .chat-form { display: none; }
 .chat-collapsed:not(.chat-only) .collapse-icon { transform: scaleX(-1); }
 
@@ -1102,6 +1103,31 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .msg .body { display: block; font-family: var(--sans); font-size: 14px; line-height: 1.4; margin-top: 3px; }
 .msg .body.deleted { color: var(--muted); font-style: italic; }
 .msg.system { font-family: var(--mono); color: var(--muted); font-style: italic; font-size: 12px; white-space: pre-wrap; }
+/* System lines carry the time like everything else in chat, so "the stream
+   ended" can be placed in the evening. Upright, though: the italic is what
+   marks the line as the room talking rather than a person. */
+.msg.system .msg-time { font-style: normal; }
+
+/* A command that asks before it acts (/wipe) answers with a button on its own
+   system line, inline at the end of the question. */
+.msg-confirm {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.msg-confirm:hover { color: var(--error); border-color: var(--error); }
+.msg-confirm:disabled { opacity: 0.4; cursor: default; }
 
 /* Hover-to-delete: a small x at the right of a line, only rendered for the host
    and moderators. Faint until the row is hovered; on touch it stays lightly
@@ -1147,6 +1173,18 @@ form { display: flex; flex-direction: column; gap: 12px; }
 /* A checkbox + label on one line, e.g. the email prompt's "Don't show again". */
 .check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
 .check-line input { flex: none; }
+
+/* A strip above the composer saying the channel is off air, for a reader whose
+   chat is the whole window (phone, collapsed player) and who therefore never
+   sees the offline card. No display of its own, so [hidden] still hides it. */
+.chat-offline {
+  flex: none;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
 
 .chat-form {
   flex: none;                /* fixed at the bottom, never shrinks away */

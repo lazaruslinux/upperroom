@@ -1092,16 +1092,22 @@ def mark_theater_notified(session_id):
 
 
 def end_theater_session(session_id, ended_at):
-    """Close a session for good and clear whatever it was showing."""
+    """Close a session for good and clear whatever it was showing. Returns
+    whether this call is the one that closed it.
+
+    An already ended session is left alone rather than closed again, which is
+    what lets two paths race to end the same night (the host pressing end while
+    the projector reports its title finished) and only one of them narrate it."""
     with connect() as conn:
-        conn.execute(
+        cur = conn.execute(
             "UPDATE theater_sessions SET state = 'ended', ended_at = ?, "
             "now_jf_id = NULL, now_title = NULL, now_year = NULL, "
             "now_runtime = NULL, now_synopsis = NULL, now_art = NULL, "
             "now_series = NULL, now_season = NULL, now_episode = NULL "
-            "WHERE id = ?",
+            "WHERE id = ? AND state != 'ended'",
             (ended_at, session_id),
         )
+        return cur.rowcount > 0
 
 
 def count_user_clips_since(username, since):

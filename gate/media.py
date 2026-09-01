@@ -120,7 +120,9 @@ async def stream_watcher():
                 await _recorder_watchdog()
             if was_online and not online:
                 logger.info("stream offline")
-                plan = theater.stream_transition(False, theater.is_active())
+                plan = theater.stream_transition(
+                    False, theater.is_active(), theater.recently_closed()
+                )
                 if plan["announce_end"]:
                     # Chat is not wiped here any more: the evening carries on,
                     # into theater or just into people talking.

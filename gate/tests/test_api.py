@@ -597,6 +597,68 @@ def test_ws_ban_command_blocks_the_targets_messages(client):
     assert "banned" in frame["text"].lower()
 
 
+def test_ws_wipe_asks_before_wiping_and_confirm_clears_the_room(client):
+    """Emptying the room in front of everybody cannot be taken back, so it asks
+    first, and the answer is a button on the question rather than a second
+    command. The question is private; the wipe itself says nothing at all."""
+    setup_admin(client, username="owner")
+    with ws_connect(client) as ws:
+        drain_join(ws)
+        ws.send_json({"type": "chat", "text": "hello"})
+        ws.receive_json()                       # the line coming back
+        assert hub.has_backlog() is True
+
+        ws.send_json({"type": "chat", "text": "/wipe"})
+        ask = ws.receive_json()
+        assert ask["type"] == "system"
+        assert ask["text"] == "Wipe the whole chat for everyone?"
+        # What the page turns into the button, and what pressing it sends.
+        assert ask["confirm_command"] == "/wipe confirm"
+        assert ask["confirm_label"] == "Wipe chat"
+        # Asking is not doing.
+        assert hub.has_backlog() is True
+
+        ws.send_json({"type": "chat", "text": "/wipe confirm"})
+        wiped = ws.receive_json()
+    # No reason rides the wipe, so no page shows a line explaining it.
+    assert wiped == {"type": "wipe"}
+    assert hub.has_backlog() is False
+
+
+def test_ws_viewer_cannot_wipe(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as ws:
+        drain_join(ws)
+        ws.send_json({"type": "chat", "text": "hello"})
+        ws.receive_json()
+        # Straight to the confirm form, in case skipping the question skips the
+        # gate with it.
+        ws.send_json({"type": "chat", "text": "/wipe confirm"})
+        reply = recv_system(ws)
+    assert "permission" in reply.lower()
+    assert hub.has_backlog() is True
+
+
+def test_help_lists_wipe_for_moderators(client):
+    setup_admin(client, username="owner")
+    add_user("viewer")
+    with ws_connect(client) as ws:
+        drain_join(ws)
+        ws.send_json({"type": "chat", "text": "/help"})
+        listed = recv_system(ws)
+    assert "/wipe" in listed
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as vw:
+        drain_join(vw)
+        vw.send_json({"type": "chat", "text": "/help"})
+        plain = recv_system(vw)
+    assert "/wipe" not in plain
+
+
 # ---- 6b. OBS chat overlay -------------------------------------------------
 
 def test_ws_overlay_receives_chat_but_is_not_a_viewer(client):

@@ -72,6 +72,14 @@ class StubProjector:
         if message["method"] in self.errors:
             await link.handle({"id": message["id"], "error": "the library said no"})
             return
+        # A real projector reports itself idle as ffmpeg goes away, and that
+        # report reaches the gate BEFORE the reply to the stop that caused it
+        # (projector/main.py sends the status from the player's supervisor, the
+        # reply from the rpc handler). A stub that only ever answered the call
+        # tested a projector nobody runs, which is how the double narration on a
+        # theater end got in and stayed in.
+        if message["method"] == "stop":
+            await link.handle({"event": "status", "state": "idle"})
         await link.handle(
             {"id": message["id"], "result": self.replies.get(message["method"])}
         )
@@ -203,6 +211,59 @@ def test_ending_a_session_narrates_it_and_leaves_the_chat_alone(client):
     assert ended == {"type": "theater", "active": False, "state": "off", "now": None}
 
 
+def test_ending_a_playing_session_says_exactly_one_line(client):
+    """Ending a film used to narrate the same ending twice.
+
+    The projector reports itself idle as ffmpeg goes away, and that report gets
+    to the gate before the reply to the stop that caused it. The idle read as
+    the title running out and closed the night ("That was the end of it."), then
+    the host's own end closed it again ("Theater mode disabled."), and the room
+    watched its evening end twice in two different words."""
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    db.set_theater_state(db.get_active_theater_session()["id"], "playing")
+    hub._history.clear()
+
+    client.post("/api/admin/theater/end")
+
+    assert [m["text"] for m in hub._history if m["type"] == "system"] == [
+        "Theater mode disabled."
+    ]
+    assert db.get_active_theater_session() is None
+
+
+def test_a_second_close_of_the_same_session_is_silent(client):
+    """Two paths can arrive at the same ending: the host presses end while the
+    title runs out under them. Whichever closes the session tells the room, and
+    the other finds it already closed and says nothing rather than repeating the
+    news or answering the host with an error."""
+    setup_admin(client, username="owner")
+    start(client)
+    session_id = db.get_active_theater_session()["id"]
+
+    class ClosesUnderUs(StubProjector):
+        """The other path, winning the race exactly where it is won: while the
+        stop this close asked for is still in flight."""
+
+        async def send_json(self, message):
+            if message["method"] == "stop":
+                db.end_theater_session(session_id, int(time.time()))
+            await StubProjector.send_json(self, message)
+
+    attach(ClosesUnderUs(replies={"play": PLAY_DETAIL, "art": {}, "stop": {"ok": True}}))
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    hub._history.clear()
+
+    state, error = asyncio.run(theater.end_session())
+
+    assert error is None
+    assert state == {"active": False, "state": "off", "now": None}
+    assert [m for m in hub._history if m["type"] == "system"] == []
+    assert db.get_active_theater_session() is None
+
+
 def test_a_session_records_when_the_channel_went_off_air(client):
     """What a later broadcast measures its gap against, so the night after a
     movie night starts clean."""
@@ -231,6 +292,29 @@ def test_the_path_dropping_between_titles_is_not_announced():
     plan = theater.stream_transition(False, theater_active=True)
     assert plan["announce_end"] is False
     assert plan["state"] == "intermission"
+
+
+def test_the_offline_right_after_a_theater_close_is_not_announced(client, monkeypatch):
+    """The third line of the same ending, and the one that arrived five seconds
+    later: the video path outlives the session, so by the time the watcher sees
+    it drop there is no session left to say this was theater, and the room was
+    told "Stream ended." on top of the close's own line."""
+    setup_admin(client, username="owner")
+    start(client)
+    working_projector()
+    client.post("/api/admin/theater/play", json={"jf_id": "abc123"})
+    client.post("/api/admin/theater/end")
+
+    assert theater.recently_closed() is True
+    plan = theater.stream_transition(
+        False, theater.is_active(), theater.recently_closed()
+    )
+    assert plan["announce_end"] is False
+    # The grace covers the poll or two after the close, not the rest of the
+    # evening: an OBS broadcast ending later still says so.
+    monkeypatch.setattr(theater, "SESSION_CLOSE_GRACE", 0)
+    assert theater.recently_closed() is False
+    assert theater.stream_transition(False, False, False)["announce_end"] is True
 
 
 def test_without_a_session_every_transition_behaves_exactly_as_before():

@@ -207,6 +207,11 @@ A normal evening:
 5. **End session** closes the evening yourself. Whatever is playing stops and
    the room goes back to an ordinary broadcast. Chat is kept.
 
+However a session ends, the room is told once: "Theater mode disabled." when
+you end it, "That was the end of it. Theater mode is off." when a title runs
+out. The "Stream ended." line that follows an ordinary broadcast is not said
+after a theater close, because the close has already said it in its own words.
+
 One session runs at a time, and starting a second is refused rather than
 quietly ignored.
 

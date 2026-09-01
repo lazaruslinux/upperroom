@@ -16,6 +16,12 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.18.0": [
+        "Notices from the room now show the time, like any message.",
+        "Chat shows a line while the stream is offline.",
+        "A movie night ending is said once, without the extra lines.",
+        "Moderators can wipe the chat with /wipe. It asks before it acts.",
+    ],
     "0.17.0": [
         "The home page now plays the stream, muted, right in the card.",
         "Click the card to join with sound and chat, the way you always did.",

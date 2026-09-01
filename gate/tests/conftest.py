@@ -107,6 +107,11 @@ def client(tmp_path, monkeypatch):
     # whether an idle report closes the session. One test's stop would otherwise
     # keep the next test's finished title from closing anything.
     theater._host_stopped_at = -1e9
+    # Same for the two markers around a close: one suppresses the projector's
+    # idle while a session is being ended, the other suppresses "Stream ended."
+    # for the seconds after one was. Left set, they would silence the next test.
+    theater._ending = False
+    theater._last_closed_at = -1e9
     # Which title last failed is process-global as well, and it decides whether
     # the room is told "again".
     theater._last_error_id = None

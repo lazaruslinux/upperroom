@@ -31,7 +31,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <!-- og:end -->
-  <link rel="stylesheet" href="/assets/style.css?v=60">
+  <link rel="stylesheet" href="/assets/style.css?v=61">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
@@ -154,6 +154,10 @@
     </div>
     <ul id="viewer-list" class="viewer-list" hidden></ul>
     <div id="messages" class="messages"></div>
+    <!-- Above the composer rather than over the video: the offline card already
+         holds the picture, and this is for somebody reading chat with the
+         player out of view. -->
+    <div id="chat-offline" class="chat-offline" hidden>Stream is currently offline.</div>
     <form id="chat-form" class="chat-form">
       <button id="points-chip" type="button" class="points-chip" aria-label="Your points, highlight a message" title="Your points, highlight a message" hidden>pts 0</button>
       <button id="clip-btn" type="button" class="icon-btn" aria-label="Clip the recent stream" title="Clip the recent stream" hidden>
@@ -246,6 +250,6 @@
   </div>
 
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/watch.js?v=37"></script>
+  <script src="/assets/watch.js?v=38"></script>
 </body>
 </html>

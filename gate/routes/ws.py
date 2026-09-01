@@ -34,11 +34,14 @@ DEFAULT_TIMEOUT_SECONDS = 300
 MAX_TIMEOUT_SECONDS = 86400
 
 
-async def system_reply(websocket, text):
-    """Send a private system line back to the person who ran a command."""
+async def system_reply(websocket, text, **extra):
+    """Send a private system line back to the person who ran a command.
+
+    extra rides along on the frame, which is how a command that asks before it
+    acts puts its confirm button on the line that asks."""
     try:
         await websocket.send_json(
-            {"type": "system", "text": text, "ts": int(time.time())}
+            {"type": "system", "text": text, "ts": int(time.time()), **extra}
         )
     except Exception:
         logger.debug("system_reply send failed", exc_info=True)
@@ -96,6 +99,7 @@ async def handle_command(websocket, who, text):
                 "/purge <user> - delete all of that viewer's messages",
                 "/ban <user> [reason] - ban a viewer from chat",
                 "/unban <user> - lift a ban (yours, or any if admin)",
+                "/wipe - clear the whole chat for everyone (asks to confirm)",
             ]
         if is_admin:
             lines += [
@@ -141,6 +145,25 @@ async def handle_command(websocket, who, text):
             target["username"],
             "You are now a chat moderator." if make
             else "You are no longer a chat moderator.",
+        )
+        return
+
+    # Clearing the room is the one command with no target, so it is handled
+    # before the lookup below. It cannot be taken back either, which is why it
+    # asks first: the answer is a button on the reply itself rather than a
+    # second command nobody would remember the spelling of.
+    if cmd == "wipe":
+        if args and args[0].lower() == "confirm":
+            # No reason, so every page empties without a line explaining it. A
+            # room cleared on purpose in front of everyone does not need one,
+            # and the question they just saw answered is explanation enough.
+            await hub.wipe()
+            return
+        await system_reply(
+            websocket,
+            "Wipe the whole chat for everyone?",
+            confirm_command="/wipe confirm",
+            confirm_label="Wipe chat",
         )
         return
 

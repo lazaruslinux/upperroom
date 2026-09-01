@@ -8,6 +8,7 @@ const offline = document.getElementById("offline");
 const messages = document.getElementById("messages");
 const viewerCount = document.getElementById("viewer-count");
 const viewerList = document.getElementById("viewer-list");
+const chatOffline = document.getElementById("chat-offline");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const unmuteButton = document.getElementById("unmute");
@@ -84,6 +85,10 @@ function setStage(next) {
   streamOnline = playing;
   document.body.dataset.stage = next;
   offline.hidden = next !== "offline";
+  // Only for a channel that is plainly off air. An intermission has its own card
+  // over the video explaining the gap, and a guest whose pass ran out is being
+  // told something else entirely.
+  if (chatOffline) chatOffline.hidden = next !== "offline";
   if (theaterInter) theaterInter.hidden = next !== "theater_intermission";
   video.style.visibility = playing ? "visible" : "hidden";
   // Clipping only makes sense while the stream is live and being recorded, and
@@ -654,7 +659,30 @@ function applyDelete(id) {
 function renderSystem(msg) {
   const line = document.createElement("div");
   line.className = "msg system";
-  line.textContent = msg.text;
+  const time = document.createElement("span");
+  time.className = "msg-time";
+  // A page-made line (the wipe explanations, the too-many-sockets notice) has no
+  // server timestamp; formatTimestamp falls back to now, which is when it was.
+  time.textContent = formatTimestamp(msg.ts);
+  // The text keeps a span of its own so the line's pre-wrap still folds a
+  // multi-line reply (/help) instead of the timestamp sharing its box.
+  const body = document.createElement("span");
+  body.textContent = msg.text;
+  line.append(time, body);
+  // A command that asks before it acts sends its answer with the line, as a
+  // button in chat: a browser confirm cannot be styled, reads badly on a phone,
+  // and is the wrong shape for something the room is about to see happen.
+  if (typeof msg.confirm_command === "string") {
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "msg-confirm";
+    confirm.textContent = msg.confirm_label || "Confirm";
+    confirm.addEventListener("click", () => {
+      confirm.disabled = true;
+      sendChatCommand(msg.confirm_command);
+    });
+    line.appendChild(confirm);
+  }
   addLine(line);
 }
 
