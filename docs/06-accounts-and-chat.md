@@ -250,7 +250,10 @@ dropped out of the top bar; it is a page now, and the bar carries a link to it.
 
 The gear on the watch page is a different thing and stays where it is: it is for
 what only affects how chat looks to that person, the theme, their chat font, and
-their name and message colors.
+their name and message colors. The font choices are Default (Inter), JetBrains
+Mono, Space Grotesk, IBM Plex Sans and Sora, each chip rendered in its own face,
+and under them a mock of your own chat line shows the font and both colors
+together before you send anything.
 
 ## Changing your own password
 

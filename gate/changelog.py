@@ -16,6 +16,12 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.20.0": [
+        "New chat fonts: JetBrains Mono, Space Grotesk, IBM Plex Sans, Sora.",
+        "The settings panel now previews your chat style as you pick.",
+        "Old font picks fall back to the default.",
+        "Highlighted messages now show in the sender's font.",
+    ],
     "0.19.0": [
         "Subtitles are off unless the host turns them on.",
         "A film whose subtitles drift can be restarted without them in one press.",

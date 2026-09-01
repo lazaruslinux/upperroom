@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -95,7 +95,7 @@ AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
 AVATAR_SIZE = 256                   # avatars are stored as this square, in px
 MAX_AVATAR_BYTES = 2 * 1024 * 1024  # reject uploads larger than this
 SAFE_USERNAME = re.compile(r"^[a-z0-9_.-]+$")
-ALLOWED_FONTS = {"system", "mono", "comic", "retro", "caveat"}
+ALLOWED_FONTS = {"system", "jetbrains", "grotesk", "plex", "sora"}
 MAX_BIO_LENGTH = 200
 
 # Chat moderation knobs the admin sets on the dashboard.

@@ -550,6 +550,19 @@ def init_db():
                 "WHERE id = 1 AND stream_key IS NULL",
                 (publish_pass,),
             )
+        # 2026-09-01: the chat font set was replaced with a clean modern one.
+        # Map every retired key once, in the live table and in saved replay
+        # snapshots, so nobody is left pointing at a face the site no longer
+        # ships. Only the old keys are named, so an account already on a new one
+        # is untouched.
+        for old, new in (("mono", "jetbrains"), ("comic", "system"),
+                         ("retro", "system"), ("caveat", "system")):
+            conn.execute(
+                "UPDATE users SET chat_font = ? WHERE chat_font = ?", (new, old)
+            )
+            conn.execute(
+                "UPDATE replay_chat SET font = ? WHERE font = ?", (new, old)
+            )
         # If the gate restarted while people were watching, their sessions never
         # got a left_at. Close them at their start so they do not count as one
         # endless session, and so the next start is clean.

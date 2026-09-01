@@ -119,7 +119,8 @@ async def redeem(request: Request):
     # the backlog so a viewer joining later still sees it. Best effort: a
     # broadcast failure must never undo a spend that already went through. The
     # payload carries the sender's identity in the same shape a chat line does,
-    # so a highlight can render with their avatar, name, color, and role.
+    # so a highlight can render with their avatar, name, color, font, and role.
+    # The watch page applies the font; the OBS overlay ignores it on purpose.
     try:
         await hub.highlight({
             "type": "highlight",
@@ -130,6 +131,7 @@ async def redeem(request: Request):
             "mod": bool(user["is_moderator"]) if user else False,
             "avatar": user["avatar_version"] if user else 0,
             "name_color": user["name_color"] if user else "",
+            "font": user["chat_font"] if user else "system",
             "message": message,
             "cost": HIGHLIGHT_COST,
             "ts": ts,

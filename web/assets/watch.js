@@ -732,6 +732,9 @@ function renderHighlight(msg) {
   const body = document.createElement("span");
   body.className = "body";
   body.textContent = msg.message;   // textContent keeps any markup inert
+  // The sender's chat font rides along here too, same as a normal line. The OBS
+  // overlay stays font-less on purpose.
+  body.style.fontFamily = FONTS[msg.font] || "";
   bodyWrap.append(head, body);
   line.appendChild(bodyWrap);
   addLine(line);
@@ -847,22 +850,23 @@ viewerToggle.addEventListener("click", () => showPanel(viewerList));
 const THEME_KEY = "selfstream_theme";
 const FONTS = {
   system: "",
-  mono: "'Roboto Mono', monospace",
-  comic: "'Comic Neue', cursive",
-  retro: "'VT323', monospace",
-  caveat: "'Caveat', cursive",
+  jetbrains: "'JetBrains Mono', monospace",
+  grotesk: "'Space Grotesk', sans-serif",
+  plex: "'IBM Plex Sans', sans-serif",
+  sora: "'Sora', sans-serif",
 };
 const FONT_LIST = [
   ["system", "Default"],
-  ["mono", "Roboto Mono"],
-  ["comic", "Comic Neue"],
-  ["retro", "VT323"],
-  ["caveat", "Caveat"],
+  ["jetbrains", "JetBrains Mono"],
+  ["grotesk", "Space Grotesk"],
+  ["plex", "IBM Plex Sans"],
+  ["sora", "Sora"],
 ];
 
 const settingsPanel = document.getElementById("settings-panel");
 const themeToggle = document.getElementById("theme-toggle");
 const fontPicker = document.getElementById("font-picker");
+const fontPreview = document.getElementById("font-preview");
 
 document.getElementById("settings-toggle").addEventListener("click", () => {
   showPanel(settingsPanel);
@@ -927,6 +931,24 @@ async function saveProfile(patch) {
   }
 }
 
+// A one-line mock of your own message under the picker, so the font and both
+// colors can be seen together the way the room will see them. Built the same
+// way renderChat builds a line, minus the avatar and the time.
+function updateFontPreview() {
+  if (!fontPreview || !me) return;
+  fontPreview.innerHTML = "";
+  const name = document.createElement("span");
+  name.className = me.admin ? "name admin" : "name";
+  name.textContent = me.name || me.username || "You";
+  if (me.name_color) name.style.color = me.name_color;
+  const body = document.createElement("span");
+  body.className = "body";
+  body.textContent = "This is how your messages look.";
+  body.style.fontFamily = FONTS[me.font] || "";
+  if (me.msg_color) body.style.color = me.msg_color;
+  fontPreview.append(name, body);
+}
+
 // Your chosen font rides along on your own messages for everyone to see, so it
 // is saved on the server (not just this browser). Each option is rendered in
 // its own typeface so you can preview it before picking.
@@ -942,10 +964,12 @@ function buildFontPicker() {
       me.font = key;
       fontPicker.querySelectorAll(".font-option").forEach((b) => b.classList.remove("selected"));
       btn.classList.add("selected");
+      updateFontPreview();
       await saveProfile({ font: key });
     });
     fontPicker.appendChild(btn);
   });
+  updateFontPreview();
 }
 
 // ---- chat colors (name + message text) ----
@@ -984,13 +1008,19 @@ function setupColorPickers() {
   msgColorInput.value = me.msg_color || DEFAULT_SWATCH;
   nameColorInput.addEventListener("change", async () => {
     const r = await saveColor({ name_color: nameColorInput.value });
-    if (r.ok) { me.name_color = nameColorInput.value; showColorMsg("Name color saved.", true); }
-    else showColorMsg(r.error || "That color was rejected.", false);
+    if (r.ok) {
+      me.name_color = nameColorInput.value;
+      showColorMsg("Name color saved.", true);
+      updateFontPreview();
+    } else showColorMsg(r.error || "That color was rejected.", false);
   });
   msgColorInput.addEventListener("change", async () => {
     const r = await saveColor({ msg_color: msgColorInput.value });
-    if (r.ok) { me.msg_color = msgColorInput.value; showColorMsg("Text color saved.", true); }
-    else showColorMsg(r.error || "That color was rejected.", false);
+    if (r.ok) {
+      me.msg_color = msgColorInput.value;
+      showColorMsg("Text color saved.", true);
+      updateFontPreview();
+    } else showColorMsg(r.error || "That color was rejected.", false);
   });
   colorReset.addEventListener("click", async () => {
     const r = await saveColor({ name_color: "", msg_color: "" });
@@ -999,6 +1029,7 @@ function setupColorPickers() {
       nameColorInput.value = DEFAULT_SWATCH;
       msgColorInput.value = DEFAULT_SWATCH;
       showColorMsg("Colors reset to default.", true);
+      updateFontPreview();
     } else showColorMsg(r.error || "Could not reset.", false);
   });
 }

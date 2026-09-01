@@ -1306,6 +1306,18 @@ input.highlight-input { width: 100%; margin-bottom: 8px; font-family: var(--sans
 /* font chips size to their preview label rather than the fixed control height */
 .font-option { height: auto; padding: 6px 10px; font-size: 15px; text-transform: none; }
 
+/* Mock chat line under the picker: bordered like a .msg, and its two spans
+   borrow the real .msg name/body sizing so the preview is honest. */
+.font-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.font-preview .name { font-family: var(--mono); font-weight: 600; font-size: 12px; color: var(--text); }
+.font-preview .name.admin { color: var(--op); }
+.font-preview .body { display: block; font-family: var(--sans); font-size: 14px; line-height: 1.4; margin-top: 3px; }
+
 /* ---- settings rows (the options page, and the dashboard) ------------------
    Two row types, and only two, because the old markup had three layouts, three
    gap values and four control heights in one card and nothing lined up.
@@ -2275,7 +2287,7 @@ body[data-stage^="theater"] .chat-form:focus-within {
 @font-face { font-family: "Inter"; src: url("/assets/fonts/inter-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
 @font-face { font-family: "Inter"; src: url("/assets/fonts/inter-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
 
-@font-face { font-family: "Roboto Mono"; src: url("/assets/fonts/roboto-mono.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Comic Neue"; src: url("/assets/fonts/comic-neue.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "VT323"; src: url("/assets/fonts/vt323.woff2") format("woff2"); font-display: swap; }
-@font-face { font-family: "Caveat"; src: url("/assets/fonts/caveat.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("/assets/fonts/jetbrains-mono.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Space Grotesk"; src: url("/assets/fonts/space-grotesk.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "IBM Plex Sans"; src: url("/assets/fonts/ibm-plex-sans.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Sora"; src: url("/assets/fonts/sora.woff2") format("woff2"); font-display: swap; }

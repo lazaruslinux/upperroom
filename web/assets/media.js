@@ -29,10 +29,10 @@ let viewSuffix = "";     // the "· when · clipped by" tail after the view coun
 
 const FONTS = {
   system: "",
-  mono: "'Roboto Mono', monospace",
-  comic: "'Comic Neue', cursive",
-  retro: "'VT323', monospace",
-  caveat: "'Caveat', cursive",
+  jetbrains: "'JetBrains Mono', monospace",
+  grotesk: "'Space Grotesk', sans-serif",
+  plex: "'IBM Plex Sans', sans-serif",
+  sora: "'Sora', sans-serif",
 };
 
 function avatarColor(seed) {

@@ -524,14 +524,32 @@ def test_profile_reports_join_time(client):
 def test_profile_enforces_bio_and_font_limits(client):
     setup_admin(client, username="owner")
     # A valid font is accepted.
-    assert client.post("/api/profile", json={"font": "mono"}).status_code == 200
-    assert db.get_user("owner")["chat_font"] == "mono"
+    assert client.post("/api/profile", json={"font": "jetbrains"}).status_code == 200
+    assert db.get_user("owner")["chat_font"] == "jetbrains"
     # An unknown font is rejected.
     assert client.post("/api/profile", json={"font": "wingdings"}).status_code == 400
     # An over-long bio is clamped to the configured limit, not stored whole.
     from config import MAX_BIO_LENGTH
     client.post("/api/profile", json={"bio": "a" * (MAX_BIO_LENGTH + 50)})
     assert len(db.get_user("owner")["bio"]) == MAX_BIO_LENGTH
+
+
+def test_the_pages_offer_exactly_the_allowed_fonts():
+    """The font map is written out twice, once per page, because there is no
+    build step to share ten lines between them. Nothing stops the two copies
+    from drifting from the server's list, and a key on only one side is a font
+    the server rejects or a saved font the page cannot render. Pin all three."""
+    import re
+    from config import ALLOWED_FONTS
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    for name in ("watch.js", "media.js"):
+        source = open(
+            os.path.join(root, "web", "assets", name), encoding="utf-8"
+        ).read()
+        block = re.search(r"const FONTS = \{(.*?)\};", source, re.S)
+        assert block, name
+        keys = set(re.findall(r"^\s*([a-z]+):", block.group(1), re.M))
+        assert keys == ALLOWED_FONTS, name
 
 
 # ---- 7. Chat moderation over the WebSocket --------------------------------
@@ -1223,9 +1241,10 @@ def test_redeem_highlights_and_broadcasts_the_event(client):
     # The success path spends the cost, returns the new balance, and broadcasts a
     # highlight event to every connected watcher (the overlay). The event now
     # carries the sender's identity in the same shape a chat line does, so a
-    # highlight can render with their avatar, name, color, and role. Mirror the
-    # WS event test: seat a fake watcher, then drive redeem.
+    # highlight can render with their avatar, name, color, font, and role. Mirror
+    # the WS event test: seat a fake watcher, then drive redeem.
     viewer = _viewer_with_points(client, 120)
+    db.set_chat_font("viewer", "sora")
     sock = _CaptureSocket()
     hub.add_watcher(sock)
     try:
@@ -1244,6 +1263,9 @@ def test_redeem_highlights_and_broadcasts_the_event(client):
     assert event["cost"] == HIGHLIGHT_COST
     assert event["admin"] is False and event["mod"] is False
     assert "avatar" in event and "name_color" in event
+    # The sender's chat font rides along so the watch page can spotlight the
+    # message in their own face; the overlay ignores the field.
+    assert event["font"] == "sora"
     assert isinstance(event["ts"], int)
 
     # A viewer who joins after the redeem still sees the highlight, because it is

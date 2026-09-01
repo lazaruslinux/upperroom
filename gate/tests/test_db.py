@@ -394,6 +394,42 @@ def test_retention_seeds_from_the_environment_only_on_an_upgrade(fresh_db, monke
     }
 
 
+def test_old_font_choices_migrate_to_the_new_set(fresh_db):
+    # The chat font set was replaced, so anyone sitting on a retired key would
+    # otherwise point at a face the site no longer ships: their chat would fall
+    # back to the default with no way to tell why. The mapping runs over the
+    # live table and over saved replay snapshots, and must leave a current
+    # choice alone.
+    old_to_new = {
+        "mono": "jetbrains", "comic": "system",
+        "retro": "system", "caveat": "system",
+    }
+    keep = {"sora": "sora", "system": "system"}
+    for i, key in enumerate(list(old_to_new) + list(keep)):
+        db.add_user(f"u{i}", f"U{i}", "pw")
+        db.set_chat_font(f"u{i}", key)   # no validation here, so old keys go in
+    with db.connect() as conn:
+        for i, key in enumerate(list(old_to_new) + list(keep)):
+            conn.execute(
+                "INSERT INTO replay_chat "
+                "(kind, ref_id, username, display_name, font, text, offset_s) "
+                "VALUES ('vod', 1, ?, ?, ?, 'hi', ?)",
+                (f"u{i}", f"U{i}", key, i),
+            )
+    db.init_db()
+    expected = {**old_to_new, **keep}
+    with db.connect() as conn:
+        got_users = dict(conn.execute(
+            "SELECT username, chat_font FROM users"
+        ).fetchall())
+        got_replay = dict(conn.execute(
+            "SELECT username, font FROM replay_chat"
+        ).fetchall())
+    for i, key in enumerate(expected):
+        assert got_users[f"u{i}"] == expected[key], key
+        assert got_replay[f"u{i}"] == expected[key], key
+
+
 def test_last_clip_at(fresh_db):
     assert db.last_clip_at("alice") == 0          # never clipped
     now = int(time.time())
