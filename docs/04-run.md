@@ -129,6 +129,14 @@ This is the only part of the site a stranger can reach. A public clip is video
 only: no chat replay, no comments, and it does not say who made it. Nothing
 else opens up, and the clip stays private until you choose otherwise.
 
+Pasted into a chat app the link previews as the clip: `"Big whiff" - Stream
+Clip` on the first line, your site name and the game it was cut from on the
+second, and a frame of the clip as the picture. What was being played is stamped
+on the clip when it is made, so it stays right even after you move on to
+something else; a clip made before this was added shows your site name on its
+own. A link you have stopped sharing previews as nothing, the same as a link
+that was never real.
+
 ### Likes and comments
 
 Signed-in viewers can like a recording or a clip, and leave comments under it.
@@ -284,6 +292,20 @@ handle /watch {
 put with the other `handle` blocks, above the catch-all that serves the static
 site. Without them the watch page still works; its link preview is just the
 generic one baked into the file.
+
+Updating to 0.21.0 needs one more, for the same reason: the clip page is now
+rendered by the gate so a shared link previews as the clip. In your Caddy config
+replace the `handle /clip/*` block that rewrites to `/clip.html` with
+
+```
+handle /clip/* {
+	reverse_proxy gate:8000
+}
+```
+
+keeping it above the catch-all and below the `handle /shared/*` block, which
+still serves the video and its poster off disk. Without this the clip page works
+exactly as before and shared links keep the generic card.
 
 ## 4.7 Troubleshooting
 

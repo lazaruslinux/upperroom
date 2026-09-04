@@ -160,12 +160,14 @@
 			file_server
 		}
 
-		# The page that wraps a shared clip. /clip/<token> is served by one
-		# static page which then asks the API what to show.
+		# The page that wraps a shared clip, rendered by the gate rather than
+		# served off disk so its link preview can name the clip, the channel
+		# and the game, and carry a frame of it. Like /watch this takes no
+		# forward_auth: a preview fetcher has no session. The page is still
+		# only a shell, and the video and its poster come from /shared/*
+		# above.
 		handle /clip/* {
-			rewrite * /clip.html
-			root * /srv/web
-			file_server
+			reverse_proxy gate:8000
 		}
 
 		# The watch page is served by the gate rather than off disk, so its link

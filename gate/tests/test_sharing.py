@@ -17,11 +17,14 @@ from config import CLIP_DIR, SHARED_DIR
 from test_api import add_user, login, make_client, setup_admin
 
 
-def make_clip_row(name="A clip", creator="owner", with_file=True):
+def make_clip_row(name="A clip", creator="owner", with_file=True, game=""):
     """A clip row plus a real file, so the link/unlink paths are exercised
-    against the filesystem rather than mocked."""
+    against the filesystem rather than mocked. `game` is what was playing when
+    the clip was cut, which the share card names."""
     now = int(time.time())
-    clip_id = db.create_clip(name, "", creator, None, now - 60, now, 60, now)
+    clip_id = db.create_clip(
+        name, "", creator, None, now - 60, now, 60, now, game=game
+    )
     filename = f"{clip_id}.mp4"
     if with_file:
         os.makedirs(CLIP_DIR, exist_ok=True)

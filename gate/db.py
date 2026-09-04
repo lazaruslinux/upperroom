@@ -470,6 +470,11 @@ def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clips_share_token "
             "ON clips(share_token) WHERE share_token IS NOT NULL"
         )
+        # What was being played when the clip was cut, stamped at capture so a
+        # share card can name it later. The channel's label moves on; the clip's
+        # does not. Clips made before this column exists have no game, and the
+        # blank is what the card reads as "no game".
+        _ensure_column(conn, "clips", "game", "TEXT NOT NULL DEFAULT ''")
         # Clip length moved out of config.py and onto the channel. An existing
         # channel picks up 60 here, which is the change this shipped for.
         _ensure_column(
@@ -2091,13 +2096,16 @@ def get_vod(vod_id):
         return dict(row) if row else None
 
 
-def create_clip(name, filename, creator, vod_id, start_ts, end_ts, duration, created_at):
+def create_clip(name, filename, creator, vod_id, start_ts, end_ts, duration,
+                created_at, game=""):
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO clips "
-            "(name, filename, creator, vod_id, start_ts, end_ts, duration, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (name, filename, creator, vod_id, start_ts, end_ts, duration, created_at),
+            "(name, filename, creator, vod_id, start_ts, end_ts, duration, "
+            "created_at, game) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, filename, creator, vod_id, start_ts, end_ts, duration,
+             created_at, game),
         )
         return cur.lastrowid
 

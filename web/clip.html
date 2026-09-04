@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom</title>
   <script>
     try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
     try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
@@ -12,16 +11,21 @@
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <meta name="theme-color" content="#0b0c0b">
-  <!-- Deliberately generic. This page is reachable without signing in, so the
-       share card must not name the channel, the streamer or the clip: a link
-       pasted into a group chat should reveal nothing until it is opened. -->
+  <!-- The gate renders /clip/<token> and swaps this whole block for tags naming
+       the clip, the site, the game it was cut from, and a frame of it. What is
+       written here is the fallback: if that route is ever missing, Caddy serves
+       this file as it stands and the card is generic. It is also what an
+       unknown or revoked token gets, which is why it names nothing. Search
+       engines have no business indexing a link meant for one person. -->
+  <!-- og:start -->
+  <title>upperroom</title>
   <meta property="og:type" content="video.other">
   <meta property="og:title" content="A clip">
   <meta property="og:description" content="Shared from a private livestream.">
   <meta property="og:image" content="/assets/icons/og-default.png?v=1">
   <meta name="twitter:card" content="summary_large_image">
-  <!-- Search engines have no business indexing a link meant for one person. -->
   <meta name="robots" content="noindex, nofollow">
+  <!-- og:end -->
   <link rel="stylesheet" href="/assets/style.css?v=62">
 </head>
 <body class="center">

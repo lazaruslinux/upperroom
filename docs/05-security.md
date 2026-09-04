@@ -107,14 +107,22 @@ That is the whole point of the feature, so it is worth knowing its shape:
   only works from the allowed countries.
 - A published clip is **video only**. No chat replay, no comments, and it does
   not name who made it. Nobody who spoke in your chat is published by it.
+- **The link previews as itself.** Pasted into a chat app the card reads
+  `"Big whiff" - Stream Clip` over your site name and the game the clip was cut
+  from, with one frame of the clip as the picture. That is the clip's own
+  poster, already public beside its video at `/shared/<token>.jpg`. A clip made
+  before this was added has no game stamped on it, so its second line is the
+  site name alone. An unknown or revoked token gets the generic card written
+  into the page: it never confirms that a clip existed.
 - Deleting a clip, by hand or by the two day sweep, removes the public copy too.
 
-### The watch page's link preview
+### Link previews
 
 Paste your watch link into a chat app and it shows a card: the channel and what
-this broadcast is called, what is being played, and a picture. That card is
-built by the app fetching the page, and a preview fetcher never carries a
-cookie, so two things have to answer without one.
+this broadcast is called, what is being played, and a picture. A shared clip
+link shows one too, described above. Both cards are built by the app fetching
+the page, and a preview fetcher never carries a cookie, so those pages and their
+pictures have to answer without one.
 
 - **The page itself, `/watch`.** What comes back is only the shell: the markup,
   the stylesheet, and the preview tags. It contains no video, no chat and no
@@ -142,8 +150,12 @@ cookie, so two things have to answer without one.
   stranger no more than the frame beside it already does. A session hides the
   game label entirely, between titles included: the room is at a film night,
   not back to whatever was set for some earlier broadcast.
-- The country gate, if you set one, applies to both. So does the rate limiting
-  and the fail2ban jail below.
+- **The clip page, `/clip/<token>`.** Rendered by the app for the same reason
+  and just as much a shell: the tags, and markup that then asks
+  `/api/shared/<token>` what to show. That endpoint answers a dead token with a
+  404, so rendering the page opens nothing the link did not already reach.
+- The country gate, if you set one, applies to all of them. So does the rate
+  limiting and the fail2ban jail below.
 
 If a frame of your live stream, or the name of tonight's film, reaching whoever
 holds the link is not a trade you want, keep the link to people you would tell

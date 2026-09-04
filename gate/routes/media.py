@@ -29,7 +29,7 @@ from config import (
 from hub import hub
 import theater
 from media import (
-    fetch_path, link_shared, make_clip, ready_epoch, unlink_shared,
+    fetch_path, link_shared, make_clip, ready_epoch, shared_paths, unlink_shared,
     _remove_media_files,
 )
 
@@ -57,39 +57,45 @@ def thumbnail(request: Request):
 
 # ---- Link preview ---------------------------------------------------------
 # Sharing the watch page in a chat app should say who is streaming what, with a
-# frame of it. That means the page and its picture have to answer a fetcher that
-# has no session, because a preview fetcher never has one. Only these two
-# routes are public; the video, the chat socket and the library behind them are
-# unchanged and still need an account.
+# frame of it, and sharing a clip should name the clip. That means the pages and
+# their pictures have to answer a fetcher that has no session, because a preview
+# fetcher never has one. Only these routes are public; the video, the chat
+# socket and the library behind them are unchanged and still need an account.
 
 _OG_START = "<!-- og:start -->"
 _OG_END = "<!-- og:end -->"
 
-# The watch page split around its preview block, cached by modification time.
-# web/ is live mounted, so a front-end deploy changes the file under a running
-# gate; keying on mtime picks that up without a restart and without reading the
-# file on every request.
-_watch_page = {"mtime": None, "head": "", "tail": None}
+# Each rendered page split around its preview block, cached by modification
+# time. web/ is live mounted, so a front-end deploy changes the file under a
+# running gate; keying on mtime picks that up without a restart and without
+# reading the file on every request.
+_templates = {}
 
 
-def _watch_template():
-    """(head, tail) of web/watch.html around its preview markers. A tail of None
-    means the markers are missing and the page should be served untouched, rather
-    than guessing where the tags belong."""
-    path = os.path.join(WEB_DIR, "watch.html")
+def _template(filename):
+    """(head, block, tail) of a page in web/ around its preview markers, where
+    `block` is the static tags written in the file. A tail of None means the
+    markers are missing and the page should be served untouched, rather than
+    guessing where the tags belong."""
+    path = os.path.join(WEB_DIR, filename)
     stamp = os.path.getmtime(path)
-    if _watch_page["mtime"] != stamp:
+    cached = _templates.get(filename)
+    if not cached or cached["mtime"] != stamp:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
         start = text.find(_OG_START)
         end = text.find(_OG_END)
         if start == -1 or end == -1:
-            _watch_page.update(mtime=stamp, head=text, tail=None)
+            cached = {"mtime": stamp, "head": text, "block": "", "tail": None}
         else:
-            _watch_page.update(
-                mtime=stamp, head=text[:start], tail=text[end + len(_OG_END):],
-            )
-    return _watch_page["head"], _watch_page["tail"]
+            cached = {
+                "mtime": stamp,
+                "head": text[:start],
+                "block": text[start + len(_OG_START):end].strip(),
+                "tail": text[end + len(_OG_END):],
+            }
+        _templates[filename] = cached
+    return cached["head"], cached["block"], cached["tail"]
 
 
 def _absolute(request, path):
@@ -193,7 +199,7 @@ def watch_page(request: Request):
     the library each check the session on their own, and watch.js sends a visitor
     without one to the sign-in page."""
     try:
-        head, tail = _watch_template()
+        head, _, tail = _template("watch.html")
     except OSError:
         # Nothing to serve and nothing to fake. Caddy still has the file, so let
         # its static handler answer instead of returning a broken page.
@@ -222,6 +228,76 @@ def og_image():
     if os.path.exists(fallback):
         return FileResponse(fallback, media_type="image/png")
     return Response(status_code=404)
+
+
+def _clip_og_block(request, clip, token):
+    """The preview tags for one published clip: what it is called, whose channel
+    it came off, what was being played, and a frame of the clip itself.
+
+    The clip name is viewer-entered and the site name operator-entered, so both
+    go through the same escaping the watch page uses. The creator is an account
+    username and the row carries it; it must not appear here, the same rule
+    /api/shared/{token} keeps."""
+    info = db.get_stream_info()
+    site = info["site_name"] or "upperroom"
+    title = f'"{clip["name"]}" - Stream Clip'
+    game = (clip.get("game") or "").strip()
+    description = f"{site} playing {game}" if game else site
+    page = _absolute(request, f"/clip/{token}")
+    # The clip's own poster, already public beside the video at /shared/. The
+    # link is best effort at publish time, so fall back to the channel card when
+    # there is no poster rather than pointing a fetcher at a 404.
+    poster = shared_paths(token)[1]
+    if os.path.exists(poster):
+        image = _absolute(request, f"/shared/{token}.jpg")
+        # Width only: the height follows whatever the stream was shot at.
+        size = ['<meta property="og:image:width" content="640">']
+    else:
+        image = _absolute(request, "/assets/icons/og-default.png?v=1")
+        size = []
+
+    def esc(value):
+        return html.escape(str(value), quote=True)
+
+    return "\n  ".join([
+        f"<title>{esc(title)}</title>",
+        '<meta property="og:type" content="video.other">',
+        f'<meta property="og:site_name" content="{esc(site)}">',
+        f'<meta property="og:title" content="{esc(title)}">',
+        f'<meta property="og:description" content="{esc(description)}">',
+        f'<meta property="og:url" content="{esc(page)}">',
+        f'<meta property="og:image" content="{esc(image)}">',
+        *size,
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:title" content="{esc(title)}">',
+        f'<meta name="twitter:description" content="{esc(description)}">',
+        f'<meta name="twitter:image" content="{esc(image)}">',
+        # A link meant for one person is not for a search index.
+        '<meta name="robots" content="noindex, nofollow">',
+    ])
+
+
+@router.api_route("/clip/{token}", methods=["GET", "HEAD"])
+def clip_page(request: Request, token: str):
+    """The public clip page, rendered rather than served from disk so its preview
+    can name the clip. Public the same way /watch is, and for the same reason.
+
+    A token that is unknown or has been revoked gets the generic block written
+    into the file, byte for byte: the card must not confirm that a clip ever
+    existed. The page still fetches /api/shared/{token} to fill itself in, and
+    that endpoint answers a dead token with a 404, so nothing here changes what
+    a visitor can actually reach."""
+    try:
+        head, block, tail = _template("clip.html")
+    except OSError:
+        logger.warning("clip page unreadable under %s", WEB_DIR, exc_info=True)
+        return Response(status_code=404)
+    if tail is None:
+        return HTMLResponse(head)
+    clip = db.get_clip_by_token(token)
+    body = head + (_clip_og_block(request, clip, token) if clip else block) + tail
+    # No cache header here, for the same reason the watch page sets none.
+    return HTMLResponse(body)
 
 
 # ---- VODs and clips -------------------------------------------------------

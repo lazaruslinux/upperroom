@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.20.0**. Releases are tagged in git, and the running version
+Current version: **0.21.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -70,7 +70,10 @@ only repackages the video and stays light.
   looks like `https://your-domain/clip/<token>`. You can copy that link again at
   any time while the clip is shared, and stopping kills it permanently: sharing
   again mints a new one. A public clip is video only: no chat replay, no
-  comments, and it never names who made it.
+  comments, and it never names who made it. Pasted into a chat app the link
+  previews as `"Big whiff" - Stream Clip` over the channel name and the game it
+  was cut from, with a frame of the clip beside them; a revoked link previews as
+  nothing at all.
 - A theater mode for watching something together: put on a film or an episode
   from your own media library and everyone in the room watches it at once, with
   an
@@ -160,7 +163,8 @@ only repackages the video and stays light.
   as the broadcast runs. Pick from what you have played before or type something
   new. Because a preview is fetched without a session, that frame is reachable by
   anyone holding the link while you are on air; `docs/05-security.md` says
-  exactly how far that goes.
+  exactly how far that goes. A shared clip link previews the same way, naming
+  the clip, the channel and the game, with a frame of the clip.
 
 ### Keeping it running
 

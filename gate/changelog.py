@@ -16,6 +16,11 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.21.0": [
+        "A shared clip link now names the clip, the channel and the game.",
+        "The card shows a frame of the clip instead of the site logo.",
+        "Clips made before this update show the channel name on its own.",
+    ],
     "0.20.0": [
         "New chat fonts: JetBrains Mono, Space Grotesk, IBM Plex Sans, Sora.",
         "The settings panel now previews your chat style as you pick.",

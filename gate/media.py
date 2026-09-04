@@ -1247,9 +1247,13 @@ async def make_clip(user, name, at=None, seconds=None):
             "clip failed for %s: scratch recording missing (%s)", username, src)
         return None, "Could not make the clip. Try again in a moment."
     name = (name or "").strip()[:MAX_CLIP_NAME] or "Clip"
+    # Stamp what is being played onto the clip. The channel's label moves on to
+    # the next game; the clip's share card should still say what this was.
+    game = db.get_now_playing()
     # Create the row first so the file can be named by its id.
     clip_id = db.create_clip(
-        name, "", username, vod_id, start, end, duration, int(time.time())
+        name, "", username, vod_id, start, end, duration, int(time.time()),
+        game=game,
     )
     filename = f"{clip_id}.mp4"
     dst = os.path.join(CLIP_DIR, filename)
