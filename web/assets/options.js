@@ -111,10 +111,13 @@ function renderMyAvatar() {
   myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
   // The top bar shows the same face, so a change here lands there too instead
   // of waiting for a reload to catch up.
+  // Swap only the face: the button also holds the menu glyph, and wiping it
+  // would take that with it.
   const inBar = document.getElementById("nav-avatar");
   if (inBar) {
-    inBar.innerHTML = "";
-    inBar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
+    const fresh = avatarNode(me.username, me.name, me.avatar || 0, "avatar");
+    const old = inBar.querySelector(".avatar");
+    if (old) old.replaceWith(fresh); else inBar.prepend(fresh);
   }
 }
 

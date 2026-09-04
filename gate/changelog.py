@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.21.1": [
+        "The account button now shows a menu icon beside your avatar.",
+        "The menu opens with your name at the top.",
+    ],
     "0.21.0": [
         "A shared clip link now names the clip, the channel and the game.",
         "The card shows a frame of the clip instead of the site logo.",

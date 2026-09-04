@@ -615,18 +615,25 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .nav-icon { width: 32px; height: 32px; border-color: transparent; }
 .nav-icon:hover { border-color: var(--border); }
 .nav-points { height: 32px; }
+/* Your account is a pill, not a bare portrait: the avatar alone reads as a
+   picture of you, and on a phone it is also the only way to the page links. The
+   menu glyph beside it says it opens something, and the border says it is a
+   button, so both are here on every screen size. */
 .nav-avatar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  gap: 6px;
+  width: auto;
   height: 32px;
-  padding: 0;
-  border: 1px solid transparent;
+  padding: 0 6px 0 3px;
+  border: 1px solid var(--border);
   background: none;
 }
-.nav-avatar-btn:hover { border-color: var(--border); }
+.nav-avatar-btn:hover { border-color: var(--text); }
 .nav-avatar-btn .avatar { width: 26px; height: 26px; font-size: 11px; }
+.nav-menu-glyph { display: inline-flex; color: var(--muted); }
+.nav-avatar-btn:hover .nav-menu-glyph { color: var(--text); }
 
 /* One popover shape, used by the bell, the inbox, the points chip, the account
    menu and the search results: a square panel hanging under its trigger. */
@@ -643,6 +650,20 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .nav-pop-title { font-family: var(--mono); font-size: 13px; color: var(--accent); margin: 0 0 6px; }
 .nav-pop-note { font-family: var(--sans); font-size: 12px; line-height: 1.4; color: var(--muted); margin: 0; }
 .nav-pop-menu { min-width: 180px; padding: 4px; }
+/* The menu opens with your name, so the pill you just pressed is plainly your
+   own account and not the site's. */
+.nav-menu-who {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
 .nav-menu-row {
   display: block;
   width: 100%;

@@ -232,8 +232,9 @@ order. Left to right:
 - **Your points**, as a `pts N` chip, with a note on how they are earned.
   Anyone with no balance to show does not get the chip at all. Spending points
   is still done from the chat bar on the watch page.
-- **Your avatar**, which opens the account menu: Options, then **Dashboard**
-  and **Analytics** for an admin, **Mod** for a moderator who is not one, and
+- **Your account**, a pill holding your avatar and a menu icon. It opens the
+  account menu, which names you and then offers Options, **Dashboard** and
+  **Analytics** for an admin, **Mod** for a moderator who is not one, and
   **Sign out**.
 
 On a phone the bar stays one row. The three page links move to the top of the

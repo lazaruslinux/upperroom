@@ -79,6 +79,7 @@
     bell: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>`,
     inbox: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v14H3z"></path><polyline points="3 6 12 13 21 6"></polyline></svg>`,
     search: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16" y2="16"></line></svg>`,
+    menu: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line></svg>`,
   };
 
   // ---- markup ----
@@ -154,8 +155,9 @@
       ${bells}
       ${points}
       <div class="nav-item nav-account">
-        <button type="button" id="nav-avatar" class="nav-avatar-btn" aria-label="Your account" aria-expanded="false"></button>
+        <button type="button" id="nav-avatar" class="nav-avatar-btn" aria-label="Your account" aria-expanded="false"><span class="nav-menu-glyph" aria-hidden="true">${ICON.menu}</span></button>
         <div class="nav-pop nav-pop-menu" hidden>
+          <div class="nav-menu-who"></div>
           ${menuRows.join("\n          ")}
         </div>
       </div>
@@ -417,8 +419,14 @@
     holder.innerHTML = EMAIL_MODAL;
     while (holder.firstChild) document.body.appendChild(holder.firstChild);
 
+    // The avatar leads and the menu glyph follows it, so the pill reads as a
+    // button rather than as a picture of you.
     const avatarBtn = host.querySelector("#nav-avatar");
-    avatarBtn.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
+    avatarBtn.prepend(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
+    // The first row of the menu says who you are. Set as text: it is a name the
+    // person typed.
+    const who = host.querySelector(".nav-menu-who");
+    if (who) who.textContent = me.name || me.username;
     wirePopover(avatarBtn, avatarBtn.parentElement.querySelector(".nav-pop"));
 
     host.querySelectorAll(".nav-icon").forEach((btn) => {
