@@ -256,6 +256,14 @@ docker compose up -d --build
 Your accounts survive updates because they live in a docker volume, not in the
 container.
 
+If you run your own copy of the Caddyfile rather than the one in the repo, carry
+two things across when updating past 0.21: every `reverse_proxy gate:8000` and
+`forward_auth gate:8000` block imports the `to_gate` snippet, and each
+`forward_auth` names its door (`/api/verify?scope=live` for `/live/*`,
+`scope=art` for `/media/art/*`, `scope=media` for `/media/*`). Without the
+scope, the gate treats a check as the members-only library and refuses guests
+the live video.
+
 ### Telling people what changed
 
 After an update, everyone who signs in gets a small notice on the home page

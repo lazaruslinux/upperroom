@@ -25,6 +25,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.datastructures import Headers
+from starlette.responses import JSONResponse
 
 import auth
 import config
@@ -125,7 +127,35 @@ async def lifespan(_app):
             task.cancel()
 
 
+class RefuseCrossSiteWrites:
+    """Refuse any write that a browser says came from another page's origin.
+
+    The session cookie's SameSite=Lax already keeps it off another site's forms,
+    but not off a sibling subdomain's, and every write here is a JSON POST that
+    a text/plain form could imitate. Reads are left alone: they change nothing,
+    and the link preview fetchers that read /watch send no Origin anyway. Plain
+    ASGI rather than BaseHTTPMiddleware, so nothing about streamed responses or
+    the WebSocket routes changes; the chat socket checks its own Origin."""
+
+    SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] == "http" and scope["method"] not in self.SAFE
+                and not auth.origin_allowed(Headers(scope=scope))):
+            refused = JSONResponse(
+                {"error": "Refused: this request came from another site."},
+                status_code=403,
+            )
+            await refused(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(title="upperroom", docs_url=None, redoc_url=None, lifespan=lifespan)
+app.add_middleware(RefuseCrossSiteWrites)
 db.init_db()
 for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR,
              config.SHARED_DIR, config.ART_DIR):

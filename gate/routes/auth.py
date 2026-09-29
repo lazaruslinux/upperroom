@@ -70,30 +70,31 @@ def _signed_in_response(user, payload=None, max_age=None):
 
 @router.get("/api/me")
 def me(request: Request):
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    # A token outlives its account. A deleted row, or a guest whose time is up,
+    # is signed out here like everywhere else, rather than being shown the pages
+    # (and, from the token alone, the role) of somebody who no longer exists.
+    user = session_user(request)
+    if not user:
         return {"authed": False}
-    user = db.get_user(session["sub"])
     return {
         "authed": True,
-        "username": session["sub"],
-        "name": session["name"],
-        "admin": bool(user["is_admin"]) if user else bool(session.get("admin")),
-        "mod": bool(user["is_moderator"]) if user else False,
-        "avatar": user["avatar_version"] if user else 0,
-        "font": user["chat_font"] if user else "system",
-        "bio": user["bio"] if user else "",
-        "notify_live": bool(user["notify_live"]) if user else True,
-        "email": user["email"] if user else "",
-        "name_color": user["name_color"] if user else "",
-        "msg_color": user["msg_color"] if user else "",
+        "username": user["username"],
+        "name": user["display_name"],
+        "admin": bool(user["is_admin"]),
+        "mod": bool(user["is_moderator"]),
+        "avatar": user["avatar_version"],
+        "font": user["chat_font"],
+        "bio": user["bio"],
+        "notify_live": bool(user["notify_live"]),
+        "email": user["email"],
+        "name_color": user["name_color"],
+        "msg_color": user["msg_color"],
         # Read from the row, not the token: the session cookie has no idea what
-        # a guest is, which is deliberate. A token minted before guests existed,
-        # or one belonging to a deleted row, is simply not a guest.
-        "guest": bool(user["is_guest"]) if user else False,
+        # a guest is, which is deliberate.
+        "guest": bool(user["is_guest"]),
         # Absolute, so the countdown does not drift with a slow page load and
         # does not care about the visitor's clock being wrong by minutes.
-        "guest_expires_at": user["guest_expires_at"] if user else 0,
+        "guest_expires_at": user["guest_expires_at"],
         # The one-time "what changed" notice, or None once it has been read.
         # Only ever the running release: somebody who skips three of them gets
         # the newest and nothing else.
@@ -117,10 +118,10 @@ def whats_new_seen(request: Request):
     # Acknowledging the notice. Stamped with the running version rather than
     # with whatever the page sends, so a stale tab cannot mark a later release
     # as read and skip its notice.
-    session = read_session(request.cookies.get(COOKIE_NAME, ""))
-    if not session:
+    user = session_user(request)
+    if not user:
         return Response(status_code=401)
-    db.mark_version_seen(session["sub"], VERSION)
+    db.mark_version_seen(user["username"], VERSION)
     return {"ok": True}
 
 
@@ -128,7 +129,7 @@ def whats_new_seen(request: Request):
 def channel(request: Request):
     # Identity of the streamer (the channel owner) shown on the home card. Only
     # for signed in viewers, like the rest of the lobby.
-    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+    if not session_user(request):
         return Response(status_code=401)
     info = db.get_stream_info()
     owner = db.channel_owner()
@@ -168,7 +169,7 @@ def _room_is_full(username, is_admin):
 
 
 @router.get("/api/verify")
-def verify(request: Request):
+def verify(request: Request, scope: str = ""):
     # Caddy calls this before serving any video segment. A valid cookie whose
     # account still exists returns 200 and the request continues. Anything else
     # returns 401 and Caddy refuses to serve the video. Checking the account
@@ -182,14 +183,19 @@ def verify(request: Request):
     user = db.get_user(session["sub"])
     if not user or guest_expired(user):
         return Response(status_code=401)
-    # The same check guards the saved recordings and clips under /media/, which
-    # are files on disk and not the thing a viewer limit is about. Caddy's
-    # forward_auth passes the path it is authorizing, so the limit applies to
-    # the live stream only. No header means an older or hand-edited proxy
-    # config: count nothing and refuse nobody, because a limit that locks the
-    # whole channel out of its own video is worse than no limit.
-    path = request.headers.get("x-forwarded-uri", "")
-    if not path.startswith("/live/"):
+    # Which door Caddy is asking about, named in the query string by each
+    # forward_auth in the Caddyfile. Not read from the forwarded path: that
+    # header carries the raw request target, so an encoded path like /%6Cive/
+    # reached the live stream while reading as something else here, uncounted.
+    #
+    # art is the theater poster, shown to everyone in the room. Anything else is
+    # the saved library (recordings and clips), which is members only: a guest
+    # pass buys the broadcast, not the archive of the ones they missed.
+    if scope == "art":
+        return Response(status_code=200)
+    if scope != "live":
+        if user["is_guest"]:
+            return Response(status_code=403)
         return Response(status_code=200)
     is_admin = bool(user["is_admin"])
     if _room_is_full(session["sub"], is_admin):
@@ -491,7 +497,7 @@ async def set_avatar(request: Request, image: UploadFile = File(...)):
 @router.get("/api/avatar/{username}")
 def get_avatar(username: str, request: Request):
     # Avatars appear in chat, so only signed in viewers may load them.
-    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+    if not session_user(request):
         return Response(status_code=401)
     username = username.strip().lower()
     if not SAFE_USERNAME.match(username):
@@ -593,7 +599,7 @@ async def set_profile(request: Request):
 
 @router.get("/api/profile/{username}")
 def get_profile(username: str, request: Request):
-    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+    if not session_user(request):
         return Response(status_code=401)
     username = username.strip().lower()
     if not SAFE_USERNAME.match(username):

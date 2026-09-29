@@ -73,6 +73,9 @@
     }
   }
 
+  // The bell and the inbox are not built; see the bar markup below.
+  const SHOW_INBOX = false;
+
   // ---- icons ----
 
   const ICON = {
@@ -132,7 +135,9 @@
       </div>
     </div>`;
 
-    const bells = me.guest ? "" : `
+    // Notifications and messages are placeholders with nothing behind them yet,
+    // so the bar leaves them out. Flip SHOW_INBOX when either is built.
+    const bells = me.guest || !SHOW_INBOX ? "" : `
     <div class="nav-item">
       <button type="button" class="icon-btn nav-icon" aria-label="Notifications" aria-expanded="false">${ICON.bell}</button>
       <div class="nav-pop" hidden><p class="nav-pop-note">No notifications yet.</p></div>

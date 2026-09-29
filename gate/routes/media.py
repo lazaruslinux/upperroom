@@ -18,8 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 import db
 from auth import (
-    GUEST_REFUSED, admin_user, can_moderate, member_user, read_session,
-    session_user,
+    GUEST_REFUSED, admin_user, may_act_on, member_user, session_user,
 )
 from config import (
     CLIP_DIR, CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
@@ -44,7 +43,7 @@ router = APIRouter()
 def thumbnail(request: Request):
     # The home card preview. Signed in viewers only, and never cached so the
     # frame stays current. 404 means the stream is offline (no fresh frame).
-    if not read_session(request.cookies.get(COOKIE_NAME, "")):
+    if not session_user(request):
         return Response(status_code=401)
     if not os.path.exists(THUMB_PATH):
         return Response(status_code=404)
@@ -464,7 +463,7 @@ async def rename_clip(clip_id: int, request: Request):
     clip = db.get_clip(clip_id)
     if not clip:
         return JSONResponse({"error": "No such clip."}, status_code=404)
-    if clip["creator"] != user["username"] and not can_moderate(user):
+    if not may_act_on(user, clip["creator"]):
         return JSONResponse({"error": "Not yours to rename."}, status_code=403)
     body = await request.json()
     name = str(body.get("name") or "").strip()[:MAX_CLIP_NAME]
@@ -514,7 +513,8 @@ async def set_clip_share(clip_id: int, request: Request):
         return JSONResponse(
             {"error": "That clip's file is missing."}, status_code=409
         )
-    logger.info("clip %s published as %s", clip_id, token)
+    # A prefix only: the token is the whole credential for a public clip.
+    logger.info("clip %s published as %s...", clip_id, token[:6])
     return {"ok": True, "shared": True, "url": f"/clip/{token}"}
 
 
@@ -637,8 +637,7 @@ def delete_comment(comment_id: int, request: Request):
     comment = db.get_comment(comment_id)
     if not comment:
         return JSONResponse({"error": "No such comment."}, status_code=404)
-    is_author = comment["username"] == user["username"]
-    if not (is_author or user["is_admin"] or user["is_moderator"]):
+    if not may_act_on(user, comment["username"]):
         return JSONResponse({"error": "Not yours to delete."}, status_code=403)
     db.delete_comment(comment_id, user["username"])
     return {"ok": True}

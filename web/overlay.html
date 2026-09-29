@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>upperroom - overlay</title>
+  <!-- This page's address carries the overlay key, and every request it makes
+       would otherwise name that address in its Referer. -->
+  <meta name="referrer" content="no-referrer">
   <!-- Reuse the site's tokens, role colors, and self-hosted fonts. The overlay
        runs on top of the broadcast video, so its own background is transparent;
        that override lives in the scoped block below and never touches style.css,

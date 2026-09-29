@@ -35,12 +35,22 @@ yourself rather than take it on faith.
    that is a signed token. The signature uses a secret only the server knows, so
    the cookie cannot be forged or edited. It is marked HttpOnly, so page scripts
    cannot read it, Secure, so it only travels over HTTPS, and it expires after a
-   few hours.
+   few hours. A guest's token expires with the guest.
+
+6a. **Writes only come from this site.** Every request that changes something,
+   and the chat socket, is refused unless the browser says it came from this
+   site's own pages (the `Origin` and `Sec-Fetch-Site` headers). The cookie's
+   SameSite=Lax setting already keeps it off other sites' forms, but a page on a
+   sibling subdomain of the same domain counts as the same site and would get the
+   cookie anyway; this closes that gap.
 
 7. **The video is gated, not just the page.** This is the important one. Caddy
    does not serve a single video segment until it asks the gate to check the
    cookie. Even if someone found the raw stream URL, it returns nothing without a
    valid cookie. The lock is on the video, not only on the page that shows it.
+   The same check guards the saved recordings and clips, and there it refuses
+   guests: a guest pass buys the live broadcast, and the files of the library
+   cannot be fetched with one even by guessing their names.
 
 8. **Chat cannot inject code.** Chat messages are placed into the page as plain
    text, never as HTML, so nobody can post a message that runs a script in
@@ -184,6 +194,22 @@ from whatever framed it (it uses them to hide or show the video). Both halves ar
 same-origin checked: the browser refuses the frame, and the page ignores any
 message that did not come from this site.
 
+## Browser headers
+
+Every response also carries four headers from Caddy:
+
+- `Strict-Transport-Security: max-age=31536000`. After one visit a browser uses
+  HTTPS for this host for a year, even if someone types or links `http://`. It
+  covers this host only (no `includeSubDomains`, no preload list), so other
+  names under the same domain are unaffected.
+- `X-Content-Type-Options: nosniff`. A browser treats each file as the type the
+  server says it is, and never guesses a script out of something else.
+- `Referrer-Policy: strict-origin-when-cross-origin`. A link out of the site
+  tells the other site where the visitor came from as the origin only, never a
+  path.
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`.
+  The site uses none of those, so nothing on any page can be granted them.
+
 ## The overlay key
 
 The OBS chat overlay cannot sign in, so it authenticates with a long random key in
@@ -203,6 +229,11 @@ does and does not unlock:
 Theater (see `docs/11-theater.md`) adds one more service and one more key. The
 projector runs on your own media machine and cannot sign in, so it authenticates
 with a long random key the same way the overlay does.
+
+- **It is off unless you turn it on.** Without `SELFSTREAM_THEATER=1` every
+  theater route answers 404, the projector socket closes every connection with
+  4404 before it reads a key, and the pages show no theater controls. A session
+  left open when theater was switched off no longer stops recording or clips.
 
 - **It only ever connects outward.** The projector opens the connection to your
   gate and the publish to your ingest. Your media machine listens on nothing,
@@ -315,11 +346,24 @@ You do not have to configure any of this; it is on by default.
   moderator cannot remove.
 - **Only the address your own proxy observed is trusted.** `X-Forwarded-For` is
   something a caller can write, so the rate limiter and the country gate read
-  the entry Caddy added, never one that arrived from outside.
+  the entry Caddy added, never one that arrived from outside. Caddy hands the
+  gate its own resolved visitor address, trusting only proxies on private
+  ranges, so a second proxy in front of it on the same box (a host-level Caddy
+  shared by several sites) still gives the gate the real visitor rather than its
+  own private address.
+- **A socket cannot be used to stall the server.** A chat frame larger than
+  8 KB is dropped unread, the server refuses any WebSocket frame over 4 MB, and
+  a socket whose connection has failed is closed rather than read again.
+- **Taking a role away takes effect at once.** Deleting an account closes its
+  chat, and removing someone's admin role reaches their open sockets, so neither
+  keeps powers until they happen to reconnect. A moderator cannot rename an
+  admin's clip or delete an admin's comment, the same line chat draws.
 - **The room can be capped.** Broadcast -> Room limit on the dashboard sets how
   many people may pull the live video at once; `0`, the default, is no limit.
   Caddy already asks the gate to authorize every video segment, so that is
-  where the limit is applied, and it applies to the live stream only: saved
+  where the limit is applied. Each check names which door it is for in the
+  Caddyfile itself (`/api/verify?scope=live`), so an oddly encoded path cannot
+  slip past uncounted. The limit applies to the live stream only: saved
   broadcasts and clips are files on disk and are never refused by it. An admin
   is never counted and never turned away, so the limit cannot lock you out of
   your own broadcast, and someone already watching is never cut off mid-title.

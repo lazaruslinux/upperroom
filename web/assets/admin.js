@@ -790,14 +790,21 @@ function renderProjector(data) {
 async function loadProjector() {
   try {
     const reply = await fetch("/api/admin/theater/projector");
-    if (reply.ok) renderProjector(await reply.json());
+    // Hidden until the gate answers: with theater off this route is a 404.
+    if (reply.ok) {
+      document.getElementById("projector-panel").hidden = false;
+      renderProjector(await reply.json());
+    }
   } catch { /* leave the last state rather than flashing disconnected */ }
 }
 
 async function loadTheater() {
   try {
     const reply = await fetch("/api/theater");
-    if (reply.ok) renderTheater(await reply.json());
+    if (reply.ok) {
+      document.getElementById("theater-panel").hidden = false;
+      renderTheater(await reply.json());
+    }
   } catch { /* same */ }
 }
 

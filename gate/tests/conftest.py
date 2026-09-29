@@ -45,6 +45,9 @@ os.environ["SELFSTREAM_JOIN_GRACE"] = "0"
 # The stream key is seeded from PUBLISH_PASS on first init_db, so drop any value
 # a developer has in their shell before it can leak a real key into the tests.
 os.environ.pop("PUBLISH_PASS", None)
+# Theater is off by default in a real install; the suite runs with it on so the
+# theater tests exercise it, and test_theater_off.py turns it off to pin that.
+os.environ["SELFSTREAM_THEATER"] = "1"
 
 import auth  # noqa: E402
 import db  # noqa: E402

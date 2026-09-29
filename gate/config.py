@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.21.1"
+VERSION = "0.22.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -275,6 +275,14 @@ CLIP_LAG = 2
 CLIP_KEYFRAME_SLACK = 2
 
 # ---- Theater --------------------------------------------------------------
+# Theater is optional and off unless the operator turns it on: it needs a
+# projector on a machine with a media library, which most installs do not have.
+# Off means every theater route answers 404, the projector socket refuses, and
+# the pages keep their theater controls hidden. Anything a past session left in
+# the database stays where it is.
+THEATER_ENABLED = os.environ.get("SELFSTREAM_THEATER", "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 # A theater session plays titles from the operator's own library to the room.
 # Search bounds keep a stray keystroke from asking the library for everything;
 # the art cap bounds what the projector can push through the socket, which is
@@ -305,6 +313,10 @@ MAX_SOCKETS_PER_USER = 6
 # Connection attempts per address per minute. Generous next to a real person
 # (who connects once and stays) and far below what a flood needs.
 MAX_SOCKET_CONNECTS = 30
+# The largest chat frame read at all. A message is at most MAX_MESSAGE_LENGTH
+# characters, so anything far past that is not a chat line, and it is dropped
+# before it is parsed on the one event loop everybody shares.
+MAX_CHAT_FRAME = 8 * 1024
 
 # ---- Guest passes ---------------------------------------------------------
 # A guest pass is a single-use code that lets someone watch and chat without an

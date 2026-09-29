@@ -10,10 +10,10 @@
 # immediately stops.
 FROM debian:trixie-slim AS ffmpeg
 ARG TARGETARCH
-ARG FFMPEG_RELEASE=autobuild-2026-08-18-15-03
-ARG FFMPEG_BUILD=n8.1.2-44-g7c533d0f86
-ARG FFMPEG_SHA256_AMD64=03ccc8a1cb534b97c2bc43f322ddb1b7c23bd325abb7e4c31aa37f4b4c0e648f
-ARG FFMPEG_SHA256_ARM64=2ffec225398cc41047cb3cf2503d2b1f00f8589648fe572fc94dd20d050ed068
+ARG FFMPEG_RELEASE=autobuild-2026-09-29-13-10
+ARG FFMPEG_BUILD=n8.1.3-6-gff48edd8b2
+ARG FFMPEG_SHA256_AMD64=9f96ca3806df5926dc6645a93fab35c2ed3783c9824c319ca99e9dc6dc286875
+ARG FFMPEG_SHA256_ARM64=39b7b4d4e5842645d9ccec23f2bbd99d2658c85dba78839ad2025f69906c3546
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && rm -rf /var/lib/apt/lists/* \

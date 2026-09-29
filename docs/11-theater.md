@@ -4,6 +4,12 @@ Theater is watching something together. Instead of broadcasting yourself, you
 put on a film or an episode from your own media library and everyone in the
 room watches it at the same time, with the same chat they always have.
 
+**Theater is off by default.** Set `SELFSTREAM_THEATER=1` in `.env` and restart
+the gate to turn it on. While it is off, the dashboard and the watch page show no
+theater controls, the theater routes answer 404, and the projector socket
+refuses every connection (close code 4404), so a projector left running cannot
+attach.
+
 It is not a second video path. What plays reaches your viewers over exactly the
 same ingest, the same MediaMTX, and the same watch page as an OBS broadcast, so
 nothing about the delivery changes. What changes is the frame around it.

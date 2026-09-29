@@ -333,9 +333,23 @@ function applyTheater(data) {
   renderHostStrip();
 }
 
+// Theater is optional on the server. When it is off its routes answer 404, and
+// the controls, the picker and the intermission card leave the page for good.
+let theaterOff = false;
+
 async function loadTheater() {
+  if (theaterOff) return;
   try {
-    applyTheater(await (await fetch("/api/theater")).json());
+    const reply = await fetch("/api/theater");
+    if (reply.status === 404) {
+      theaterOff = true;
+      for (const id of ["host-strip", "theater-search-modal", "theater-inter"]) {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+      }
+      return;
+    }
+    applyTheater(await reply.json());
   } catch {
     /* keep the last state rather than flapping the stage on a blip */
   }
@@ -366,6 +380,9 @@ function showHostMsg(text, ok) {
 
 function renderHostStrip() {
   if (!hostStrip || !hostStrip.isConnected) return;
+  // Shown on the first theater state, not at setup, so a server with theater
+  // off never flashes the strip before the 404 takes it away.
+  hostStrip.hidden = false;
   const label = !theaterActive ? "theater off"
     : theaterState === "playing" ? "playing" : "intermission";
   hostState.textContent = theaterNow ? `${label} · ${theaterNow.title}` : label;
@@ -476,7 +493,6 @@ function setUpHost() {
     if (searchModal) searchModal.remove();
     return;
   }
-  hostStrip.hidden = false;
   hostStart.addEventListener("click", () => hostAction("/api/admin/theater/session"));
   hostStop.addEventListener("click", () => hostAction("/api/admin/theater/stop"));
   // One click, no confirmation: the room is watching subtitles run out of sync
@@ -507,7 +523,6 @@ function setUpHost() {
       }
     })
     .catch(() => {});
-  renderHostStrip();
 }
 
 // ---- chat and presence ----

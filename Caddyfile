@@ -19,6 +19,16 @@
 	}
 }
 
+# Every hop to the gate carries the visitor's address as Caddy resolved it, in
+# place of the X-Forwarded-For Caddy would otherwise build by appending. With a
+# second proxy in front (a host-level Caddy on a shared box) appending would end
+# with that proxy's private address, and the gate would see every visitor as one:
+# one login rate limit for the whole internet, and a country lookup that misses.
+# {client_ip} honours trusted_proxies above, so it is the visitor either way.
+(to_gate) {
+	header_up X-Forwarded-For {client_ip}
+}
+
 {$SELFSTREAM_DOMAIN} {
 	encode zstd gzip
 
@@ -50,6 +60,9 @@
 					delete key
 					delete overlay
 				}
+				# The overlay page's own requests (its script, its fonts) name
+				# the page they came from, key and all, in Referer.
+				request>headers>Referer delete
 			}
 		}
 	}
@@ -68,20 +81,37 @@
 	# site cannot embed the watch page, overlay it, and collect the clicks.
 	header @dynamic Content-Security-Policy "frame-ancestors 'self'"
 
+	# Browser hardening that costs nothing. HSTS pins HTTPS for a year on this
+	# host only: no includeSubDomains and no preload, because other names under
+	# the same domain are not this site's to commit. nosniff stops a browser
+	# guessing a file's type. The referrer policy gives other sites the origin
+	# and never a path. And the pages ask for no camera, microphone, location or
+	# payment, so nothing that ends up on one can be granted them.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+	}
+
 	route {
 		# The chat and presence WebSocket, handled before the geo gate below. A
 		# forward_auth cannot proxy a WebSocket upgrade (it 403s it), and the
 		# socket already requires a valid login cookie, which can only be issued
 		# to an allowed country. The gate rechecks the country on the socket too.
 		handle /ws {
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# The projector's socket, for the same reason and so it must sit here
 		# too. It authenticates with a key in the URL rather than a login
 		# cookie, and the gate rate-limits the attempts before reading it.
 		handle /ws/projector {
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# US-only country lock, enforced here on the server so the video never
@@ -90,6 +120,7 @@
 		# reaches the pages, the login, or the video.
 		forward_auth gate:8000 {
 			uri /api/geo
+			import to_gate
 		}
 
 		# Avatar upload is the one endpoint that legitimately carries a file, so
@@ -101,7 +132,9 @@
 			request_body {
 				max_size 3MB
 			}
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# Login, session, chat config, and stream status.
@@ -116,18 +149,34 @@
 			request_body {
 				max_size 64KB
 			}
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# The video itself, served at the same /live/ paths MediaMTX uses so its
 		# internal redirects and segment URLs line up (it redirects to absolute
 		# paths, which breaks under a rewritten prefix). forward_auth checks the
 		# session cookie first, so the stream is useless to anyone not signed in.
+		# The scope in the uri tells the gate which door this is (the live room,
+		# where the viewer limit applies), so it never has to trust the path.
 		handle /live/* {
 			forward_auth gate:8000 {
-				uri /api/verify
+				uri /api/verify?scope=live
+				import to_gate
 			}
 			reverse_proxy mediamtx:8888
+		}
+
+		# Theater posters, which everyone in the room sees, guests included.
+		# Before /media/* below, which is members only.
+		handle_path /media/art/* {
+			forward_auth gate:8000 {
+				uri /api/verify?scope=art
+				import to_gate
+			}
+			root * /srv/media/art
+			file_server
 		}
 
 		# Saved recordings and clips. The files are served straight from the
@@ -136,7 +185,8 @@
 		# the gate. /media/vods/<f> and /media/clips/<f> map onto the media dir.
 		handle_path /media/* {
 			forward_auth gate:8000 {
-				uri /api/verify
+				uri /api/verify?scope=media
+				import to_gate
 			}
 			root * /srv/media
 			file_server
@@ -167,7 +217,9 @@
 		# only a shell, and the video and its poster come from /shared/*
 		# above.
 		handle /clip/* {
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# The watch page is served by the gate rather than off disk, so its link
@@ -178,7 +230,9 @@
 		# each check the session separately. Exact path only, so /watch.html and
 		# everything else stay with the static handler below.
 		handle /watch {
-			reverse_proxy gate:8000
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
 		# Accounts, bans and invites moved onto the dashboard. Kept so an old

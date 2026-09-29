@@ -25,6 +25,7 @@ import time
 
 from PIL import Image
 
+import config
 import db
 from config import (
     ART_DIR, MAX_THEATER_ART_BYTES, MAX_THEATER_RESULTS, THEATER_ART_MAX,
@@ -41,7 +42,11 @@ SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def is_active():
-    """Whether a theater session is open right now."""
+    """Whether a theater session is open right now. Never, with theater off: a
+    session left open when it was switched off must not keep suppressing the
+    recording and the clips of every broadcast after it."""
+    if not config.THEATER_ENABLED:
+        return False
     return db.get_active_theater_session() is not None
 
 
@@ -129,6 +134,8 @@ def public_now(session):
 
 def public_state(session=None):
     """The theater state for /api/theater and the socket frame."""
+    if not config.THEATER_ENABLED:
+        return {"active": False, "state": "off", "now": None}
     if session is None:
         session = db.get_active_theater_session()
     if not session:

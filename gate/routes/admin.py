@@ -311,8 +311,7 @@ async def admin_update(username: str, request: Request):
             is_admin=is_admin,
             is_moderator=is_moderator,
         )
-        if is_moderator is not None:
-            await hub.update_role(username, mod=is_moderator)
+        await hub.update_role(username, mod=is_moderator, admin=is_admin)
 
     if "email" in body:
         email = (body.get("email") or "").strip()[:MAX_EMAIL]
@@ -338,7 +337,7 @@ async def admin_update(username: str, request: Request):
 
 
 @router.delete("/api/admin/users/{username}")
-def admin_delete(username: str, request: Request, confirm: str = ""):
+async def admin_delete(username: str, request: Request, confirm: str = ""):
     # Deleting takes the account, its watch history and its chat, and there is
     # no undo. The caller has to echo the username back in ?confirm=, so the
     # dashboard's "type the username" step is enforced here and not only in the
@@ -359,6 +358,10 @@ def admin_delete(username: str, request: Request, confirm: str = ""):
             {"error": "You cannot delete the only admin account."}, status_code=400
         )
     db.delete_user(username)
+    # A chat socket outlives the row it was opened for, and every moderator
+    # command looks its target up by account, so a deleted person left in chat
+    # could keep talking with nobody able to reach them.
+    await hub.disconnect_user(username)
     return {"ok": True}
 
 
@@ -536,10 +539,14 @@ def admin_overlay_get(request: Request):
 
 
 @router.post("/api/admin/overlay/regenerate")
-def admin_overlay_regenerate(request: Request):
+async def admin_overlay_regenerate(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    return {"key": db.regenerate_overlay_key()}
+    key = db.regenerate_overlay_key()
+    # The point of regenerating is that the old key stops working, and that
+    # includes a source that is already connected with it.
+    await hub.close_watchers()
+    return {"key": key}
 
 
 # The synthetic events the test-fire buttons send. Each is clearly labelled as a

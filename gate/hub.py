@@ -124,6 +124,16 @@ class Hub:
     def remove_watcher(self, socket):
         self._watchers.discard(socket)
 
+    async def close_watchers(self, code=4401):
+        """Close every overlay socket, for a regenerated overlay key: a source
+        still holding the old key must not keep receiving chat."""
+        for socket in list(self._watchers):
+            try:
+                await socket.close(code=code)
+            except Exception:
+                logger.debug("closing an overlay socket failed", exc_info=True)
+            self._watchers.discard(socket)
+
     def _here(self, username):
         """Whether this person already holds a socket. One person can hold
         several: a second tab, or the dashboard, which frames the watch page."""
@@ -349,12 +359,18 @@ class Hub:
         await self.broadcast({"type": "delete", "id": msg_id})
         return "ok"
 
-    async def update_role(self, username, mod=None):
+    async def update_role(self, username, mod=None, admin=None):
         """Reflect a role change on a user's open sockets so their next message
-        and the watching list show (or drop) the badge without a reconnect."""
+        and the watching list show (or drop) the badge without a reconnect. The
+        admin flag here is also what exempts a socket from slow mode and guards
+        it from moderators, so a demotion has to land on open sockets too."""
         for who in self._sockets.values():
-            if who["username"] == username and mod is not None:
+            if who["username"] != username:
+                continue
+            if mod is not None:
                 who["mod"] = bool(mod)
+            if admin is not None:
+                who["admin"] = bool(admin)
         await self.broadcast(self.presence_message())
 
     async def disconnect_user(self, username, code=4401):

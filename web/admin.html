@@ -86,6 +86,9 @@
 
     <!-- ---- Broadcast: what is on tonight ---- -->
     <section class="admin-group" data-panel="broadcast">
+      <!-- Theater is optional on the server; admin.js shows this only when the
+           gate answers for it. -->
+      <div id="theater-panel" hidden>
       <h2 class="section-title">Theater</h2>
       <div class="notify-panel">
         <span class="muted">Play titles from your library to the room. Nothing is
@@ -114,6 +117,7 @@
           it for one showing.</p>
         <div id="theater-results" class="ts-results"></div>
         <p id="theater-msg" class="notify-msg" hidden></p>
+      </div>
       </div>
 
       <h2 class="section-title">Room limit</h2>
@@ -328,6 +332,7 @@
         <p id="stream-key-msg" class="notify-msg" hidden></p>
       </div>
 
+      <div id="projector-panel" hidden>
       <h2 class="section-title">Projector</h2>
       <div class="notify-panel">
         <span class="muted">The projector runs on your media machine and connects
@@ -345,6 +350,7 @@
           <button type="button" id="projector-regen" class="danger-btn">Regenerate</button>
         </div>
         <p id="projector-msg" class="notify-msg" hidden></p>
+      </div>
       </div>
 
       <h2 class="section-title">Overlay</h2>
@@ -519,8 +525,8 @@
     </div>
   </div>
 
-  <script src="/assets/nav.js?v=9"></script>
+  <script src="/assets/nav.js?v=10"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/admin.js?v=47"></script>
+  <script src="/assets/admin.js?v=48"></script>
 </body>
 </html>

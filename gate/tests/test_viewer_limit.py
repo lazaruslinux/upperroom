@@ -19,8 +19,9 @@ import watchers
 from conftest import make_client
 from test_api import add_user, login, setup_admin
 
-LIVE = {"X-Forwarded-Uri": "/live/index.m3u8"}
-VOD = {"X-Forwarded-Uri": "/vods/2026-08-30.mp4"}
+# The door each forward_auth names in the Caddyfile.
+LIVE = {"scope": "live"}
+VOD = {"scope": "media"}
 
 
 @pytest.fixture
@@ -104,56 +105,58 @@ def test_one_person_with_several_tabs_is_one_watcher():
 
 def test_the_first_viewer_is_let_in_and_the_second_is_not(room):
     nell, rafe = viewer("nell"), viewer("rafe")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
-    assert rafe.get("/api/verify", headers=LIVE).status_code == 403
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
+    assert rafe.get("/api/verify", params=LIVE).status_code == 403
 
 
 def test_somebody_already_watching_is_never_thrown_out(room):
     # Their next segment must not be the one that refuses them: they were
     # admitted, and the limit is about who starts, not who is mid-title.
     nell = viewer("nell")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
 
 
 def test_a_place_opens_up_when_somebody_stops_watching(room, monkeypatch):
     nell, rafe = viewer("nell"), viewer("rafe")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
-    assert rafe.get("/api/verify", headers=LIVE).status_code == 403
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
+    assert rafe.get("/api/verify", params=LIVE).status_code == 403
     # Nell closes the tab: no more segment requests, so the window runs out.
     monkeypatch.setattr(watchers, "WATCHER_WINDOW_SECONDS", 0)
-    assert rafe.get("/api/verify", headers=LIVE).status_code == 200
+    assert rafe.get("/api/verify", params=LIVE).status_code == 200
 
 
 def test_the_operator_is_never_refused_their_own_broadcast(room):
     nell = viewer("nell")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
     # Full for everyone else, and still open to the admin.
-    assert viewer("rafe").get("/api/verify", headers=LIVE).status_code == 403
-    assert room.get("/api/verify", headers=LIVE).status_code == 200
+    assert viewer("rafe").get("/api/verify", params=LIVE).status_code == 403
+    assert room.get("/api/verify", params=LIVE).status_code == 200
 
 
 def test_the_operator_does_not_take_up_a_place(room):
-    assert room.get("/api/verify", headers=LIVE).status_code == 200
+    assert room.get("/api/verify", params=LIVE).status_code == 200
     assert watchers.count() == 0
-    assert viewer("nell").get("/api/verify", headers=LIVE).status_code == 200
+    assert viewer("nell").get("/api/verify", params=LIVE).status_code == 200
 
 
 def test_recordings_and_clips_are_not_capped(room):
     nell, rafe = viewer("nell"), viewer("rafe")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
     # The live room is full, but a saved file costs nothing per viewer.
-    assert rafe.get("/api/verify", headers=VOD).status_code == 200
+    assert rafe.get("/api/verify", params=VOD).status_code == 200
     # And watching a recording does not take a place in the live room either.
     assert watchers.count() == 1
 
 
-def test_a_proxy_that_sends_no_path_refuses_nobody(room):
-    # An older or hand-edited Caddy config. A limit that locks the whole channel
-    # out of its own video is worse than no limit, so this fails open.
+def test_an_encoded_path_cannot_dodge_the_count(room):
+    # The scope comes from the Caddyfile, never from the forwarded path, so a
+    # request for /%6Cive/ (which Caddy and MediaMTX both read as /live/) is
+    # counted like any other.
     nell, rafe = viewer("nell"), viewer("rafe")
-    assert nell.get("/api/verify", headers=LIVE).status_code == 200
-    assert rafe.get("/api/verify").status_code == 200
+    assert nell.get("/api/verify", params=LIVE).status_code == 200
+    sneaky = {"X-Forwarded-Uri": "/%6Cive/index.m3u8"}
+    assert rafe.get("/api/verify", params=LIVE, headers=sneaky).status_code == 403
 
 
 def test_no_limit_lets_everybody_in(client):
@@ -161,13 +164,13 @@ def test_no_limit_lets_everybody_in(client):
     add_user("nell")
     add_user("rafe")
     assert db.get_max_viewers() == 0
-    assert viewer("nell").get("/api/verify", headers=LIVE).status_code == 200
-    assert viewer("rafe").get("/api/verify", headers=LIVE).status_code == 200
+    assert viewer("nell").get("/api/verify", params=LIVE).status_code == 200
+    assert viewer("rafe").get("/api/verify", params=LIVE).status_code == 200
 
 
 def test_a_signed_out_visitor_is_still_a_401_not_a_403(room):
     # The limit must not turn "you are not signed in" into "the room is full".
-    assert make_client().get("/api/verify", headers=LIVE).status_code == 401
+    assert make_client().get("/api/verify", params=LIVE).status_code == 401
 
 
 # ---- the setting ----
@@ -213,7 +216,7 @@ def test_a_viewer_cannot_read_or_set_the_limit(client):
 
 
 def test_the_dashboard_is_told_the_limit_and_who_is_watching(room):
-    viewer("nell").get("/api/verify", headers=LIVE)
+    viewer("nell").get("/api/verify", params=LIVE)
     data = room.get("/api/admin/stream").json()
     assert data["max_viewers"] == 1
     assert data["video_watchers"] == 1

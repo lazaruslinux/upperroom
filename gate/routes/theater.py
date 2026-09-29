@@ -10,16 +10,25 @@ library lives on.
 
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+import config
 import db
 import theater
 from auth import admin_user, session_user
 from config import MAX_THEATER_EPISODES, MAX_THEATER_QUERY, MIN_THEATER_QUERY
 from projector import ProjectorError, link
 
-router = APIRouter()
+def _theater_on():
+    # Read at request time, not import time, so the switch is one env value and
+    # the tests can flip it. A 404 rather than a 403: with theater off these
+    # routes do not exist as far as anyone outside can tell.
+    if not config.THEATER_ENABLED:
+        raise HTTPException(status_code=404)
+
+
+router = APIRouter(dependencies=[Depends(_theater_on)])
 
 UNAVAILABLE = "projector unavailable"
 

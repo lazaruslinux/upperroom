@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.22.0": [
+        "Theater mode is switched off for now.",
+        "Security fixes across the site, nothing for you to do.",
+    ],
     "0.21.1": [
         "The account button now shows a menu icon beside your avatar.",
         "The menu opens with your name at the top.",

@@ -233,9 +233,9 @@ def test_expired_guest_is_refused_by_verify(client):
     code = make_pass()
     visitor = make_client()
     redeem(visitor, code)
-    assert visitor.get("/api/verify").status_code == 200
+    assert visitor.get("/api/verify?scope=live").status_code == 200
     expire(visitor.get("/api/me").json()["username"])
-    assert visitor.get("/api/verify").status_code == 401
+    assert visitor.get("/api/verify?scope=live").status_code == 401
 
 
 def test_expired_guest_is_refused_by_the_chat_socket(client):
@@ -333,8 +333,18 @@ def test_guest_can_still_watch(client):
     """The other half of the rule. A guest who could not do this would have a
     pass that buys nothing."""
     guest = signed_in_guest(client)
-    assert guest.get("/api/verify").status_code == 200
+    assert guest.get("/api/verify?scope=live").status_code == 200
     assert guest.get("/api/me").json()["guest"] is True
+
+
+def test_guest_cannot_fetch_the_library_files(client):
+    """The recordings and clips are files Caddy serves once /api/verify says
+    yes, named by sequential id. A guest pass buys the broadcast only."""
+    guest = signed_in_guest(client)
+    assert guest.get("/api/verify?scope=media").status_code == 403
+    assert guest.get("/api/verify").status_code == 403
+    # The theater poster is part of what the room is watching.
+    assert guest.get("/api/verify?scope=art").status_code == 200
 
 
 def test_a_member_is_not_caught_by_any_of_the_guest_refusals(client):

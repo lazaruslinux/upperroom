@@ -6,20 +6,24 @@ socket intercepts any message starting with "/", authorizes it against a fresh
 database read of the sender's role, and never echoes it to other people.
 """
 
+import json
 import logging
-import secrets
 import time
 from collections import deque
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
+import config
 import db
 import wordfilter
 from auth import (
-    country_allowed, guest_expired, read_session, resolve_client_ip,
-    too_many_projector_connects, too_many_socket_connects,
+    country_allowed, guest_expired, key_matches, origin_allowed, read_session,
+    resolve_client_ip, too_many_projector_connects, too_many_socket_connects,
 )
-from config import COOKIE_NAME, MAX_MESSAGE_LENGTH, MAX_SOCKETS_PER_USER
+from config import (
+    COOKIE_NAME, MAX_CHAT_FRAME, MAX_MESSAGE_LENGTH, MAX_SOCKETS_PER_USER,
+)
 from hub import hub
 from projector import link as projector_link
 
@@ -268,11 +272,23 @@ async def overlay_socket(websocket: WebSocket, key):
     """A read-only connection for the OBS chat overlay. It authenticates with a
     bearer key in the URL (OBS cannot sign in), receives every broadcast, and is
     kept out of presence and the watching count. Any frame it sends is ignored."""
+    await websocket.accept()
+    # The same door as the chat socket: the connect limiter before any key work,
+    # and the country rule, which a key in the URL is no reason to skip.
+    ip = resolve_client_ip(
+        websocket.headers.get("x-forwarded-for", ""),
+        websocket.client.host if websocket.client else "",
+    )
+    if too_many_socket_connects(ip):
+        await websocket.close(code=4429)
+        return
+    if not country_allowed(ip):
+        await websocket.close(code=4403)
+        return
     stored = db.get_overlay_key()
     # Constant-time compare, and refuse if no key has ever been generated so an
     # empty/absent key can never authenticate.
-    await websocket.accept()
-    if not stored or not secrets.compare_digest(str(key), stored):
+    if not stored or not key_matches(key, stored):
         await websocket.close(code=4401)
         return
     hub.add_watcher(websocket)
@@ -302,6 +318,12 @@ async def projector_socket(websocket: WebSocket):
     Only one projector is connected at a time and the newest wins, so restarting
     it or moving it to another machine takes effect at once."""
     await websocket.accept()
+    # Theater off: nothing is listening for a projector, so refuse before any
+    # limiter or key work. 4404 tells a projector left running that it is not
+    # wanted, rather than that its key is wrong.
+    if not config.THEATER_ENABLED:
+        await websocket.close(code=4404)
+        return
     ip = resolve_client_ip(
         websocket.headers.get("x-forwarded-for", ""),
         websocket.client.host if websocket.client else "",
@@ -315,7 +337,7 @@ async def projector_socket(websocket: WebSocket):
     key = websocket.query_params.get("key")
     # Refuse when no key has ever been generated, so an absent or empty key can
     # never authenticate against an unset one.
-    if not stored or key is None or not secrets.compare_digest(str(key), stored):
+    if not stored or key is None or not key_matches(key, stored):
         await websocket.close(code=4401)
         return
     await projector_link.attach(websocket)
@@ -355,6 +377,14 @@ async def chat_socket(websocket: WebSocket):
     # network blipped" has no choice but to retry forever, and with guest passes
     # every session ends this way.
     await websocket.accept()
+
+    # A browser always says which page opened a socket. The cookie is SameSite
+    # Lax, and a page on a sibling subdomain counts as the same site, so without
+    # this such a page could open chat as whoever visits it and moderate with
+    # their role.
+    if not origin_allowed(websocket.headers):
+        await websocket.close(code=4403)
+        return
 
     session = read_session(websocket.cookies.get(COOKIE_NAME, ""))
     if not session:
@@ -418,14 +448,37 @@ async def chat_socket(websocket: WebSocket):
     await hub.join(websocket, who)
 
     sent_times = deque(maxlen=5)
+    # A guest's time is on the row, kept here so every frame can check it without
+    # a query. The reaper closes expired guests too, but only every few minutes.
+    guest_until = (user["guest_expires_at"] or 0) if user["is_guest"] else 0
     try:
         while True:
             try:
-                data = await websocket.receive_json()
+                raw = await websocket.receive_text()
             except WebSocketDisconnect:
                 break
             except Exception:
-                logger.debug("ignoring unparseable chat frame", exc_info=True)
+                # Once a send to this socket has failed, Starlette marks it
+                # disconnected, and every receive after that raises at once
+                # without awaiting anything. Going round again would spin the
+                # event loop and stall the whole gate, so a socket that is no
+                # longer connected ends here. Anything else (a binary frame) is
+                # skipped.
+                if (websocket.application_state != WebSocketState.CONNECTED
+                        or websocket.client_state != WebSocketState.CONNECTED):
+                    break
+                logger.debug("ignoring an unreadable chat frame", exc_info=True)
+                continue
+            if guest_until and time.time() >= guest_until:
+                await websocket.close(code=4401)
+                break
+            if len(raw) > MAX_CHAT_FRAME:
+                continue
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(data, dict):
                 continue
             # The hover-to-delete button on a chat line sends this instead of a
             # chat message; it removes one message by id for everyone.

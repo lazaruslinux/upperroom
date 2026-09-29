@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.21.1**. Releases are tagged in git, and the running version
+Current version: **0.22.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -74,10 +74,10 @@ only repackages the video and stays light.
   previews as `"Big whiff" - Stream Clip` over the channel name and the game it
   was cut from, with a frame of the clip beside them; a revoked link previews as
   nothing at all.
-- A theater mode for watching something together: put on a film or an episode
+- An optional theater mode for watching something together, off unless you set
+  `SELFSTREAM_THEATER=1`: put on a film or an episode
   from your own media library and everyone in the room watches it at once, with
-  an
-  intermission card between titles and a Now showing panel as each one starts.
+  an intermission card between titles and a Now showing panel as each one starts.
   A small separate service (`projector/`) does the playing from whatever machine
   your library is on, and connects outward only, so that machine needs no open
   port. While a session runs nothing is recorded and clips are off. See
@@ -204,7 +204,8 @@ Three containers:
 
 A fourth, `projector`, is optional and does not run here: it runs on whatever
 machine holds your media library, connects outward to `gate` and `mediamtx`, and
-plays titles into the channel for theater mode.
+plays titles into the channel for theater mode. It is only accepted when
+`SELFSTREAM_THEATER=1` is set.
 
 Demo mode adds three more, behind a Compose profile.
 

@@ -11,8 +11,10 @@ session cookie.
 import asyncio
 import ipaddress
 import logging
+import secrets
 import time
 from collections import defaultdict, deque
+from urllib.parse import urlsplit
 
 import geoip2.database
 import jwt
@@ -20,7 +22,7 @@ import jwt
 import db
 from config import (
     ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, GUEST_REAP_INTERVAL,
-    JWT_SECRET, MAX_SOCKET_CONNECTS, SAFE_USERNAME, SESSION_HOURS,
+    JWT_SECRET, MAX_SOCKET_CONNECTS, SAFE_USERNAME, SESSION_HOURS, SITE_URL,
 )
 
 logger = logging.getLogger("upperroom.auth")
@@ -185,15 +187,50 @@ _ATTEMPTS = _LOGIN_LIMITER._hits
 
 def issue_token(user):
     now = int(time.time())
+    expires = now + SESSION_HOURS * 3600
+    # A guest's token ends with the guest, so a copy of it replayed later is
+    # worthless everywhere, not only on the routes that re-read the row.
+    guest_until = int(user["guest_expires_at"] or 0) if user["is_guest"] else 0
+    if guest_until:
+        expires = min(expires, guest_until)
     payload = {
         "sub": user["username"],
         "name": user["display_name"],
         "admin": bool(user["is_admin"]),
         "mod": bool(user["is_moderator"]),
         "iat": now,
-        "exp": now + SESSION_HOURS * 3600,
+        "exp": expires,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def key_matches(given, stored):
+    """Constant-time compare of a key from a URL against the stored one. As bytes,
+    because compare_digest raises on a str holding anything but ASCII, and a
+    stranger chooses what is in the URL."""
+    return secrets.compare_digest(str(given).encode(), str(stored).encode())
+
+
+def origin_allowed(headers):
+    """Whether a write, or a chat socket, came from this site's own pages.
+
+    The session cookie is SameSite=Lax, which keeps another site's form from
+    carrying it. But a page on a sibling subdomain of the same domain counts as
+    the same site and gets the cookie anyway, so writes also have to come from
+    this exact origin. Browsers name where a request came from in Sec-Fetch-Site
+    and Origin. A client that sends neither (curl, the tests, MediaMTX posting
+    to /mtx-auth) is not a browser anyone could be tricked into using, and
+    passes."""
+    if headers.get("sec-fetch-site", "") in ("cross-site", "same-site"):
+        return False
+    origin = headers.get("origin")
+    if origin is None:
+        return True
+    netloc = urlsplit(origin).netloc.lower() if origin != "null" else ""
+    allowed = {headers.get("host", "").lower()}
+    if SITE_URL:
+        allowed.add(urlsplit(SITE_URL).netloc.lower())
+    return bool(netloc) and netloc in allowed
 
 
 def read_session(token):
@@ -284,6 +321,22 @@ def can_moderate(user):
     return bool(user and (user["is_admin"] or user["is_moderator"]))
 
 
+def may_act_on(user, owner_username):
+    """Whether `user` may edit or remove something `owner_username` made.
+
+    The author always may and an admin always may. A moderator may too, except
+    on an admin's things: the same line chat already draws, where a moderator
+    cannot delete an admin's message or time an admin out."""
+    if not user:
+        return False
+    if user["username"] == owner_username or user["is_admin"]:
+        return True
+    if not user["is_moderator"]:
+        return False
+    owner = db.get_user(owner_username) if owner_username else None
+    return not (owner and owner["is_admin"])
+
+
 # ---- Caller address -------------------------------------------------------
 # X-Forwarded-For is a list the caller gets to start writing, and Caddy appends
 # the address it actually saw rather than replacing what arrived. A request sent
@@ -296,14 +349,17 @@ def can_moderate(user):
 # nobody upstream could have forged. Take exactly that, and never look further
 # left: everything to the left arrived from outside and is decoration.
 #
-# This trusts one hop, which is the topology this ships with (caller -> Caddy ->
-# gate) and the one the Caddyfile's "trusted_proxies static private_ranges"
-# describes. Note the alternative of walking left past addresses that look like
+# The Caddyfile now goes one step further and REPLACES the header on the way to
+# the gate with its own resolved client address ({client_ip}), so the gate gets
+# exactly one entry. That is what makes a second proxy in front of Caddy work (a
+# host-level Caddy on a shared box, say): Caddy trusts it through
+# "trusted_proxies static private_ranges", reads the visitor from its header,
+# and hands the gate the visitor, where appending would have handed it the
+# front proxy's private address and put every visitor on one rate-limit key.
+# Note the alternative of walking left past addresses that look like
 # infrastructure would be actively wrong here: on a LAN-only install every real
 # viewer has a private address, and skipping those would collapse the whole
-# house into a single rate-limit key. If you put another proxy in front of
-# Caddy, this needs to skip that many extra entries, and the Caddyfile needs to
-# trust it too.
+# house into a single rate-limit key.
 
 
 def resolve_client_ip(forwarded, peer):

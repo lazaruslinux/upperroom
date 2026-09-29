@@ -111,7 +111,8 @@ yourself out.
 `/admin` opens with your own watch page in a frame, and the controls under it
 are grouped in five tabs:
 
-- **Broadcast**: the theater session and the **Room limit**.
+- **Broadcast**: the **Room limit**, and the theater session when theater is
+  switched on (`docs/11-theater.md`).
 - **Content**: the library of recordings and clips you review, pin and delete,
   and the **Storage** limits that decide how long they last.
 - **People**: accounts, bans, invite codes and guest passes.
@@ -227,8 +228,6 @@ order. Left to right:
   changes shape as you move around.
 - **Search**, in the middle. It matches the titles of past broadcasts and clips
   as you type and opens the one you pick. It searches the archive, not chat.
-- **The bell** and **the envelope**, on the right. Both are placeholders today:
-  there are no notifications and no messages yet, and each says so when tapped.
 - **Your points**, as a `pts N` chip, with a note on how they are earned.
   Anyone with no balance to show does not get the chip at all. Spending points
   is still done from the chat bar on the watch page.
