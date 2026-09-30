@@ -69,6 +69,9 @@ def stream_transition(going_online, theater_active, theater_recently_closed=Fals
         return {
             "record": not theater_active,
             "notify": not theater_active,
+            # The mirror of announce_end: a title going on is told as what is
+            # showing, not as a stream starting.
+            "announce_start": not theater_active,
             "state": "playing" if theater_active else None,
         }
     return {

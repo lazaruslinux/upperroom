@@ -35,11 +35,15 @@ const FONTS = {
   sora: "'Sora', sans-serif",
 };
 
-function avatarColor(seed) {
+// A soft color per person, for the first-letter squares and for a name
+// nobody has chosen a color for. The same hues the room uses.
+function hueOf(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return `hsl(${hash}, 55%, 45%)`;
+  return hash;
 }
+function avatarColor(seed) { return `hsl(${hueOf(seed)}, 34%, 66%)`; }
+function nameColor(seed) { return `hsl(${hueOf(seed)}, 45%, 76%)`; }
 
 function avatarNode(username, name, version) {
   if (version) {
@@ -56,19 +60,19 @@ function avatarNode(username, name, version) {
   return span;
 }
 
-// The host (admin) shows a bright-red video-camera icon; a moderator shows a
-// small blue "mod" tag. Matches the live chat marks.
+// The host carries a small camera in the accent; a moderator an engraved tag.
+// Matches the live chat marks.
 const CAMERA_SVG =
-  '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">' +
-  '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9A1.5 1.5 0 0 1 13.5 18h-9' +
-  'A1.5 1.5 0 0 1 3 16.5v-9Zm14 3 3.25-2.17a.6.6 0 0 1 .95.5v6.34a.6.6 0 0 1-.95.5L17 13.5v-3Z"/></svg>';
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="3" y="6" width="12" height="12" rx="1.5"/><path d="m15 10.5 5-3v9l-5-3"/></svg>';
 
 function roleBadgeNode(admin, mod) {
   if (!admin && !mod) return null;
   const span = document.createElement("span");
   if (admin) {
     span.className = "role-tag host";
-    span.title = "Broadcaster";
+    span.title = "Host";
     span.innerHTML = CAMERA_SVG;   // a static, trusted icon; no user data
   } else {
     span.className = "role-tag mod";
@@ -98,11 +102,9 @@ function appendReplayLine(msg) {
   const line = document.createElement("div");
   line.className = "msg";
   line.appendChild(avatarNode(msg.username, msg.display_name, msg.avatar_version || 0));
-  const badge = roleBadgeNode(msg.admin, msg.moderator);
-  if (badge) line.appendChild(badge);
-  const wrap = document.createElement("span");
+  const wrap = document.createElement("div");
   wrap.className = "msg-body";
-  const head = document.createElement("span");
+  const head = document.createElement("div");
   head.className = "msg-head";
   const name = document.createElement("span");
   name.className = msg.admin ? "name admin" : "name";
@@ -110,11 +112,14 @@ function appendReplayLine(msg) {
   // The author's chat colors were frozen into the snapshot, so the replay looks
   // the way the live chat did: their name color on the name, their message color
   // on the text. Colors were guarded for readability when they were chosen.
-  if (msg.name_color) name.style.color = msg.name_color;
+  name.style.color = msg.name_color || nameColor(msg.username || msg.display_name || "?");
+  head.appendChild(name);
+  const badge = roleBadgeNode(msg.admin, msg.moderator);
+  if (badge) head.appendChild(badge);
   const time = document.createElement("span");
   time.className = "msg-time";
   time.textContent = clock(msg.offset_s);
-  head.append(name, time);
+  head.appendChild(time);
   const body = document.createElement("span");
   body.className = "body";
   if (msg.deleted) {
@@ -141,7 +146,7 @@ function revealUpTo(t) {
 }
 
 function resetTo(t) {
-  replayMessages.innerHTML = "";
+  replayMessages.textContent = "";
   shownIdx = 0;
   if (replayOn) revealUpTo(t);
 }
@@ -163,8 +168,9 @@ video.addEventListener("seeking", () => {
 replayToggle.addEventListener("click", () => {
   replayOn = !replayOn;
   replayToggle.textContent = replayOn ? "On" : "Off";
+  replayToggle.setAttribute("aria-pressed", replayOn ? "true" : "false");
   if (replayOn) resetTo(video.currentTime);
-  else replayMessages.innerHTML = "";
+  else replayMessages.textContent = "";
 });
 
 // ---- chat-activity heatmap ----
@@ -249,10 +255,6 @@ async function requireAuth() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
-  // A guest pass buys the stream and chat, nothing else on the site.
-  // Send them where their pass actually works rather than rendering a
-  // page whose every request will 401.
-  if (data.guest) { window.location.href = "/watch"; return false; }
   me = data;
   return true;
 }
@@ -266,6 +268,7 @@ async function loadMedia() {
   } catch {
     titleEl.textContent = "Not found";
     subEl.textContent = "This recording is no longer available.";
+    video.closest(".monitor").hidden = true;
     return;
   }
   titleEl.textContent = TYPE === "vod" ? meta.title : meta.name;
@@ -298,17 +301,6 @@ async function loadMedia() {
   buildHeatmap(meta.duration);
 }
 
-// The channel accent (the brand color) is server-driven. The head bootstrap
-// paints the last-seen value from localStorage; this syncs it with the server on
-// load and remembers it for the next no-flash paint.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
-}
-
 
 // ---- likes and comments ---------------------------------------------------
 // Accounts only, and deliberately beside the chat replay rather than inside it.
@@ -336,7 +328,7 @@ function showCommentMsg(text, ok) {
 }
 
 function renderComments(comments) {
-  commentList.innerHTML = "";
+  commentList.textContent = "";
   commentEmpty.hidden = comments.length > 0;
   comments.forEach((c) => {
     const row = document.createElement("div");
@@ -353,12 +345,12 @@ function renderComments(comments) {
     who.className = "comment-author";
     // textContent, never innerHTML: a display name is somebody else's input.
     who.textContent = c.display_name || c.username;
-    if (c.name_color) who.style.color = c.name_color;
+    who.style.color = c.name_color || nameColor(c.username || "?");
     head.appendChild(who);
     const badge = roleBadgeNode(c.is_admin, c.is_moderator);
     if (badge) head.appendChild(badge);
     const when = document.createElement("span");
-    when.className = "comment-when muted";
+    when.className = "comment-when";
     when.textContent = new Date(c.ts * 1000).toLocaleString([], {
       month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
     });
@@ -382,7 +374,7 @@ function renderComments(comments) {
     if (!c.deleted_by && (mine || canModerate)) {
       const del = document.createElement("button");
       del.type = "button";
-      del.className = "chip-btn comment-delete";
+      del.className = "btn comment-delete";
       del.textContent = "Delete";
       del.addEventListener("click", () => removeComment(c.id, del));
       bubble.appendChild(del);
@@ -402,6 +394,7 @@ async function loadReactions() {
     canModerate = data.can_moderate;
     likeCount.textContent = data.likes;
     likeBtn.classList.toggle("pinned-chip", liked);
+    likeBtn.setAttribute("aria-pressed", liked ? "true" : "false");
     likeBtn.title = liked ? "You like this. Click to undo." : "Like this";
     likeBtn.hidden = false;
     commentsSection.hidden = false;
@@ -422,6 +415,7 @@ likeBtn.addEventListener("click", async () => {
       liked = data.liked;
       likeCount.textContent = data.likes;
       likeBtn.classList.toggle("pinned-chip", liked);
+      likeBtn.setAttribute("aria-pressed", liked ? "true" : "false");
       likeBtn.title = liked ? "You like this. Click to undo." : "Like this";
     }
   } catch { /* leave the count as it was */ }
@@ -605,17 +599,10 @@ async function setShare(on, btn) {
   btn.disabled = false;
 }
 
-// The operator's site name leads the top bar and names the browser tab, so the
-// platform brand ("powered by upperroom") stays a credit rather than the title.
 async function boot() {
   if (!(await requireAuth())) return;
-  // This page already asks for status, so hand the site name to the nav rather
-  // than making it fetch the same thing again.
-  let status = {};
-  try { status = await (await fetch("/api/status")).json(); } catch (e) {}
-  applyAccent(status.accent);
-  // Playing one item is where the browse page leads, so Browse stays lit.
-  mountNav(me, { current: "browse", siteName: status.site_name });
+  // Playing one item is where past broadcasts lead, so that stays lit.
+  mountNav(me, { current: "browse" });
   if (!ID) { titleEl.textContent = "Not found"; return; }
   await loadMedia();
   loadReactions();

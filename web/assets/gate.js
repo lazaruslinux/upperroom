@@ -1,6 +1,7 @@
-// Login page. A plain username and password sign in, plus an invite-code sign up
-// revealed by the "have an invite?" toggle. On success the gate sets a session
-// cookie and we send the viewer to the home page.
+// The sign-in page. A username and password, plus an invite-code sign up
+// behind "Have an invite code?". On success the gate sets a session cookie and
+// the viewer goes where the channel is: the room if somebody is on air, home
+// if nobody is. The same page is an invite link at /join#<code>.
 
 // On a brand new install no account exists yet; send the visitor to the one-time
 // setup wizard instead of showing a login they cannot pass.
@@ -15,19 +16,45 @@
 
 const form = document.getElementById("login-form");
 const errorBox = document.getElementById("error");
+const registerForm = document.getElementById("register-form");
+const rError = document.getElementById("r-error");
+const showRegister = document.getElementById("show-register");
+const showLogin = document.getElementById("show-login");
+const doorName = document.getElementById("door-name");
+const doorSub = document.getElementById("door-sub");
 
-function showError(message) {
-  errorBox.textContent = message;
-  errorBox.hidden = false;
+let live = false;
+
+// The lamp and the name on the door both ride the public status poll, so the
+// page wears the operator's brand before anyone has signed in.
+mountStrip({
+  onStatus: (data) => {
+    live = !!data.online;
+    if (data.site_name) doorName.textContent = data.site_name;
+    doorSub.textContent = live ? "is on air" : "is off air";
+  },
+});
+
+// Where a fresh session goes: the room while live, home while not. Asked
+// again at the moment of signing in rather than trusted from the last poll,
+// which can be up to a quarter of a minute old.
+async function landing() {
+  try {
+    const data = await (await fetch("/api/status")).json();
+    return data.online ? "/watch" : "/home";
+  } catch {
+    return live ? "/watch" : "/home";
+  }
 }
 
-function clearError() {
-  errorBox.hidden = true;
+function showError(box, message) {
+  box.textContent = message;
+  box.hidden = false;
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  clearError();
+  errorBox.hidden = true;
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
   let reply;
@@ -38,34 +65,49 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify({ username, password }),
     });
   } catch {
-    showError("Could not reach the server.");
+    showError(errorBox, "Could not reach the server.");
     return;
   }
   if (reply.ok) {
-    window.location.href = "/home";
+    window.location.href = await landing();
   } else {
     const data = await reply.json().catch(() => ({}));
-    showError(data.error || "Could not sign you in.");
+    showError(errorBox, data.error || "Could not sign you in.");
   }
 });
 
 // ---- invite registration ---------------------------------------------------
 
-const registerForm = document.getElementById("register-form");
-const rError = document.getElementById("r-error");
+function showForm(register) {
+  form.hidden = register;
+  registerForm.hidden = !register;
+  showRegister.hidden = register;
+  showLogin.hidden = !register;
+  document.getElementById(register ? "r-code" : "username").focus();
+}
 
-document.getElementById("show-register").addEventListener("click", () => {
-  form.hidden = true;
-  document.getElementById("invite-alt").hidden = true;
-  registerForm.hidden = false;
-  document.getElementById("r-code").focus();
-});
+showRegister.addEventListener("click", () => showForm(true));
+showLogin.addEventListener("click", () => showForm(false));
 
-document.getElementById("show-login").addEventListener("click", () => {
-  registerForm.hidden = true;
-  document.getElementById("invite-alt").hidden = false;
-  form.hidden = false;
-});
+// An invite link. The code rides after the #, which a browser never sends, so
+// no server, log or link preview sees it; it goes into the form and then out
+// of the address bar and the history. Somebody already signed in goes home.
+if (window.location.pathname === "/join") {
+  let code = "";
+  try { code = decodeURIComponent(window.location.hash.slice(1)).trim(); } catch {}
+  showForm(true);
+  if (code) {
+    document.getElementById("r-code").value = code;
+    document.getElementById("r-username").focus();
+  }
+  if (window.location.hash) history.replaceState(null, "", "/join");
+  (async () => {
+    try {
+      const me = await (await fetch("/api/me")).json();
+      if (me.authed) window.location.href = "/home";
+    } catch { /* stay on the form */ }
+  })();
+}
 
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -84,113 +126,19 @@ registerForm.addEventListener("submit", async (event) => {
       body: JSON.stringify(body),
     });
   } catch {
-    rError.textContent = "Could not reach the server.";
-    rError.hidden = false;
+    showError(rError, "Could not reach the server.");
     return;
   }
   if (reply.ok) {
-    window.location.href = "/home";
+    window.location.href = await landing();
   } else {
     const data = await reply.json().catch(() => ({}));
-    rError.textContent = data.error || "Could not create your account.";
-    rError.hidden = false;
+    showError(rError, data.error || "Could not create your account.");
   }
 });
 
-// ---- live status badge ----------------------------------------------------
-// Polls the public status endpoint and shows whether the stream is live. When
-// it is, the badge counts up from the moment the stream started, ticking
-// locally so we do not have to poll just to keep the duration fresh.
-
-// The channel-wide accent flavor rides along on the public status poll, so the
-// login page paints the brand color even before anyone signs in. The head
-// bootstrap already applied the last-seen value from localStorage; this keeps it
-// in sync with the server and remembers it for the next no-flash paint.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
-}
-
-// The operator's site name also rides the public status poll, so the login page
-// shows their brand (leading "livestream powered by upperroom") before anyone
-// signs in. Falls back to the static "upperroom" already in the markup.
-function applySiteName(value) {
-  if (!value) return;
-  const el = document.getElementById("site-title");
-  if (el && el.textContent !== value) el.textContent = value;
-  if (document.title !== value) document.title = value;
-}
-
-const statusBox = document.getElementById("status");
-const statusLabel = document.getElementById("status-label");
-const statusTime = document.getElementById("status-time");
-const statusWatching = document.getElementById("status-watching");
-let liveSince = null;
-let tick = null;
-
-// While live, the status row also shows how many people are watching, taken from
-// the public status poll. Hidden entirely when offline so the row stays clean.
-function renderWatching(count) {
-  const n = typeof count === "number" ? count : 0;
-  statusWatching.textContent = n === 1 ? "1 watching" : `${n} watching`;
-  statusWatching.hidden = false;
-}
-
-function formatStarted(seconds) {
-  // Keep a friendly "just started" for the first ten minutes, then count up.
-  if (seconds < 600) return "just started";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `started ${hours}h ${minutes}m ago`;
-  return `started ${minutes} minutes ago`;
-}
-
-function renderLive() {
-  const elapsed = Math.floor(Date.now() / 1000) - liveSince;
-  statusTime.textContent = formatStarted(elapsed);
-}
-
-async function refreshStatus() {
-  let online = false;
-  let since = null;
-  let watching = 0;
-  try {
-    const data = await (await fetch("/api/status")).json();
-    online = !!data.online;
-    since = data.since;
-    watching = data.watching;
-    applyAccent(data.accent);
-    applySiteName(data.site_name);
-    // Once the stream is actually on, a countdown to it is just noise.
-  } catch {
-    online = false;
-  }
-
-  if (online) {
-    statusBox.className = "status status-live";
-    statusLabel.textContent = "Live";
-    liveSince = since || Math.floor(Date.now() / 1000);
-    renderLive();
-    renderWatching(watching);
-    if (!tick) tick = setInterval(renderLive, 30000);
-  } else {
-    statusBox.className = "status status-offline";
-    statusLabel.textContent = "Offline";
-    statusTime.textContent = "";
-    statusWatching.hidden = true;
-    liveSince = null;
-    if (tick) { clearInterval(tick); tick = null; }
-  }
-}
-
-refreshStatus();
-setInterval(refreshStatus, 20000);
-
-// Register the pass-through service worker. It caches nothing; it exists so
-// Chrome will offer to install the site to a phone's home screen.
+// Register the service worker. It caches nothing; it shows the go-live push,
+// and it is why Chrome will offer to install the site to a phone's home screen.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

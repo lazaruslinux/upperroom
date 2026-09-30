@@ -20,14 +20,13 @@ from PIL import Image, ImageOps
 import changelog
 import db
 from auth import (
-    GUEST_REFUSED, _clean_username, client_ip, country_allowed, guest_expired,
-    issue_token, member_user, read_session, session_user, too_many_attempts,
-    too_many_password_changes,
+    _clean_username, client_ip, country_allowed, issue_token, read_session,
+    session_user, too_many_attempts, too_many_password_changes,
 )
 from config import (
     ALLOWED_FONTS, AVATAR_DIR, AVATAR_SIZE, COOKIE_NAME, MAX_AVATAR_BYTES,
-    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_EMAIL, MAX_SITE_NAME, MIN_PASSWORD,
-    SAFE_USERNAME, SESSION_HOURS, VERSION, sanitize_chat_color,
+    MAX_BIO_LENGTH, MAX_DISPLAY_NAME, MAX_SITE_NAME, MIN_PASSWORD,
+    SAFE_USERNAME, SESSION_HOURS, THEATER_ENABLED, VERSION, sanitize_chat_color,
 )
 import watchers
 from hub import hub
@@ -45,21 +44,15 @@ _INTERNAL_NETS = tuple(
 )
 
 
-def _signed_in_response(user, payload=None, max_age=None):
+def _signed_in_response(user, payload=None):
     """A JSON response that also sets the session cookie for `user`, exactly like
-    a successful sign in. Used by the login, setup, and register endpoints so all
-    three log the account in the moment it is created or authenticated.
-
-    max_age overrides how long the cookie lives, which guest redemption uses so
-    the cookie dies with the pass instead of lingering for the normal session
-    length. It is belt and braces, not the enforcement: the expiry that matters
-    is checked against the row on every /api/verify and on the chat socket, so a
-    guest who keeps a cookie alive by hand still stops watching on time."""
+    a successful sign in. Used by the setup and register endpoints so both log
+    the account in the moment it is created."""
     response = JSONResponse(payload or {"ok": True})
     response.set_cookie(
         key=COOKIE_NAME,
         value=issue_token(user),
-        max_age=SESSION_HOURS * 3600 if max_age is None else max_age,
+        max_age=SESSION_HOURS * 3600,
         httponly=True,
         secure=True,
         samesite="lax",
@@ -70,9 +63,9 @@ def _signed_in_response(user, payload=None, max_age=None):
 
 @router.get("/api/me")
 def me(request: Request):
-    # A token outlives its account. A deleted row, or a guest whose time is up,
-    # is signed out here like everywhere else, rather than being shown the pages
-    # (and, from the token alone, the role) of somebody who no longer exists.
+    # A token outlives its account. A deleted row is signed out here like
+    # everywhere else, rather than being shown the pages (and, from the token
+    # alone, the role) of somebody who no longer exists.
     user = session_user(request)
     if not user:
         return {"authed": False}
@@ -85,16 +78,11 @@ def me(request: Request):
         "avatar": user["avatar_version"],
         "font": user["chat_font"],
         "bio": user["bio"],
-        "notify_live": bool(user["notify_live"]),
-        "email": user["email"],
         "name_color": user["name_color"],
         "msg_color": user["msg_color"],
-        # Read from the row, not the token: the session cookie has no idea what
-        # a guest is, which is deliberate.
-        "guest": bool(user["is_guest"]),
-        # Absolute, so the countdown does not drift with a slow page load and
-        # does not care about the visitor's clock being wrong by minutes.
-        "guest_expires_at": user["guest_expires_at"],
+        # Whether theater is switched on for this server. The room skips asking
+        # for its state when it is off, rather than asking and being told 404.
+        "theater": THEATER_ENABLED,
         # The one-time "what changed" notice, or None once it has been read.
         # Only ever the running release: somebody who skips three of them gets
         # the newest and nothing else.
@@ -138,6 +126,10 @@ def channel(request: Request):
         "title": info["stream_title"],
         "description": info["stream_description"],
         "accent": info["accent"],
+        # When the last broadcast stopped, for the off-air room's "last on air"
+        # line. Signed-in only, like the rest of this: the public status says
+        # whether the channel is live and nothing about its habits.
+        "last_air_ended_at": db.get_last_air_ended_at(),
     }
     if not owner:
         return {**base, "username": None, "name": "upperroom", "avatar": 0}
@@ -175,27 +167,20 @@ def verify(request: Request, scope: str = ""):
     # returns 401 and Caddy refuses to serve the video. Checking the account
     # exists (not just that the token is valid) means deleting a user cuts off
     # their video at once, rather than waiting for the token to expire.
-    # A guest whose pass has run out is refused here too, which is what actually
-    # stops the video: the player's next segment request gets a 401 from Caddy.
     session = read_session(request.cookies.get(COOKIE_NAME, ""))
     if not session:
         return Response(status_code=401)
     user = db.get_user(session["sub"])
-    if not user or guest_expired(user):
+    if not user:
         return Response(status_code=401)
     # Which door Caddy is asking about, named in the query string by each
     # forward_auth in the Caddyfile. Not read from the forwarded path: that
     # header carries the raw request target, so an encoded path like /%6Cive/
     # reached the live stream while reading as something else here, uncounted.
     #
-    # art is the theater poster, shown to everyone in the room. Anything else is
-    # the saved library (recordings and clips), which is members only: a guest
-    # pass buys the broadcast, not the archive of the ones they missed.
-    if scope == "art":
-        return Response(status_code=200)
+    # art is the theater poster and anything else the saved library
+    # (recordings and clips); any signed-in account may have both.
     if scope != "live":
-        if user["is_guest"]:
-            return Response(status_code=403)
         return Response(status_code=200)
     is_admin = bool(user["is_admin"])
     if _room_is_full(session["sub"], is_admin):
@@ -230,6 +215,9 @@ async def mtx_auth(request: Request):
         stored = db.get_stream_key()
         password = str(body.get("password") or "")
         if stored and secrets.compare_digest(password, stored):
+            # The dashboard's first go-live step ("OBS has these settings")
+            # ticks on this, so it only counts a publish the key let through.
+            db.note_publish(time.time())
             return Response(status_code=200)
         return Response(status_code=401)
 
@@ -401,14 +389,9 @@ def logout():
 async def change_password(request: Request):
     # Lets a signed in viewer change their own password. They must prove they
     # know the current one, so a borrowed session cannot lock the owner out.
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    # A guest row has no usable password hash to change, and no owner to lock
-    # out. Refused explicitly rather than left to fail the current-password
-    # check, which would read as "you typed it wrong".
-    member = member_user(request)
+    member = session_user(request)
     if not member:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     username = member["username"]
     # Rate limit per address before the current-password check runs. A valid
     # session is required to reach here, but that is exactly the case worth
@@ -454,12 +437,9 @@ def crop_to_square(picture):
 
 @router.post("/api/avatar")
 async def set_avatar(request: Request, image: UploadFile = File(...)):
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    # An avatar is a file that outlives a thirty minute pass.
-    member = member_user(request)
+    member = session_user(request)
     if not member:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     username = member["username"]
 
     length = request.headers.get("content-length", "")
@@ -512,13 +492,9 @@ def get_avatar(username: str, request: Request):
 
 @router.post("/api/profile")
 async def set_profile(request: Request):
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    # Guests pick their display name once, when they redeem the pass. There is
-    # no settings modal behind this for them and nothing here to persist.
-    member = member_user(request)
+    member = session_user(request)
     if not member:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     username = member["username"]
     body = await request.json()
 
@@ -548,17 +524,6 @@ async def set_profile(request: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     if name_color is not None or msg_color is not None:
         db.set_chat_colors(username, name_color=name_color, msg_color=msg_color)
-
-    if "notify_live" in body:
-        db.set_notify_live(username, bool(body.get("notify_live")))
-
-    if "email" in body:
-        email = str(body.get("email") or "").strip()[:MAX_EMAIL]
-        if email and "@" not in email:
-            return JSONResponse(
-                {"error": "That email address looks invalid."}, status_code=400
-            )
-        db.set_email(username, email)
 
     name = None
     if "display_name" in body:

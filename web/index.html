@@ -4,24 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>upperroom</title>
-  <script>
-    // Apply the saved theme before first paint so the page never flashes.
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- How the site looks when someone pastes the link into a chat. Static, and
        so deliberately generic: a crawler does not run JavaScript, and this page
        is public, so it says upperroom rather than the operator's own name. The
        watch page is the one that is actually shared, and the gate renders its
-       tags live (see gate/routes/media.py). -->
+       tags live (see gate/routes/media.py). The gate also serves this page as
+       /join, an invite link, and rewrites everything between the two markers
+       with an invite card. -->
+  <!-- og:start -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="upperroom">
   <meta property="og:description" content="A private livestream. Sign in to watch.">
@@ -29,53 +27,62 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <!-- og:end -->
+  <link rel="stylesheet" href="/assets/style.css?v=65">
 </head>
-<body class="center">
-  <main class="card">
-    <div id="status" class="status status-loading">
-      <span class="dot"></span>
-      <span id="status-label">Checking status…</span>
-      <span id="status-time" class="status-time"></span>
-      <span id="status-watching" class="status-watching"></span>
-    </div>
-    <div class="masthead">
-      <h1 class="site-title" id="site-title">upperroom</h1>
-      <p class="powered">powered by <a class="brand-link" href="https://lazaruslinux.com" target="_blank" rel="noopener" title="Lazarus Labs"><span class="wordmark">upper<span class="wm-accent">room</span></span></a></p>
-    </div>
-    <p class="muted">sign in</p>
-    <form id="login-form">
-      <input type="text" id="username" placeholder="Username" autocomplete="username" required>
-      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
-      <button type="submit">Sign in</button>
-      <p id="error" class="error" hidden></p>
+<body class="door-page">
+  <div id="site-nav"></div>
+
+  <main class="door">
+    <h1 class="door-title"><span id="door-name">upperroom</span><span id="door-sub" class="door-sub">&nbsp;</span></h1>
+
+    <form id="login-form" class="door-form">
+      <label class="field-label">
+        <span class="engraved">Username</span>
+        <input type="text" id="username" class="field" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Password</span>
+        <input type="password" id="password" class="field" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="loud">Sign in</button>
+      <p id="error" class="error" role="alert" hidden></p>
     </form>
 
-    <p class="alt-toggle" id="invite-alt">
-      <button type="button" id="show-register">enter invite code</button>
-      <a href="/guest" class="guest-alt">enter guest pass</a>
+    <form id="register-form" class="door-form" autocomplete="off" hidden>
+      <label class="field-label">
+        <span class="engraved">Invite code</span>
+        <input type="text" id="r-code" class="field" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Username</span>
+        <input type="text" id="r-username" class="field" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Name in chat</span>
+        <input type="text" id="r-name" class="field" autocomplete="nickname" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Password, 8 characters or more</span>
+        <input type="password" id="r-password" class="field" autocomplete="new-password" required>
+      </label>
+      <button type="submit" class="loud">Join</button>
+      <p id="r-error" class="error" role="alert" hidden></p>
+    </form>
+
+    <p class="door-alt">
+      <button type="button" id="show-register" class="link-btn">Have an invite code?</button>
+      <button type="button" id="show-login" class="link-btn" hidden>Back to sign in</button>
     </p>
-
-    <form id="register-form" autocomplete="off" hidden>
-      <p class="muted">redeem an invite</p>
-      <input type="text" id="r-code" placeholder="Invite code" autocomplete="off" required>
-      <input type="text" id="r-username" placeholder="Username" autocomplete="off" required>
-      <input type="text" id="r-name" placeholder="Display name" autocomplete="off" required>
-      <input type="password" id="r-password" placeholder="Password (at least 8 characters)" autocomplete="new-password" required>
-      <button type="submit">Join</button>
-      <p id="r-error" class="error" hidden></p>
-      <p class="alt-toggle">
-        <button type="button" id="show-login">back to sign in</button>
-      </p>
-    </form>
   </main>
 
-  <footer class="site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
-  <script src="/assets/gate.js?v=21"></script>
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/gate.js?v=22"></script>
 </body>
 </html>

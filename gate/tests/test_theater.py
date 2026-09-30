@@ -31,7 +31,6 @@ from hub import hub
 from projector import ProjectorError, link
 
 from test_api import add_user, drain_join, login, setup_admin
-from test_guest import make_pass, redeem
 
 
 # ---- helpers --------------------------------------------------------------
@@ -90,7 +89,7 @@ class StubProjector:
 
 
 def attach(stub, opening="idle"):
-    """Seat a stub projector, including the state report a real one sends the
+    """Attach a stub projector, including the state report a real one sends the
     moment it connects (projector/main.py serve()).
 
     Skipping that would test a connection no projector ever makes, and it is the
@@ -106,7 +105,7 @@ def wait_until(predicate, timeout=2.0):
     """Wait for something the app's own thread does.
 
     The TestClient runs the app in a portal thread, so a socket the test has
-    just opened is seated a moment after the handshake returns. Waiting for the
+    just opened is joined a moment after the handshake returns. Waiting for the
     state rather than assuming it is what keeps this from passing on a fast
     machine and failing on a loaded one."""
     deadline = time.time() + timeout
@@ -281,6 +280,7 @@ def test_going_live_during_a_session_neither_records_nor_announces():
     plan = theater.stream_transition(True, theater_active=True)
     assert plan["record"] is False
     assert plan["notify"] is False
+    assert plan["announce_start"] is False
     assert plan["state"] == "playing"
 
 
@@ -317,7 +317,7 @@ def test_the_offline_right_after_a_theater_close_is_not_announced(client, monkey
 
 def test_without_a_session_every_transition_behaves_exactly_as_before():
     assert theater.stream_transition(True, theater_active=False) == {
-        "record": True, "notify": True, "state": None,
+        "record": True, "notify": True, "announce_start": True, "state": None,
     }
     assert theater.stream_transition(False, theater_active=False) == {
         "announce_end": True, "state": None,
@@ -378,15 +378,14 @@ def test_api_theater_is_off_when_nothing_is_running(client):
     }
 
 
-def test_a_guest_may_read_the_theater_state(client):
-    # Watching is the whole of what a guest pass buys, and between titles the
-    # intermission card is what there is to watch.
+def test_a_viewer_may_read_the_theater_state(client):
+    # Between titles the intermission card is what there is to watch.
     setup_admin(client, username="owner")
     start(client)
-    code = make_pass()
-    guest = make_client()
-    assert redeem(guest, code).status_code == 200
-    body = guest.get("/api/theater").json()
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    body = viewer.get("/api/theater").json()
     assert body["active"] is True and body["state"] == "intermission"
 
 
@@ -989,14 +988,15 @@ def test_the_gate_serves_a_poster_to_anyone_signed_in(client):
         os.remove(stored)
 
 
-def test_a_guest_may_see_the_poster(client):
+def test_a_viewer_may_see_the_poster(client):
     # The poster is part of what the room is watching, like the state itself.
     setup_admin(client, username="owner")
-    guest = make_client()
-    assert redeem(guest, make_pass()).status_code == 200
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
     name, stored = stored_art()
     try:
-        assert guest.get(f"/media/art/{name}").status_code == 200
+        assert viewer.get(f"/media/art/{name}").status_code == 200
     finally:
         os.remove(stored)
 
@@ -1041,6 +1041,29 @@ def test_a_new_night_clears_the_last_one(client):
     db.set_last_air_ended_at(int(time.time()) - NIGHT_GAP_SECONDS - 1)
     asyncio.run(media.wipe_if_new_night())
     assert hub.has_backlog() is False
+
+
+def test_going_live_says_so_after_any_wipe(client):
+    """A friend joining a live room must not read last broadcast's "Stream
+    ended." as the newest line, so going live is said too, after the wipe of a
+    new night rather than before it."""
+    setup_admin(client, username="owner")
+    asyncio.run(hub.narrate("Stream ended."))
+    db.set_last_air_ended_at(int(time.time()) - NIGHT_GAP_SECONDS - 1)
+    asyncio.run(media.open_the_broadcast(theater.stream_transition(True, False)))
+    assert [m["text"] for m in hub._history] == ["Stream started."]
+
+    # The same night: nothing is cleared, and the start follows the end.
+    db.set_last_air_ended_at(int(time.time()) - 60)
+    asyncio.run(hub.narrate("Stream ended."))
+    asyncio.run(media.open_the_broadcast(theater.stream_transition(True, False)))
+    assert [m["text"] for m in hub._history][-2:] == ["Stream ended.", "Stream started."]
+
+
+def test_a_theater_title_going_on_is_not_a_stream_starting(client):
+    setup_admin(client, username="owner")
+    asyncio.run(media.open_the_broadcast(theater.stream_transition(True, True)))
+    assert "Stream started." not in [m.get("text") for m in hub._history]
 
 
 def test_a_channel_that_has_never_aired_has_nothing_to_clear(client):

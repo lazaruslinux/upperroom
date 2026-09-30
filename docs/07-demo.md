@@ -60,7 +60,7 @@ docker compose --profile demo start demo-stream     # back to the synthetic broa
 running is harmless as long as `demo-stream` is stopped before you press play.
 
 To try the theater: sign in as the demo admin, open the dashboard, and under
-**Theater** on the **Broadcast** tab press **Start session**, then **Search**
+**Theater** in the **Connections** section press **Start session**, then **Search**
 (an empty-ish query like `the` finds the demo titles) and **play** a row. Each
 demo title runs two minutes and then ends on its own, so you also see the
 return to intermission. Among the films is one demo **show**, The Standing
@@ -97,11 +97,14 @@ like `ember-quiet-harbor`. Find it two ways:
   ```
   docker compose --profile demo logs demo-seed
   ```
-- or signed in as the demo admin, under **Access codes** on the `/admin`
-  dashboard's **People** tab.
+- or signed in as the demo admin, under **Invite codes** in the `/admin`
+  dashboard's **People** section.
 
-Redeem it from the login page: click **have an invite?**, then enter the code
-with a new username, display name, and password to make a fresh viewer account.
+Redeem it from the login page: click **Have an invite code?**, then enter the
+code with a new username, display name, and password to make a fresh viewer
+account. Or try it the way a newcomer gets it: signed in as the demo admin,
+press **Copy link** on its row and open the link in a private window. The link
+is `/join#<code>`, and it opens the same form with the code already filled in.
 
 ## 7.4 Tearing it down
 

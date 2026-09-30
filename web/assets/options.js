@@ -1,21 +1,21 @@
-// Options page. Everything about your own account: the theme, whether the site
-// emails you when the stream starts, your display name, avatar and bio, and
-// your password.
+// Options. Everything about your own account: how your chat lines look,
+// whether this device is notified when the stream starts, your name, picture
+// and bio, and your password.
 //
-// This used to be a modal hanging off the shared top bar. It is a page now, so
-// the bar carries a link rather than a whole settings panel, and the crop stage
-// is the only modal left.
+// The chat style used to be a panel inside the room. It lives here now, with
+// the rest of what belongs to you, so the room is only the room.
 
 const CROP = 256;
-const THEME_KEY = "selfstream_theme";
 
 let me = null;
 
-function avatarColor(seed) {
+function hueOf(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return `hsl(${hash}, 55%, 45%)`;
+  return hash;
 }
+function avatarColor(seed) { return `hsl(${hueOf(seed)}, 34%, 66%)`; }
+function nameColor(seed) { return `hsl(${hueOf(seed)}, 45%, 76%)`; }
 
 function avatarNode(username, name, version, cls) {
   if (version) {
@@ -43,12 +43,6 @@ async function requireAuth() {
     window.location.href = "/";
     return false;
   }
-  // A guest pass buys the stream and chat, nothing else. Nothing here would
-  // outlast their pass, so send them where it works.
-  if (data.guest) {
-    window.location.href = "/watch";
-    return false;
-  }
   me = data;
   return true;
 }
@@ -71,22 +65,122 @@ function flash(button, text) {
   setTimeout(() => { button.textContent = "Save"; }, 1500);
 }
 
-// ---- theme ----
+// ---- chat style: your font and your colors ----
 
-const themeToggle = document.getElementById("theme-toggle");
+// The chat fonts. The same keys the server allows and the room renders.
+const FONTS = {
+  system: "",
+  jetbrains: "'JetBrains Mono', monospace",
+  grotesk: "'Space Grotesk', sans-serif",
+  plex: "'IBM Plex Sans', sans-serif",
+  sora: "'Sora', sans-serif",
+};
+const FONT_LIST = [
+  ["system", "Default"],
+  ["jetbrains", "JetBrains Mono"],
+  ["grotesk", "Space Grotesk"],
+  ["plex", "IBM Plex Sans"],
+  ["sora", "Sora"],
+];
+const DEFAULT_SWATCH = "#efece6";
 
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  try { localStorage.setItem(THEME_KEY, theme); } catch {}
-  themeToggle.textContent = theme === "light" ? "Light" : "Dark";
+const fontPicker = document.getElementById("font-picker");
+const fontPreview = document.getElementById("font-preview");
+const nameColorInput = document.getElementById("name-color");
+const msgColorInput = document.getElementById("msg-color");
+const colorMsg = document.getElementById("color-msg");
+
+// A one-line mock of your own message, so the font and both colors can be
+// seen together the way the room will see them.
+function updateFontPreview() {
+  fontPreview.textContent = "";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = me.name || me.username || "You";
+  name.style.color = me.name_color || nameColor(me.username || "?");
+  const body = document.createElement("span");
+  body.className = "body";
+  body.textContent = "This is how your messages look.";
+  body.style.fontFamily = FONTS[me.font] || "";
+  if (me.msg_color) body.style.color = me.msg_color;
+  fontPreview.append(name, body);
 }
 
-function wireTheme() {
-  let saved = "dark";
-  try { saved = localStorage.getItem(THEME_KEY) || "dark"; } catch {}
-  applyTheme(saved);
-  themeToggle.addEventListener("click", () => {
-    applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+// Each option is drawn in its own face, so it can be judged before it is
+// picked. Saved on the server, since it rides on your messages for everyone.
+function buildFontPicker() {
+  fontPicker.textContent = "";
+  FONT_LIST.forEach(([key, label]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "font-option" + (me.font === key ? " selected" : "");
+    btn.setAttribute("aria-pressed", me.font === key ? "true" : "false");
+    btn.textContent = label;
+    btn.style.fontFamily = FONTS[key] || "";
+    btn.addEventListener("click", async () => {
+      me.font = key;
+      fontPicker.querySelectorAll(".font-option").forEach((b) => {
+        b.classList.toggle("selected", b === btn);
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      updateFontPreview();
+      await saveProfile({ font: key });
+    });
+    fontPicker.appendChild(btn);
+  });
+  updateFontPreview();
+}
+
+function showColorMsg(text, ok) {
+  colorMsg.textContent = text || "";
+  colorMsg.className = "pw-msg" + (text ? (ok ? " ok" : " bad") : "");
+}
+
+// Like saveProfile but keeps the server's words, so a rejected color can say
+// why (too dark to read, too close to the lamp's red, malformed).
+async function saveColor(patch) {
+  try {
+    const reply = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = await reply.json().catch(() => ({}));
+    return { ok: reply.ok, error: data.error };
+  } catch {
+    return { ok: false, error: "Could not reach the server." };
+  }
+}
+
+function wireColors() {
+  nameColorInput.value = me.name_color || DEFAULT_SWATCH;
+  msgColorInput.value = me.msg_color || DEFAULT_SWATCH;
+  nameColorInput.addEventListener("change", async () => {
+    const r = await saveColor({ name_color: nameColorInput.value });
+    if (r.ok) {
+      me.name_color = nameColorInput.value;
+      showColorMsg("Name color saved.", true);
+      updateFontPreview();
+    } else showColorMsg(r.error || "That color was rejected.", false);
+  });
+  msgColorInput.addEventListener("change", async () => {
+    const r = await saveColor({ msg_color: msgColorInput.value });
+    if (r.ok) {
+      me.msg_color = msgColorInput.value;
+      showColorMsg("Text color saved.", true);
+      updateFontPreview();
+    } else showColorMsg(r.error || "That color was rejected.", false);
+  });
+  document.getElementById("color-reset").addEventListener("click", async () => {
+    const r = await saveColor({ name_color: "", msg_color: "" });
+    if (r.ok) {
+      me.name_color = "";
+      me.msg_color = "";
+      nameColorInput.value = DEFAULT_SWATCH;
+      msgColorInput.value = DEFAULT_SWATCH;
+      showColorMsg("Colors are back to the default.", true);
+      updateFontPreview();
+    } else showColorMsg(r.error || "Could not reset.", false);
   });
 }
 
@@ -97,65 +191,63 @@ const nameInput = document.getElementById("name-input");
 const nameSave = document.getElementById("name-save");
 const bioInput = document.getElementById("bio-input");
 const bioSave = document.getElementById("bio-save");
-const emailInput = document.getElementById("email-input");
-const emailSave = document.getElementById("email-save");
-const notifyToggle = document.getElementById("notify-toggle");
-const notifySection = document.getElementById("notify-section");
+const pushToggle = document.getElementById("push-toggle");
+const pushStatus = document.getElementById("push-status");
 const pwCurrent = document.getElementById("pw-current");
 const pwNew = document.getElementById("pw-new");
 const pwSave = document.getElementById("pw-save");
 const pwMsg = document.getElementById("pw-msg");
 
 function renderMyAvatar() {
-  myAvatar.innerHTML = "";
+  myAvatar.textContent = "";
   myAvatar.appendChild(avatarNode(me.username, me.name, me.avatar || 0, "avatar avatar-lg"));
-  // The top bar shows the same face, so a change here lands there too instead
-  // of waiting for a reload to catch up.
-  // Swap only the face: the button also holds the menu glyph, and wiping it
-  // would take that with it.
-  const inBar = document.getElementById("nav-avatar");
-  if (inBar) {
-    const fresh = avatarNode(me.username, me.name, me.avatar || 0, "avatar");
-    const old = inBar.querySelector(".avatar");
-    if (old) old.replaceWith(fresh); else inBar.prepend(fresh);
-  }
+  // The menu shows the same face, so a change here lands there too instead of
+  // waiting for a reload to catch up.
+  const inMenu = document.querySelector(".menu-who .avatar");
+  if (inMenu) inMenu.replaceWith(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
 }
 
 function renderSettings() {
   nameInput.value = me.name || "";
   bioInput.value = me.bio || "";
   renderMyAvatar();
-  // The recipient query filters admins out, so the server has never emailed a
-  // host that their own stream is live. Showing them the address and the opt-in
-  // would offer a control that cannot change anything. The stored address is
-  // left untouched, so demoting them restores it intact.
-  notifySection.hidden = !!me.admin;
-  if (me.admin) return;
-  notifyToggle.checked = me.notify_live !== false;
-  emailInput.value = me.email || "";
+}
+
+// The switch shows this device's state; it can only be used where push can
+// work, and the line under it says why when it cannot.
+function renderPush(state, line) {
+  pushToggle.setAttribute("aria-checked", state === "on" ? "true" : "false");
+  pushToggle.disabled = state !== "on" && state !== "off";
+  pushStatus.textContent = line || pushNotify.explain(state);
+}
+
+function wirePush() {
+  pushNotify.state().then((s) => renderPush(s));
+  pushToggle.addEventListener("click", () => {
+    const turningOn = pushToggle.getAttribute("aria-checked") !== "true";
+    pushToggle.disabled = true;
+    // turnOn runs first thing in the tap, so the browser may ask.
+    const change = turningOn ? pushNotify.turnOn() : pushNotify.turnOff();
+    change.then((s) => renderPush(s)).catch(async (e) => {
+      const failed = turningOn ? "Could not turn it on here." : "Could not turn it off here.";
+      renderPush(await pushNotify.state(), e && e.readable ? e.message : failed);
+    });
+  });
 }
 
 function wireSettings() {
-  emailSave.addEventListener("click", async () => {
-    const email = emailInput.value.trim();
-    if (email && !email.includes("@")) return flash(emailSave, "Invalid");
-    const ok = await saveProfile({ email });
-    if (ok) me.email = email;
-    flash(emailSave, ok ? "Saved" : "Error");
-  });
-
-  notifyToggle.addEventListener("change", async () => {
-    const on = notifyToggle.checked;
-    const ok = await saveProfile({ notify_live: on });
-    if (ok) me.notify_live = on;
-    else notifyToggle.checked = !on;   // revert if the save failed
-  });
+  wirePush();
 
   nameSave.addEventListener("click", async () => {
     const next = nameInput.value.trim();
     if (!next) return flash(nameSave, "Empty");
     const ok = await saveProfile({ display_name: next });
-    if (ok) me.name = next;
+    if (ok) {
+      me.name = next;
+      updateFontPreview();
+      const inMenu = document.querySelector(".menu-who-name");
+      if (inMenu) inMenu.textContent = next;
+    }
     flash(nameSave, ok ? "Saved" : "Error");
   });
 
@@ -284,8 +376,9 @@ function wireCrop() {
 
 async function boot() {
   if (!(await requireAuth())) return;
-  mountNav(me, { current: "options" });
-  wireTheme();
+  mountNav(me, { current: "options", pageName: "options" });
+  buildFontPicker();
+  wireColors();
   renderSettings();
   wireSettings();
   wireCrop();

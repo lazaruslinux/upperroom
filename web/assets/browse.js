@@ -1,9 +1,7 @@
-// Browse page. The archive: past broadcasts on one tab, viewer clips on the
-// other, each card opening that item on the media page.
-//
-// This was a section at the bottom of the home page. It is its own page now,
-// so home can be about what is happening right this minute and the library gets
-// the whole width.
+// Past broadcasts: recordings on one tab, viewer clips on the other, each card
+// opening that item on the media page. Search lives here too: titles only,
+// matched in the browser across both kinds, because the listings are small and
+// already fetched whole for the grid.
 
 let me = null;
 
@@ -18,34 +16,15 @@ async function requireAuth() {
     window.location.href = "/";
     return false;
   }
-  // A guest pass buys the stream and chat, not the archive of what they missed.
-  // Send them where their pass actually works rather than rendering a page whose
-  // every request will 401.
-  if (data.guest) {
-    window.location.href = "/watch";
-    return false;
-  }
   me = data;
   return true;
 }
-
-// The accent is the channel's brand and is server-driven. The head bootstrap
-// paints the last-seen value from localStorage; this syncs it with the server
-// and remembers it for the next no-flash paint.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
-}
-
-// ---- library (past VODs + clips) ----
 
 const libGrid = document.getElementById("lib-grid");
 const libEmpty = document.getElementById("lib-empty");
 const clipFilter = document.getElementById("clip-filter");
 const mineOnlyToggle = document.getElementById("mine-only");
+const search = document.getElementById("lib-search");
 let libTab = "vods";
 let mineOnly = false;
 const libCache = { vods: null, clips: null };
@@ -62,13 +41,13 @@ function durationClock(secs) {
 function relDate(epoch) {
   if (!epoch) return "";
   const secs = Math.floor(Date.now() / 1000) - epoch;
-  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))}m ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-  if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`;
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))} min ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)} h ago`;
+  if (secs < 2592000) return `${Math.floor(secs / 86400)} d ago`;
   return new Date(epoch * 1000).toLocaleDateString();
 }
 
-function mediaCard(item, kind) {
+function mediaCard(item, kind, tagged) {
   const a = document.createElement("a");
   a.className = "media-card";
   a.href = `/media?type=${kind}&id=${item.id}`;
@@ -80,13 +59,9 @@ function mediaCard(item, kind) {
     img.src = `/media/${kind}s/${item.id}.jpg`;
     img.alt = "";
     img.loading = "lazy";
+    // A poster the store cannot serve leaves a dark screen, not a broken icon.
+    img.addEventListener("error", () => img.remove());
     thumb.appendChild(img);
-  } else {
-    thumb.classList.add("media-thumb-fallback");
-    const mark = document.createElement("span");
-    mark.className = "thumb-mark";
-    mark.textContent = "no signal";
-    thumb.appendChild(mark);
   }
   if (item.duration) {
     const dur = document.createElement("span");
@@ -96,39 +71,56 @@ function mediaCard(item, kind) {
   }
   a.appendChild(thumb);
 
-  const meta = document.createElement("div");
-  meta.className = "media-meta";
   const title = document.createElement("div");
   title.className = "media-title";
-  title.textContent = kind === "vod" ? item.title : item.name;
+  title.textContent = (kind === "vod" ? item.title : item.name) || "Untitled";
   const sub = document.createElement("div");
-  sub.className = "media-sub muted";
-  const views = item.views === 1 ? "1 view" : `${item.views} views`;
-  const when = relDate(kind === "vod" ? item.started_at : item.created_at);
-  let line = `${views} · ${when}`;
-  if (kind === "clip" && item.creator) line += ` · @${item.creator}`;
-  sub.textContent = line;
-  meta.append(title, sub);
-  a.appendChild(meta);
+  sub.className = "media-sub";
+  const bits = [];
+  if (tagged) bits.push(kind === "vod" ? "Broadcast" : "Clip");
+  bits.push(item.views === 1 ? "1 view" : `${item.views} views`);
+  bits.push(relDate(kind === "vod" ? item.started_at : item.created_at));
+  if (kind === "clip" && item.creator) bits.push(`@${item.creator}`);
+  sub.textContent = bits.join(" · ");
+  a.append(title, sub);
   return a;
 }
 
-async function renderLibrary() {
-  const kind = libTab === "vods" ? "vod" : "clip";
-  let items = libCache[libTab];
-  if (items === null) {
-    try { items = (await (await fetch(`/api/${libTab}`)).json())[libTab] || []; }
-    catch { items = []; }
-    libCache[libTab] = items;
+async function load(tab) {
+  if (libCache[tab] === null) {
+    try {
+      const reply = await fetch(`/api/${tab}`);
+      libCache[tab] = reply.ok ? (await reply.json())[tab] || [] : [];
+    } catch {
+      libCache[tab] = [];
+    }
   }
+  return libCache[tab];
+}
+
+async function renderLibrary() {
+  const query = search.value.trim().toLowerCase();
+  libGrid.textContent = "";
+  // A search looks through both kinds at once, newest first within each.
+  if (query.length >= 2) {
+    clipFilter.hidden = true;
+    const [vods, clips] = await Promise.all([load("vods"), load("clips")]);
+    const hits = []
+      .concat(vods.filter((v) => (v.title || "").toLowerCase().includes(query)).map((v) => [v, "vod"]))
+      .concat(clips.filter((c) => (c.name || "").toLowerCase().includes(query)).map((c) => [c, "clip"]));
+    libEmpty.hidden = hits.length > 0;
+    libEmpty.textContent = "Nothing is called that.";
+    hits.forEach(([item, kind]) => libGrid.appendChild(mediaCard(item, kind, true)));
+    return;
+  }
+  const kind = libTab === "vods" ? "vod" : "clip";
+  const items = await load(libTab);
   // The "my clips only" filter applies to the clips tab for every role.
   clipFilter.hidden = libTab !== "clips";
   let display = items;
   if (libTab === "clips" && mineOnly && me) {
     display = items.filter((c) => c.creator === me.username);
   }
-
-  libGrid.innerHTML = "";
   if (!display.length) {
     libEmpty.hidden = false;
     if (libTab === "vods") {
@@ -136,18 +128,22 @@ async function renderLibrary() {
     } else if (mineOnly) {
       libEmpty.textContent = "You haven't made any clips yet.";
     } else {
-      libEmpty.textContent = "No clips yet. Viewers can clip the recent stream while live.";
+      libEmpty.textContent = "No clips yet. Anyone watching can clip the stream while it is live.";
     }
     return;
   }
   libEmpty.hidden = true;
-  display.forEach((item) => libGrid.appendChild(mediaCard(item, kind)));
+  display.forEach((item) => libGrid.appendChild(mediaCard(item, kind, false)));
 }
 
 document.querySelectorAll(".lib-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     libTab = tab.dataset.tab;
-    document.querySelectorAll(".lib-tab").forEach((t) => t.classList.toggle("selected", t === tab));
+    document.querySelectorAll(".lib-tab").forEach((t) => {
+      t.classList.toggle("selected", t === tab);
+      t.setAttribute("aria-selected", t === tab ? "true" : "false");
+    });
+    search.value = "";
     renderLibrary();
   });
 });
@@ -157,14 +153,15 @@ mineOnlyToggle.addEventListener("change", () => {
   renderLibrary();
 });
 
+let searchTimer = null;
+search.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderLibrary, 200);
+});
+
 async function boot() {
   if (!(await requireAuth())) return;
-  // One status call covers the accent and the site name the bar wants, rather
-  // than letting the bar fetch the same thing again.
-  let status = {};
-  try { status = await (await fetch("/api/status")).json(); } catch (e) {}
-  applyAccent(status.accent);
-  mountNav(me, { current: "browse", siteName: status.site_name });
+  mountNav(me, { current: "browse", pageName: "past broadcasts" });
   renderLibrary();
 }
 

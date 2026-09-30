@@ -3,18 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
-  <title>upperroom - watch</title>
-  <script>
-    // Apply the saved theme before first paint so the page never flashes.
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <title>upperroom</title>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- How this page looks when its link is pasted into a chat app. The gate
@@ -31,229 +26,216 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <!-- og:end -->
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
   <script src="/assets/vendor/hls.min.js?v=1"></script>
 </head>
 <body class="watch">
-  <section class="stage">
-    <div id="offline" class="offline" hidden>
-      <p>The stream is offline right now.</p>
-      <p class="muted">This will start playing on its own when it goes live.</p>
-    </div>
-    <!-- Between titles in a theater session. Not the offline card: the session
-         is still running and the next title is coming. -->
-    <div id="theater-inter" class="theater-inter" hidden>
-      <p class="theater-inter-title">Intermission</p>
-      <p class="muted">The next title starts shortly.</p>
-    </div>
-    <video id="video" controls autoplay playsinline muted></video>
-    <button id="unmute" class="unmute" hidden>Tap for sound</button>
-    <!-- Covers the first couple of seconds of a title while the picture arrives.
-         Static markup, filled in from the theater state. -->
-    <div id="now-showing" class="now-showing" hidden>
-      <img id="ns-art" class="ns-art" alt="" hidden>
-      <div class="ns-text">
-        <p class="ns-label">Now showing</p>
-        <p id="ns-title" class="ns-title"></p>
-        <p id="ns-meta" class="ns-meta" hidden></p>
-        <p id="ns-synopsis" class="ns-synopsis" hidden></p>
-      </div>
-    </div>
-    <!-- Shown over the stage when a guest pass runs out. The video is stopped
-         before this appears, so there is nothing playing behind it. -->
-    <div id="guest-over" class="guest-over" hidden>
-      <p class="guest-over-title">Your guest pass has ended</p>
-      <p class="muted">Sign in or use another pass to keep watching.</p>
-      <div class="guest-over-actions">
-        <a href="/" class="pill primary">Sign in</a>
-        <a href="/guest" class="pill">Use a guest pass</a>
-      </div>
-    </div>
-    <!-- Shown when the channel is at its viewer limit. The server refuses the
-         video, not the page, so chat still works while this is up. -->
-    <div id="room-full" class="guest-over" hidden>
-      <p class="guest-over-title">The room is full</p>
-      <p class="muted">This channel limits how many people can watch at once. Chat still works, and the video starts on its own when a place opens up.</p>
-      <div class="guest-over-actions">
-        <button id="room-full-retry" type="button" class="pill primary">Try again</button>
-      </div>
-    </div>
-  </section>
+  <div id="site-nav"></div>
 
-  <aside class="chat">
-    <header class="chat-head">
-      <!-- A member gets one way off the page, and it is this icon. Guests cannot
-           visit /home and the dashboard frames this page, so watch.js removes the
-           button in both cases. Collapse is still the affordance for a viewer who
-           wants the width back without leaving the stream. -->
-      <a id="home-btn" class="icon-btn" href="/home" title="Home" aria-label="Home">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 10.5L12 3l9 7.5"></path>
-          <path d="M5 9.5V21h14V9.5"></path>
-          <path d="M9 21v-6h6v6"></path>
-        </svg>
-      </a>
-      <button id="chat-collapse" type="button" class="icon-btn" aria-label="Collapse chat" aria-expanded="true" title="Collapse chat">
-        <svg class="collapse-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M10 17l5-5-5-5"></path><path d="M4 4v16"></path>
-        </svg>
-      </button>
-      <span class="chat-title">Stream Chat</span>
-      <!-- A guest's remaining time, in the chat bar where they will actually
-           see it. Hidden entirely for members rather than shown empty. -->
-      <span id="guest-timer" class="guest-timer" hidden></span>
-      <button id="viewer-toggle" type="button" class="icon-btn" aria-label="Who is watching" aria-expanded="false">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-          <circle cx="9" cy="7" r="4"></circle>
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-        </svg>
-        <!-- The count left the bar (it now just names the panel), but it is
-             still what this button is for, so it stays for screen readers and
-             rides the button's tooltip. -->
-        <span id="viewer-count" class="sr-only">0 watching</span>
-      </button>
-      <button id="settings-toggle" type="button" class="icon-btn" aria-label="Settings">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      </button>
-    </header>
-    <!-- The host's theater controls. Admin only: watch.js removes the strip and
-         its modal outright for everyone else, rather than hiding them. -->
-    <div id="host-strip" class="host-strip" hidden>
-      <span id="host-state" class="host-state">theater off</span>
-      <button id="host-start" type="button" class="chip-btn">theater</button>
-      <button id="host-play" type="button" class="chip-btn" hidden>play</button>
-      <button id="host-stop" type="button" class="chip-btn" hidden>stop</button>
-      <button id="host-nosubs" type="button" class="chip-btn" hidden>no subs</button>
-      <button id="host-end" type="button" class="chip-btn danger-chip" hidden>end</button>
-      <span id="host-msg" class="host-msg" hidden></span>
-    </div>
-    <div id="settings-panel" class="settings-panel" hidden>
-      <p class="settings-heading muted">Stream &amp; chat</p>
-      <div class="setting">
-        <span>Theme</span>
-        <button id="theme-toggle" type="button" class="pill">Dark</button>
-      </div>
-      <div class="setting setting-font">
-        <span>Chat font</span>
-        <div id="font-picker" class="font-picker"></div>
-        <!-- A mock of your own chat line, so a font and color pick can be seen
-             the way the room will see it before anything is sent. -->
-        <div id="font-preview" class="font-preview"></div>
-      </div>
-      <div class="setting setting-colors">
-        <span>Chat colors</span>
-        <div class="color-pickers">
-          <label class="color-pick">Name <input id="name-color" type="color"></label>
-          <label class="color-pick">Text <input id="msg-color" type="color"></label>
-          <button id="color-reset" type="button" class="pill">Reset</button>
+  <main class="room">
+    <section class="stage-col" aria-label="The stream">
+      <!-- The program monitor. Nothing is ever drawn over a playing picture:
+           when there is no picture, one of the cards below takes the whole
+           screen instead. -->
+      <div class="monitor" id="monitor">
+        <video id="video" autoplay playsinline muted></video>
+        <div id="offline" class="monitor-card" hidden>
+          <h1 class="monitor-word">Nobody’s on air</h1>
+          <p id="last-air" class="monitor-note">It starts here on its own when it goes live.</p>
+        </div>
+        <!-- Between titles in a theater session. Not the offline card: the
+             session is still running and the next title is coming. -->
+        <div id="theater-inter" class="monitor-card" hidden>
+          <h1 class="monitor-word">Intermission</h1>
+          <p class="monitor-note">The next title starts shortly.</p>
+        </div>
+        <!-- Covers the first couple of seconds of a title while the picture
+             arrives. Static markup, filled in from the theater state. -->
+        <div id="now-showing" class="now-showing" hidden>
+          <div class="ns-text">
+            <p class="engraved">Now showing</p>
+            <p id="ns-title" class="ns-title"></p>
+            <p id="ns-meta" class="ns-meta" hidden></p>
+            <p id="ns-synopsis" class="ns-synopsis" hidden></p>
+          </div>
+        </div>
+        <!-- The channel is at its viewer limit. The server refuses the video,
+             not the page, so chat still works while this is up. -->
+        <div id="room-full" class="monitor-card" hidden>
+          <h1 class="monitor-word">The room is full</h1>
+          <p class="monitor-note">This channel limits how many can watch at once. Chat still works, and the picture starts when a place opens.</p>
+          <div class="monitor-actions">
+            <button id="room-full-retry" type="button" class="btn primary">Try again</button>
+          </div>
         </div>
       </div>
-      <p id="color-msg" class="settings-note pw-msg"></p>
-      <p class="settings-note muted">Account settings like your avatar, bio, and password are on the options page.</p>
-    </div>
-    <ul id="viewer-list" class="viewer-list" hidden></ul>
-    <div id="messages" class="messages"></div>
-    <!-- Above the composer rather than over the video: the offline card already
-         holds the picture, and this is for somebody reading chat with the
-         player out of view. -->
-    <div id="chat-offline" class="chat-offline" hidden>Stream is currently offline.</div>
-    <form id="chat-form" class="chat-form">
-      <button id="points-chip" type="button" class="points-chip" aria-label="Your points, highlight a message" title="Your points, highlight a message" hidden>pts 0</button>
-      <button id="clip-btn" type="button" class="icon-btn" aria-label="Clip the recent stream" title="Clip the recent stream" hidden>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle>
-          <line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line>
-        </svg>
-      </button>
-      <input id="chat-input" maxlength="500" placeholder="say something" autocomplete="off">
-      <button type="submit">Send</button>
-    </form>
-  </aside>
+
+      <div class="slate">
+        <div class="slate-text">
+          <p id="slate-title" class="slate-title">Live Stream</p>
+          <p id="slate-sub" class="slate-sub" hidden></p>
+        </div>
+        <div class="slate-tools">
+          <button id="sound-btn" type="button" class="chip" aria-pressed="false" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path id="sound-off" d="m17 9 4 6M21 9l-4 6"/><path id="sound-on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" hidden/></svg>
+            <span id="sound-label">Sound</span>
+          </button>
+          <button id="full-btn" type="button" class="chip icon-only" aria-label="Full screen" title="Full screen" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          </button>
+          <!-- Desktop only: give the monitor the whole width for a while. -->
+          <button id="chat-toggle" type="button" class="chip icon-only" aria-label="Hide chat" title="Hide chat" aria-pressed="false" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M15 4v16"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Off air: the way to hear about the next one, and the last one. -->
+      <div id="offair" class="offair" hidden>
+        <div id="push-row" class="notify-row" hidden>
+          <button id="push-chip" type="button" class="chip" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4l2-2Z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+            Notify me when it goes live
+          </button>
+          <p id="push-msg" class="notify-row-text" role="status" hidden></p>
+        </div>
+        <a id="last-vod" class="last-vod" hidden>
+          <span class="thumb" id="last-vod-thumb"></span>
+          <span><b id="last-vod-title"></b><small id="last-vod-meta"></small></span>
+        </a>
+      </div>
+
+      <section class="board" aria-labelledby="board-title">
+        <div class="board-head">
+          <h2 id="board-title" class="engraved">In the room</h2>
+          <span id="viewer-count" class="engraved" aria-live="polite">0</span>
+        </div>
+        <ul id="lines" class="lines"></ul>
+      </section>
+
+      <!-- The host's theater controls. Admin only: watch.js removes the strip
+           and its modal outright for everyone else, rather than hiding them. -->
+      <div id="host-strip" class="host-strip" hidden>
+        <span id="host-state" class="host-state">Theater off</span>
+        <button id="host-start" type="button" class="chip-btn">Theater</button>
+        <button id="host-play" type="button" class="chip-btn" hidden>Play</button>
+        <button id="host-stop" type="button" class="chip-btn" hidden>Stop</button>
+        <button id="host-nosubs" type="button" class="chip-btn" hidden>No subs</button>
+        <button id="host-end" type="button" class="chip-btn danger-chip" hidden>End</button>
+        <span id="host-msg" class="host-msg" hidden></span>
+      </div>
+    </section>
+
+    <section class="chat-col" aria-label="Chat">
+      <div id="messages" class="messages" role="log"></div>
+      <!-- For somebody reading chat with the picture out of view. -->
+      <div id="chat-offline" class="chat-offline" hidden>Stream is currently offline.</div>
+      <form id="chat-form" class="composer">
+        <div class="composer-tools" id="composer-tools">
+          <button id="clip-btn" type="button" class="tool" aria-label="Clip the last minute" title="Clip the last minute" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg>
+          </button>
+          <button id="points-btn" type="button" class="tool" aria-label="Your points, highlight a message" title="Your points, highlight a message" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7L12 3z"/></svg>
+          </button>
+        </div>
+        <input id="chat-input" class="field" maxlength="500" placeholder="Say something" autocomplete="off" aria-label="Message">
+        <button type="submit" class="send">Send</button>
+      </form>
+    </section>
+  </main>
 
   <!-- Step one: how much of the stream to take. The clip is cut the moment
        Save is pressed, so nothing is riding on what happens next. -->
   <div id="clip-len-modal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3 class="clip-h3">Clip the last:</h3>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="clip-len-title">
+      <h3 id="clip-len-title">Clip the last</h3>
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
       <div id="clip-lens" class="clip-lens">
         <button type="button" class="pill clip-len" data-seconds="60">1 min</button>
         <button type="button" class="pill clip-len" data-seconds="45">45 sec</button>
         <button type="button" class="pill clip-len is-on" data-seconds="30">30 sec</button>
       </div>
-      <p id="clip-msg" class="pw-msg"></p>
-      <div class="crop-actions">
-        <button type="button" class="pill" data-close>Cancel</button>
-        <button id="clip-save" type="button" class="pill primary">Save clip</button>
+      <p id="clip-msg" class="pw-msg" role="status"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button id="clip-save" type="button" class="btn primary">Save clip</button>
       </div>
     </div>
   </div>
 
-  <!-- Step two, and entirely optional: the clip already exists by the time this
-       opens. Closing it any way at all leaves the default name. -->
+  <!-- Step two, and entirely optional: the clip already exists by the time
+       this opens. Closing it any way at all leaves the default name. -->
   <div id="clip-name-modal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3 class="clip-h3">Name your clip</h3>
-      <input id="clip-name" type="text" maxlength="80" placeholder="Name your clip" autocomplete="off">
-      <p id="clip-name-msg" class="pw-msg"></p>
-      <div class="crop-actions">
-        <button id="clip-name-skip" type="button" class="pill" data-close>Skip</button>
-        <button id="clip-name-save" type="button" class="pill primary">Save</button>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="clip-name-title">
+      <h3 id="clip-name-title">Name your clip</h3>
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <input id="clip-name" class="field" type="text" maxlength="80" placeholder="Name your clip" autocomplete="off" aria-label="Clip name">
+      <p id="clip-name-msg" class="pw-msg" role="status"></p>
+      <div class="modal-actions">
+        <button id="clip-name-skip" type="button" class="btn" data-close>Skip</button>
+        <button id="clip-name-save" type="button" class="btn primary">Save</button>
       </div>
     </div>
   </div>
 
   <div id="profile-modal" class="modal" hidden>
-    <div class="modal-card profile-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
+    <div class="modal-card profile-card" role="dialog" aria-modal="true" aria-labelledby="profile-name">
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
       <span id="profile-avatar" class="profile-avatar"></span>
       <div id="profile-name" class="profile-name"></div>
-      <div id="profile-bio" class="profile-bio muted"></div>
+      <div id="profile-bio" class="profile-bio"></div>
       <div id="profile-joined" class="profile-joined"></div>
       <div id="profile-points" class="profile-joined"></div>
       <div id="profile-modactions" class="profile-modactions" hidden></div>
     </div>
   </div>
 
-  <!-- Spend points to highlight a short message on stream -->
+  <!-- Points, and spending them to highlight a message on stream. -->
   <div id="highlight-modal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3>Highlight a message</h3>
-      <p id="highlight-balance" class="highlight-balance">pts 0</p>
-      <p class="muted highlight-note">Spend <span id="highlight-cost">pts 50</span> to highlight a message on stream.</p>
-      <input id="highlight-input" class="highlight-input" type="text" maxlength="500" placeholder="highlight a message on stream" autocomplete="off">
-      <p id="highlight-msg" class="pw-msg" hidden></p>
-      <div class="crop-actions">
-        <button type="button" class="pill" data-close>Cancel</button>
-        <button id="highlight-send" type="button" class="pill primary">Highlight</button>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="highlight-title">
+      <h3 id="highlight-title">Your points</h3>
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <p id="highlight-balance" class="points-balance">0</p>
+      <p class="points-note">Earned by watching while the stream is live. Spend <span id="highlight-cost">50</span> to highlight a message on stream.</p>
+      <input id="highlight-input" class="field highlight-field" type="text" maxlength="500" placeholder="Your highlighted message" autocomplete="off" aria-label="Highlighted message">
+      <p id="highlight-msg" class="pw-msg" role="status" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button id="highlight-send" type="button" class="btn primary">Highlight</button>
       </div>
     </div>
   </div>
 
-  <!-- Search the library and put something on. Static markup, like every other
-       modal here: the close and Escape wiring binds once at load. -->
+  <!-- Search the library and put something on. Static markup, like every
+       other modal here: the close and Escape wiring binds once at load. -->
   <div id="theater-search-modal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3>Play a title</h3>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ts-title">
+      <h3 id="ts-title">Play a title</h3>
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
       <div class="ts-search">
-        <input id="ts-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
-        <button id="ts-search" type="button" class="pill primary">Search</button>
+        <input id="ts-query" class="field" type="text" maxlength="64" placeholder="Search your library" autocomplete="off" aria-label="Search your library">
+        <button id="ts-search" type="button" class="btn primary">Search</button>
       </div>
-      <label class="checkrow"><input id="ts-subs" type="checkbox"> Burn in subtitles</label>
+      <label class="checkrow" id="ts-subs-row"><input id="ts-subs" type="checkbox"> Burn in subtitles</label>
       <p id="ts-msg" class="pw-msg" hidden></p>
       <div id="ts-results" class="ts-results"></div>
     </div>
   </div>
 
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/push.js?v=1"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/watch.js?v=41"></script>
+  <script src="/assets/watch.js?v=44"></script>
 </body>
 </html>

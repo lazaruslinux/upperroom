@@ -4,91 +4,76 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>upperroom</title>
-  <script>
-    // Apply the saved theme before first paint so the page never flashes.
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
 </head>
 <body class="home">
   <div id="site-nav"></div>
 
+  <!-- Home is the off-air place: when the last broadcast was, the way to hear
+       about the next one, and what was clipped. While somebody is on air its
+       one job is to send people into the room. -->
   <main class="home-main">
-    <!-- Divider above the stream area: a rule with a centered mono label. -->
-    <div class="stream-divider"><span>live stream</span></div>
-
-    <!-- Shown in place of the stream card while the broadcaster is offline. The
-         card is hidden entirely rather than shown as a dead "no signal" tile. -->
-    <div id="offline-block" class="offline-block" hidden>
-      The broadcaster is currently offline.
-      <a href="/watch">Enter chat</a> or <a href="/browse">browse past broadcasts and clips</a>.
+    <div class="monitor" id="monitor">
+      <div id="offline" class="monitor-card" hidden>
+        <h1 class="monitor-word">Nobody’s on air</h1>
+        <p id="last-air" class="monitor-note">It shows up here the moment it goes live.</p>
+      </div>
     </div>
 
-    <button id="stream-card" type="button" class="stream-card" aria-label="Join the stream">
-      <div class="thumb-wrap">
-        <div id="thumb-fallback" class="thumb-fallback">
-          <span class="thumb-mark">no signal</span>
+    <div id="live-block" hidden>
+      <div class="slate">
+        <div class="slate-text">
+          <p id="slate-title" class="slate-title">Live Stream</p>
+          <p id="slate-sub" class="slate-sub" hidden></p>
         </div>
-        <img id="thumb" class="thumb" alt="" hidden>
-        <!-- The live preview. Muted and without controls: the card is one click
-             target, and sound lives on the watch page. Hidden until it actually
-             plays, so the still frame stays up if it cannot. -->
-        <video id="card-video" class="thumb card-video" muted autoplay playsinline hidden></video>
-        <span id="stream-badge" class="stream-badge is-offline">
-          <span class="badge-dot"></span><span id="badge-label">Offline</span>
-        </span>
-        <span id="status-pill" class="watch-pill" hidden></span>
-        <span class="play-overlay" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </span>
       </div>
-      <div class="card-meta">
-        <span id="card-avatar" class="card-avatar">LL</span>
-        <span class="card-text">
-          <span id="card-title" class="card-title">Live Stream</span>
-          <span id="card-channel" class="card-channel"></span>
-          <!-- What the broadcast is, between the channel and its description.
-               Hidden unless the stream is live and the streamer has said. -->
-          <span id="card-playing" class="card-playing" hidden></span>
-          <span id="card-desc" class="card-desc">Tap to join stream and start chatting</span>
-        </span>
+      <div class="home-go">
+        <a class="loud" href="/watch">Go to the room
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
       </div>
-    </button>
+    </div>
 
-    <p id="greeting" class="home-greeting muted"></p>
+    <div id="offair" hidden>
+      <div id="push-row" class="notify-row" hidden>
+        <button id="push-chip" type="button" class="chip" hidden>
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4l2-2Z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+          Notify me when it goes live
+        </button>
+        <p id="push-msg" class="notify-row-text" role="status" hidden></p>
+      </div>
+      <a id="last-vod" class="last-vod" hidden>
+        <span class="thumb" id="last-vod-thumb"></span>
+        <span><b id="last-vod-title"></b><small id="last-vod-meta"></small></span>
+      </a>
+    </div>
+
+    <section class="home-clips" id="clips-section" aria-labelledby="clips-title" hidden>
+      <div class="section-head">
+        <h2 id="clips-title" class="engraved">Recent clips</h2>
+        <a href="/browse" class="engraved">All past broadcasts</a>
+      </div>
+      <div id="clip-grid" class="lib-grid"></div>
+    </section>
   </main>
 
-  <!-- The one-time notice after an upgrade. Filled and shown by home.js only
-       when the server says this viewer has not read the running release's
-       notes; there is never more than one, and never one per missed version. -->
-  <div id="whats-new" class="modal" hidden>
-    <div class="modal-card whats-new-card">
-      <h3 id="whats-new-title">upperroom has been updated</h3>
-      <ul id="whats-new-list" class="whats-new-list"></ul>
-      <div class="crop-actions">
-        <button type="button" id="whats-new-ok" class="pill primary">Got it</button>
-      </div>
-    </div>
-  </div>
-
-  <footer class="site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
-  <script src="/assets/vendor/hls.min.js?v=1"></script>
-  <script src="/assets/nav.js?v=10"></script>
-  <script src="/assets/home.js?v=24"></script>
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/push.js?v=1"></script>
+  <script src="/assets/home.js?v=25"></script>
 </body>
 </html>

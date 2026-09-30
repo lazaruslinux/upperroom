@@ -40,8 +40,8 @@ def _unavailable():
 
 @router.get("/api/theater")
 def theater_state(request: Request):
-    # Guests included: watching is the whole of what a guest pass buys, and
-    # between titles the intermission card is what there is to watch.
+    # Any signed-in account: between titles the intermission card is what there
+    # is to watch.
     if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
     return theater.public_state()
@@ -49,10 +49,10 @@ def theater_state(request: Request):
 
 @router.get("/media/art/{name}")
 def art_file(name: str, request: Request):
-    """One stored poster, off the gate's own data volume. Guests included, for
-    the reason /api/theater lets them in: the poster is part of what the room
-    is watching. The name is held to the rule it was written under, so nothing
-    outside the art directory can be named."""
+    """One stored poster, off the gate's own data volume, for any signed-in
+    account: the poster is part of what the room is watching. The name is held
+    to the rule it was written under, so nothing outside the art directory can
+    be named."""
     if not session_user(request):
         return Response(status_code=401)
     stem, dot, ext = name.rpartition(".")

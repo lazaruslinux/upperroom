@@ -2,13 +2,12 @@
 
 Launch your own streaming site. Self hosted, single channel live streaming with
 accounts and chat: you broadcast from OBS, your viewers open one link, sign in,
-and watch in 1080p60 with live chat and a list of who else is watching. No third
-party streaming service, and nobody gets an account unless you made it or handed
-them an invite. You can also hand out a guest pass to let somebody watch for a
-while without one, or share a single clip publicly. It runs on a server you
-control, at your own domain.
+and watch in 1080p60 with live chat and a board of who else is in the room. No
+third party streaming service, and nobody gets an account unless you made it or
+handed them an invite. You can also share a single clip publicly. It runs on a
+server you control, at your own domain.
 
-Current version: **0.23.0**. Releases are tagged in git, and the running version
+Current version: **0.24.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -26,11 +25,15 @@ The home page while the channel is live:
 
 Past broadcasts and clips, kept to whatever retention you configure:
 
-![The browse page broadcasts grid with past streams](docs/screenshots/home-broadcasts.png)
+![The browse page: a grid of past broadcasts and clips](docs/screenshots/browse.png)
 
 The analytics page, composed entirely from data the site already has:
 
 ![The analytics page with watch time and unique viewer charts](docs/screenshots/analytics.png)
+
+The dashboard's Go live screen: three steps that tick as you go on air, beside the room as viewers see it:
+
+![The Go live screen: OBS settings, on-air status and the watch link beside the live room and chat](docs/screenshots/dashboard-golive.png)
 
 ## What it does
 
@@ -42,14 +45,14 @@ only repackages the video and stays light.
 - Ingests your stream from OBS over RTMP and republishes it as low latency HLS,
   roughly two to five seconds behind live.
 - Serves one watch page. No video leaves the server without a valid session.
-- Live chat, a list of who is watching, and a count.
+- Live chat, a call board of who is in the room, and a count.
 - An optional limit on how many people may watch at once. Every viewer pulls
   their own copy of the stream, so this is the setting that bounds the bandwidth
   bill; past it the video is refused and chat still works while they wait.
-- The home card plays the live stream muted, the way a front page does, and one
-  click joins with sound and chat. It is the real stream, so it costs what a
-  viewer costs and takes a place in the room; it falls back to a still frame
-  when the room is full, and it stops entirely in a hidden tab.
+- Signing in lands you in the room while you are live and on home when you are
+  not. Home is the place between broadcasts: when you were last on, a way to be
+  notified next time, the last broadcast and the newest clips, and while you
+  are live a still frame and one button into the room.
 - A one-time notice after an update, naming the new version and listing what
   changed in at most five lines. Once per person per release, newest only.
 - Records every broadcast (a recording you can replay later), and lets viewers
@@ -89,60 +92,59 @@ only repackages the video and stays light.
 - The first time you open the site it hands you a short setup page that creates
   your admin account and names your site. The page seals itself afterwards.
 - Invite codes let you hand out accounts without making them yourself. Generate
-  a code on the dashboard, label it, and it works once. Whoever redeems it
-  picks their own username and password and arrives as a viewer. Once a code
-  has been used or revoked you can remove it, and there is a button to clear
-  every spent code at once, so the list does not just grow.
-- Guest passes are the other half of that: single use codes that let somebody
-  watch and chat for half an hour without making an account at all. Generate a
-  batch, copy them in one go, and send them to `/guest`. The clock starts when
-  the pass is redeemed, not when you make it. A guest can watch and chat and
-  nothing else, and can be timed out, banned and purged exactly like anyone
-  else. Their account removes itself when the time is up.
-- The guest form asks a small question to keep casual automation out. It is
-  answered by the server itself: no third party, nothing phones home, and it
-  works on a machine with no internet access beyond your own viewers.
+  a code on the dashboard, label it, and it works once. Send it as a link,
+  `/join#<code>`, which opens the sign-up form with the code filled in; the code
+  sits after the `#`, so it never reaches a server log or a link preview.
+  Whoever redeems it picks their own username and password and arrives as a
+  viewer. Once a code has been used or revoked you can remove it, and there is
+  a button to clear every spent code at once, so the list does not just grow.
+- Everyone watches with an account. Once somebody has one, the watch link is
+  all they need: **Copy watch link** on the dashboard copies it in one press.
 - You can also create accounts directly from that page, for anyone who would
   rather not deal with a code.
-- No account needs an email address. A viewer supplies one only if they want
-  mail when you go live.
+- No account needs an email address, and nothing ever asks for one.
 - Viewers get an avatar they crop themselves, a short bio, a display name they
   can change, and their own password.
 
 ### Chat and moderation
 
 - An admin role and a separate moderator role, each with its own dashboard.
-  Accounts, bans, invites and guest passes all live on the dashboard's People
-  tab. Only the account holder can change their own display name, and
+  Accounts, bans and invites all live in the dashboard's People section. Only
+  the account holder can change their own display name, and
   deleting an account makes you type its username first.
 - Chat commands: `/timeout`, `/untimeout`, `/del`, `/purge`, `/ban`, `/unban`
   for moderators, plus `/mod` and `/unmod` for the admin. `/help` lists whatever
   the person typing it is allowed to use.
 - Almost anything a command does, a click does too. Select a name in chat for
-  timeouts, bans and promotions, or hover a line to delete just that one.
+  timeouts, bans and promotions, or hover a line (press and hold, on a phone)
+  to delete just that one.
 - Slow mode and a banned word list, both set in the dashboard. Chat starts at a
   2 second minimum between a viewer's messages, which you can raise or turn off.
   Moderators are exempt from slow mode, but not from the word list. A new
   install ships with a default list, which you own and can empty. Matching is
   whole word, so banning "ass" does not also block "class".
 - Viewers pick their own name and message colors. The server rejects anything
-  too dark to read, or close enough to the red reserved for the LIVE badge to be
-  confusing.
+  too dark to read, or close enough to the red reserved for the ON AIR lamp to
+  be confusing.
 - A handful of chat fonts, all self hosted. Nothing is fetched from anyone else.
 
 ### Making it yours
 
-- Your site name leads the pages your viewers see, with a quiet "powered by
-  upperroom" underneath. Set it in the dashboard.
+- A dark room built around the broadcast: one ON AIR lamp that is lit only while
+  you are live, the stream with nothing drawn over it, and a call board of who
+  is here. It is laid out for a phone first.
+- Your site name leads the pages your viewers see. Set it in the dashboard.
 - Four accent colors, applied site wide, including the browser theme color.
-- Your stream key lives in the dashboard, under Connections. Copy it, or
+- Your stream key lives in the dashboard, on the Go live screen. Copy it, or
   regenerate it if it leaks, without touching a config file or restarting
   anything.
-- The dashboard opens with your own watch page in it: the video, the chat and
-  the list of who is watching, so you can start the broadcast in OBS and keep an
-  eye on the room without a second tab. A switch drops the video and keeps chat
-  alone. The stream title and the game sit right under the frame, and the rest
-  of the controls are grouped in five tabs below that.
+- The dashboard opens on one Go live screen: the OBS settings, whether you are
+  on air and recording, and the watch link, as three steps that tick as they
+  become true, beside your own watch page with its chat, the stream title and
+  the game, who is in the room, and the room limit. You can start the broadcast
+  in OBS and keep an eye on the room without a second tab. Everything else
+  (people, the library, the channel, chat rules, connections, stats) is a
+  section behind a menu, and all of it works from a phone.
 - A transparent chat overlay you add to OBS as a browser source, so the
   broadcast itself shows chat, joins, clips and highlighted messages. URL options
   move it to any corner, scale the text and cap how many lines it keeps, and test
@@ -152,15 +154,18 @@ only repackages the video and stays light.
   are live.
 - An analytics page with the running totals plus line charts of watch time,
   unique viewers and chat messages per day over the last thirty days.
-- When you go live it can post to a Discord webhook, send email, or do neither.
-  Email is opt in per account, and you are never mailed about your own stream.
+- When you go live, every phone or computer whose owner turned it on in Options
+  gets a push notification; tapping it opens the room. One switch on the
+  dashboard lets you go live quietly. It is standard Web Push, sent encrypted
+  through the browser maker's own push service, and no email is involved. On an
+  iPhone or iPad it works once the site is added to the Home Screen.
 - Installs to a phone home screen like an app, with a real icon and a link
   preview card.
 - Name the broadcast and say what you are playing, and pasting your watch link
   into a chat app shows both: "Northwind Live: Thursday night run" over "playing
   Ashfall Delta", with a frame of the stream beside them while you are live.
-  Viewers see the game on the home card too, under the channel name, for as long
-  as the broadcast runs. Pick from what you have played before or type something
+  Viewers see the game under the stream title in the room too, for as long as
+  the broadcast runs. Pick from what you have played before or type something
   new. Because a preview is fetched without a session, that frame is reachable by
   anyone holding the link while you are on air; `docs/05-security.md` says
   exactly how far that goes. A shared clip link previews the same way, naming
@@ -205,7 +210,7 @@ Four containers:
 - `caddy` terminates TLS, serves the pages, and guards the video and the
   recordings.
 
-A fourth, `projector`, is optional and does not run here: it runs on whatever
+A fifth, `projector`, is optional and does not run here: it runs on whatever
 machine holds your media library, connects outward to `gate` and `mediamtx`, and
 plays titles into the channel for theater mode. It is only accepted when
 `SELFSTREAM_THEATER=1` is set.
@@ -231,9 +236,9 @@ Cloudflare account. The tutorials in `docs/` walk through each part.
 5. Open your domain in a browser. Because there are no accounts yet, it sends
    you to a setup page that creates your admin account and names your site, then
    signs you in. That page is gone for good once it has run.
-6. Open the dashboard, go to Connections, copy the server address and stream
-   key out of the Stream key panel, and paste them into OBS:
-   `docs/03-obs.md`. Then go live.
+6. Open the dashboard. The first step on its Go live screen has the server
+   address and stream key: copy them into OBS (`docs/03-obs.md`), then go
+   live.
 
 If you ever lock yourself out, accounts can still be made from the command line.
 That path is described in `docs/06-accounts-and-chat.md`. Everything else about
@@ -272,24 +277,23 @@ install is unaffected. Credentials, teardown and the full details are in
 
 `.env` holds what the server needs in order to boot: your domain, the session
 signing secret, the media store's two keys, the certificate email, how long a
-session lasts, the country list, and an SMTP relay if you want go-live email. See `.env.example`, which
-explains every value.
+session lasts, the country list, and the site URL, which go-live notifications
+need. See `.env.example`, which explains every value.
 
 Everything about the channel itself lives in the admin dashboard rather than in
 a file, so changing it is not a redeploy: site name, stream title and
 description, accent color, the stream key, the
 overlay key, slow mode, banned words, the viewer limit, the storage limits, and
-the Discord webhook.
+whether going live notifies people.
 
 ## Security model
 
 In short: the live stream and the recordings are served only to a valid session
-cookie, and that cookie is only issued after a correct username and password, a
-redeemed invite, or a redeemed guest pass. The ingest port requires the current
-stream key, which you can rotate from the dashboard at any time. Passwords are
-stored as scrypt hashes. An invite can only ever produce a viewer, never an
-admin or a moderator, and a guest pass produces an account that can only watch
-and chat and expires on its own.
+cookie, and that cookie is only issued after a correct username and password or
+a redeemed invite. There is no way in without an account. The ingest port
+requires the current stream key, which you can rotate from the dashboard at any
+time. Passwords are stored as scrypt hashes. An invite can only ever produce a
+viewer, never an admin or a moderator.
 
 There is exactly one deliberate exception, and it is worth stating plainly: a
 clip you choose to publish is readable by anyone holding its link, with no
@@ -298,9 +302,10 @@ is admin only, it is off until you turn it on, and turning it off takes effect
 at once. A published clip is video only, carries no chat replay or comments, and
 does not name who made it.
 
-Request sizes, sign-in attempts, guest-pass redemptions and chat connections are
+Request sizes, sign-in and invite attempts, comments and chat connections are
 all bounded per address, so the parts a stranger can reach cannot be used to
-exhaust the server. The full explanation is in `docs/05-security.md`, and the
+exhaust the server. Every page runs under a strict content security policy: no
+inline script or style, and nothing loaded from anywhere but the site itself. The full explanation is in `docs/05-security.md`, and the
 firewall rules are in `docs/01-vps-setup.md`.
 
 ## Documentation
@@ -327,9 +332,9 @@ In plain terms: run it, modify it, and self-host it freely. If you host a
 modified version for other people to use, you must share your modifications
 under the same license. That last part is the point of the AGPL rather than the
 plain GPL, and it matters here because this is software people reach over a
-network. The "powered by upperroom" credit on every page links the developer's
-site, which carries a Source on GitHub link for the project, and the footer on
-every page names the AGPL-3.0 license and links its text. The dashboard footer
+network. The "developed by" credit in the footer of every page links the
+developer's site, which carries a Source on GitHub link for the project, and the
+same footer names the AGPL-3.0 license and links its text. The dashboard footer
 carries a spelled-out `source` link straight to this repository beside the
 running version, and that stands as the AGPL section 13 written offer of source
 to anyone using the running service.

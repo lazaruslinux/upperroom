@@ -1,111 +1,57 @@
 """
 Go-live notifications for the upperroom gate.
 
-When a broadcast starts, and again an hour before an announced one, tell people
-over any channel the operator has configured: a Discord webhook and/or email
-through an SMTP relay (e.g. Brevo). Everything here is best effort and gated on
-configuration: with nothing set, notifications are simply skipped.
+When a broadcast starts, send a Web Push notice to every device that turned it
+on (webpush.py does the sending). Best effort throughout: with the dashboard
+switch off, or SITE_URL unset, nothing is sent, and a failure never touches the
+stream.
 """
 
-import asyncio
 import logging
-import smtplib
 import time
-from email.message import EmailMessage
-
-import httpx
 
 import db
-from config import (
-    NOTIFY_COOLDOWN, SITE_URL, SMTP_FROM, SMTP_HOST, SMTP_PASS, SMTP_PORT,
-    SMTP_USER,
-)
+import webpush
+from config import NOTIFY_COOLDOWN, THEATER_ENABLED
 
 logger = logging.getLogger("upperroom.notify")
 
 
-async def send_discord(webhook, content):
-    """Post a message to a Discord incoming webhook. Best effort."""
-    if not webhook:
-        return
-    try:
-        async with httpx.AsyncClient(timeout=10) as http:
-            await http.post(webhook, json={"content": content})
-    except httpx.HTTPError as exc:
-        logger.warning("discord go-live notification failed: %r", exc)
+def live_payload():
+    """What the go-live notice says. The service worker always opens /watch,
+    so no URL rides along."""
+    info = db.get_stream_info()
+    site_name = info["site_name"] or "upperroom"
+    body = info["stream_title"] or "Live now."
+    # A theater session silences the game label, as the status and the link
+    # preview do. Read through db: theater imports this module.
+    in_theater = THEATER_ENABLED and db.get_active_theater_session() is not None
+    game = db.get_now_playing()
+    if game and not in_theater:
+        body += f"\nPlaying {game}"
+    return {"title": f"{site_name} is live", "body": body}
 
 
-def _send_emails_blocking(recipients, subject, body):
-    """Send the go-live email to each recipient over the SMTP relay. Blocking, so
-    it is called from a thread. One bad address never stops the rest."""
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-            server.starttls()
-            if SMTP_USER:
-                server.login(SMTP_USER, SMTP_PASS)
-            for _name, address in recipients:
-                message = EmailMessage()
-                message["Subject"] = subject
-                message["From"] = SMTP_FROM
-                message["To"] = address
-                message.set_content(body)
-                try:
-                    server.send_message(message)
-                except smtplib.SMTPException as exc:
-                    logger.warning(
-                        "go-live email to %s failed: %r", address, exc
-                    )
-                    continue
-    except (smtplib.SMTPException, OSError) as exc:
-        logger.warning("go-live email relay failed: %r", exc)
-
-
-def email_enabled():
-    """Whether the channel sends go-live email at all: a relay has to be
-    configured on the server AND the operator has to have left the dashboard
-    switch on. Discord is deliberately not covered by this; the two are
-    independent."""
-    if not (SMTP_HOST and SMTP_FROM):
-        return False
-    return bool(db.get_notify_settings()["email_on_live"])
-
-
-async def send_live_emails(title, site_name="upperroom"):
-    """Email everyone who opted in that the channel is live. No-op unless email
-    is enabled for the channel and at least one account has an address."""
-    if not email_enabled():
-        return
-    recipients = db.list_live_recipients()
-    if not recipients:
-        return
-    lines = [title, "", "The stream just went live."]
-    if SITE_URL:
-        lines += ["", f"Watch: {SITE_URL}/home"]
-    body = "\n".join(lines)
-    await asyncio.to_thread(
-        _send_emails_blocking, recipients, f"{site_name} is live", body
-    )
-
-
-async def notify_live(force=False):
-    """Announce that the channel went live, over every configured channel. Sends
-    at most once per cooldown window unless force=True (a manual test). Best
-    effort throughout: a failure on any channel never touches the stream."""
+async def notify_live():
+    """Announce that the channel went live. Sends at most once per cooldown
+    window."""
     now = int(time.time())
     settings = db.get_notify_settings()
-    if not force:
-        if now - settings["last_notified_at"] < NOTIFY_COOLDOWN:
-            return
-        # Stamp the cooldown before sending so a slow relay cannot let a second
-        # transition slip through and double-announce. A test send leaves the
-        # real cooldown untouched.
-        db.mark_notified(now)
-    info = db.get_stream_info()
-    title = info["stream_title"] or "Live Stream"
-    site_name = info["site_name"] or "upperroom"
-    discord_text = f"**{title}** is live now."
-    if SITE_URL:
-        discord_text += f"\n{SITE_URL}/home"
-    logger.info("announcing go-live%s", " (test)" if force else "")
-    await send_discord(settings["discord_webhook"], discord_text)
-    await send_live_emails(title, site_name)
+    if now - settings["last_notified_at"] < NOTIFY_COOLDOWN:
+        return
+    # Stamp the cooldown before sending so a slow push service cannot let a
+    # second transition slip through and double-announce.
+    db.mark_notified(now)
+    if not settings["notify_on_live"] or not webpush.ready():
+        return
+    subscriptions = db.list_push_subscriptions()
+    if not subscriptions:
+        return
+    try:
+        result = await webpush.send(subscriptions, live_payload())
+    except Exception:
+        logger.warning("go-live push failed", exc_info=True)
+        return
+    logger.info(
+        "announced go-live: %d sent, %d failed", result["sent"], result["failed"]
+    )

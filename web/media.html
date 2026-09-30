@@ -3,89 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom - watch</title>
-  <script>
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <title>upperroom</title>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
 </head>
 <body class="media">
   <div id="site-nav"></div>
 
   <main class="media-main">
     <section class="media-stage">
-      <video id="video" controls playsinline></video>
+      <!-- A recording is played, not watched live, so it keeps the player's own
+           controls: seeking is the point. -->
+      <div class="monitor">
+        <video id="video" controls playsinline></video>
+      </div>
       <div id="heatmap" class="heatmap" aria-label="Chat activity. Click to seek." hidden></div>
       <div class="media-info">
         <!-- The title, and for a clip's own maker (or a mod) an inline rename:
-             the watch page only asks for a name once, right after the cut. -->
+             the room only asks for a name once, right after the cut. -->
         <div class="media-title-row">
           <h1 id="media-title" class="media-page-title">Loading…</h1>
-          <button id="rename-btn" type="button" class="pill" hidden>rename</button>
+          <button id="rename-btn" type="button" class="chip-btn" hidden>Rename</button>
         </div>
         <div id="rename-edit" class="rename-edit" hidden>
-          <input id="rename-input" type="text" maxlength="80" autocomplete="off">
-          <button id="rename-save" type="button" class="pill primary">Save</button>
-          <button id="rename-cancel" type="button" class="pill">Cancel</button>
+          <input id="rename-input" class="field" type="text" maxlength="80" autocomplete="off" aria-label="Clip name">
+          <button id="rename-save" type="button" class="btn primary">Save</button>
+          <button id="rename-cancel" type="button" class="btn">Cancel</button>
         </div>
-        <div id="media-sub" class="media-sub muted"></div>
+        <p id="media-sub" class="media-sub"></p>
         <p id="media-desc" class="media-desc"></p>
 
-        <!-- Likes and comments sit under the video, beside the chat replay in
-             the column to the right rather than mixed into it. The replay is
-             what was said live and is left exactly as it was; this is what
-             people say afterwards. -->
+        <!-- Likes and comments sit under the video, beside the chat replay
+             rather than mixed into it. The replay is what was said live and is
+             left exactly as it was; this is what people say afterwards. -->
         <div class="reactions" id="reactions">
-          <button id="like-btn" type="button" class="chip-btn" hidden>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3Z"></path>
-              <path d="M7 10l4.5-7a2 2 0 0 1 3.4 2l-1.4 5H19a2 2 0 0 1 2 2.4l-1.4 6A2 2 0 0 1 17.6 21H7"></path>
-            </svg>
+          <button id="like-btn" type="button" class="chip-btn" aria-pressed="false" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3Z"/><path d="M7 10l4.5-7a2 2 0 0 1 3.4 2l-1.4 5H19a2 2 0 0 1 2 2.4l-1.4 6A2 2 0 0 1 17.6 21H7"/></svg>
             <span id="like-count">0</span>
           </button>
         </div>
 
-        <section class="comments" id="comments-section" hidden>
-          <h2 class="comments-head">Comments</h2>
+        <section class="comments" id="comments-section" aria-labelledby="comments-head" hidden>
+          <h2 id="comments-head" class="engraved comments-head">Comments</h2>
           <form id="comment-form" class="comment-form">
-            <input id="comment-input" type="text" maxlength="1000"
-                   placeholder="Say something about this" autocomplete="off">
-            <button type="submit" class="pill primary">Post</button>
+            <input id="comment-input" class="field" type="text" maxlength="1000"
+                   placeholder="Say something about this" autocomplete="off" aria-label="Your comment">
+            <button type="submit" class="btn primary">Post</button>
           </form>
-          <p id="comment-msg" class="pw-msg" hidden></p>
+          <p id="comment-msg" class="pw-msg" role="status" hidden></p>
           <div id="comment-list" class="comment-list"></div>
           <p id="comment-empty" class="muted" hidden>No comments yet.</p>
         </section>
       </div>
     </section>
 
-    <aside class="media-replay">
+    <aside class="media-replay" aria-labelledby="replay-title">
       <header class="replay-head">
-        <span>Chat replay</span>
-        <button id="replay-toggle" type="button" class="pill">On</button>
+        <h2 id="replay-title" class="engraved">Chat replay</h2>
+        <button id="replay-toggle" type="button" class="chip-btn" aria-pressed="true">On</button>
       </header>
       <div id="replay-messages" class="messages"></div>
-      <p id="replay-empty" class="muted replay-empty" hidden>No chat to replay.</p>
+      <p id="replay-empty" class="replay-empty" hidden>No chat to replay.</p>
     </aside>
   </main>
 
-  <footer class="site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
-  <script src="/assets/nav.js?v=10"></script>
-  <script src="/assets/media.js?v=15"></script>
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/media.js?v=16"></script>
 </body>
 </html>

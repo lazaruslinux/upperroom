@@ -3,54 +3,77 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>upperroom - analytics</title>
-  <script>
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <title>upperroom - stats</title>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
+  <link rel="stylesheet" href="/assets/dash.css?v=2">
 </head>
-<body class="admin">
+<body class="dash">
   <div id="site-nav"></div>
 
-  <main class="admin-main">
-    <h2 class="section-title">At a glance</h2>
-    <section class="stat-strip" id="stat-strip"></section>
+  <main class="dash-main">
+    <div class="dash-page wide">
+      <h1 class="page-title">Stats</h1>
 
-    <h2 class="section-title" style="margin-top:1.75rem;">Over the last 30 days</h2>
-    <section id="charts" class="charts-grid"></section>
+      <!-- Only what the app already keeps. There is no count of people
+           watching over time: presence lives in memory and is never written
+           down, so no chart pretends otherwise. -->
+      <div class="meter-row" id="people-meters" aria-label="At a glance"></div>
 
-    <h2 class="section-title" style="margin-top:1.75rem;">Most watch time</h2>
-    <div id="watch-board" class="activity-list"></div>
-    <p id="watch-empty" class="muted" hidden>Nobody has watched a live stream yet.</p>
+      <section class="dash-group" aria-labelledby="days-title">
+        <div class="group-head">
+          <h2 id="days-title" class="engraved">The last 30 days</h2>
+        </div>
+        <div id="charts" class="charts"></div>
+      </section>
 
-    <h2 class="section-title" style="margin-top:1.75rem;">Broadcasts</h2>
-    <div id="broadcasts" class="activity-list"></div>
-    <p id="broadcast-empty" class="muted" hidden>No recorded broadcasts yet.</p>
+      <section class="dash-group" aria-labelledby="board-title">
+        <div class="group-head">
+          <h2 id="board-title" class="engraved">Most watch time</h2>
+        </div>
+        <ul id="watch-board" class="rows" aria-labelledby="board-title"></ul>
+        <p id="watch-empty" class="empty" hidden>Nobody has watched a live stream yet.</p>
+      </section>
 
-    <h2 class="section-title" style="margin-top:1.75rem;">Library</h2>
-    <section class="stat-strip" id="library-strip"></section>
+      <section class="dash-group" aria-labelledby="bc-title">
+        <div class="group-head">
+          <h2 id="bc-title" class="engraved">Broadcasts</h2>
+        </div>
+        <ul id="broadcasts" class="rows" aria-labelledby="bc-title"></ul>
+        <p id="broadcast-empty" class="empty" hidden>No recorded broadcasts yet.</p>
+      </section>
 
-    <h2 class="section-title" style="margin-top:1.75rem;">Invites</h2>
-    <section class="stat-strip" id="invite-strip"></section>
+      <section class="dash-group" aria-labelledby="lib-title">
+        <div class="group-head">
+          <h2 id="lib-title" class="engraved">Library</h2>
+        </div>
+        <div class="meter-row flush" id="library-meters"></div>
+      </section>
+
+      <section class="dash-group" aria-labelledby="inv-title">
+        <div class="group-head">
+          <h2 id="inv-title" class="engraved">Invite codes</h2>
+        </div>
+        <div class="meter-row flush" id="invite-meters"></div>
+      </section>
+    </div>
   </main>
 
-  <footer class="site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
-  <script src="/assets/nav.js?v=10"></script>
-  <script src="/assets/analytics.js?v=3"></script>
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/analytics.js?v=4"></script>
 </body>
 </html>

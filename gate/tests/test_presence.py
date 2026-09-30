@@ -218,10 +218,10 @@ def test_a_grace_of_zero_still_says_nothing_for_the_owner(client, monkeypatch):
 
 def test_everybody_else_is_still_announced(client, grace):
     async def run():
-        watcher, host, guest = Socket(), Socket(), Socket()
+        watcher, host, visitor = Socket(), Socket(), Socket()
         await hub.join(watcher, who("watcher"))
         await hub.join(host, who("rafe", "Rafe", owner=True))
-        await hub.join(guest, who("nell", "Nell"))
+        await hub.join(visitor, who("nell", "Nell"))
         return watcher.lines()
 
     lines = asyncio.run(run())

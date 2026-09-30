@@ -15,8 +15,8 @@ yourself rather than take it on faith.
    moment it exists. After that, an account can only be created by an admin, or
    by someone redeeming a single-use invite code an admin generated. Codes are
    claimed with a single guarded write, so one code can never make two accounts,
-   and revoking one takes effect at once. Someone with the link still cannot get
-   in without an account you allowed.
+   and revoking one takes effect at once. There is no way in without an account:
+   someone with the watch link still cannot get in without one you allowed.
 
 3. **Passwords are hashed.** Passwords are never stored as written. Each one is
    run through scrypt with a random per account salt. Even if someone got the
@@ -35,7 +35,7 @@ yourself rather than take it on faith.
    that is a signed token. The signature uses a secret only the server knows, so
    the cookie cannot be forged or edited. It is marked HttpOnly, so page scripts
    cannot read it, Secure, so it only travels over HTTPS, and it expires after a
-   few hours. A guest's token expires with the guest.
+   few hours.
 
 6a. **Writes only come from this site.** Every request that changes something,
    and the chat socket, is refused unless the browser says it came from this
@@ -48,9 +48,8 @@ yourself rather than take it on faith.
    does not serve a single video segment until it asks the gate to check the
    cookie. Even if someone found the raw stream URL, it returns nothing without a
    valid cookie. The lock is on the video, not only on the page that shows it.
-   The same check guards the saved recordings and clips, and there it refuses
-   guests: a guest pass buys the live broadcast, and the files of the library
-   cannot be fetched with one even by guessing their names.
+   The same check guards the saved recordings and clips, so their files cannot
+   be fetched without a session even by guessing their names.
 
 8. **Chat cannot inject code.** Chat messages are placed into the page as plain
    text, never as HTML, so nobody can post a message that runs a script in
@@ -99,9 +98,27 @@ the old keys stop working at once.
 
 ## What is deliberately public
 
-Two things answer a visitor with no session at all. Both are deliberate, and
-neither is video you have not chosen to publish. Here is exactly how big each
-one is.
+Four things answer a visitor with no session at all: the sign-in page with
+invite registration, a published clip, and the link previews for your watch
+page and for an invite link. All are deliberate, and none is video you have not
+chosen to publish. Here is exactly how big each one is.
+
+### Sign-in and invite registration
+
+The sign-in page, and the two endpoints behind it: `/api/auth` signs in, and
+`/api/register` makes a viewer account from an invite code. Both draw on the
+same per-address allowance, so guessing passwords and guessing codes cannot be
+alternated for two budgets. A code is three words from a list sized so that
+three of them clear ten million combinations. It is claimed in one guarded
+database write, so it makes exactly one account, and that account is only ever
+a viewer.
+
+An invite can travel as a link, `/join#<code>`. The code rides after the `#`,
+and that part of an address is never sent to a server by a browser, so it is
+not in Caddy's access log, not in the gate's, not in a `Referer`, and not in
+anything a link preview fetches. The page reads it into the sign-up form and
+takes it off the address bar and out of the history at once. What a leaked
+link costs is one account, once, and revoking the code closes it.
 
 ### A published clip
 
@@ -137,9 +154,9 @@ That is the whole point of the feature, so it is worth knowing its shape:
 
 Paste your watch link into a chat app and it shows a card: the channel and what
 this broadcast is called, what is being played, and a picture. A shared clip
-link shows one too, described above. Both cards are built by the app fetching
-the page, and a preview fetcher never carries a cookie, so those pages and their
-pictures have to answer without one.
+link shows one too, described above, and so does an invite link. Every card is
+built by the app fetching the page, and a preview fetcher never carries a
+cookie, so those pages and their pictures have to answer without one.
 
 - **The page itself, `/watch`.** What comes back is only the shell: the markup,
   the stylesheet, and the preview tags. It contains no video, no chat and no
@@ -147,7 +164,7 @@ pictures have to answer without one.
   session separately, exactly as before, and a visitor without one is sent to
   the sign-in page the moment the page runs.
 - **The picture, `/api/og-image.jpg`.** While a broadcast is running this is the
-  current frame of it, the same 640px still the home card shows, refreshed every
+  current frame of it, the same 640px still the home page shows, refreshed every
   fifteen seconds. **Be clear on what that means: anyone holding your watch link
   can fetch that URL and see a frame of your stream without an account.** They
   cannot watch it. It is one still, at the rate the app captures them, with no
@@ -171,6 +188,11 @@ pictures have to answer without one.
   and just as much a shell: the tags, and markup that then asks
   `/api/shared/<token>` what to show. That endpoint answers a dead token with a
   404, so rendering the page opens nothing the link did not already reach.
+- **The invite page, `/join`.** The sign-in page, rendered with a card that
+  reads "You're invited to" and your site name, over your channel description
+  (or "Make an account to watch."), with the channel's static picture. No frame
+  of the stream, never the code (it is in the fragment, which the fetcher does
+  not send), and a `noindex` tag.
 - The country gate, if you set one, applies to all of them. So does the rate
   limiting and the fail2ban jail below.
 
@@ -185,16 +207,28 @@ links leaves the site closed.
 One smaller thing is also public, and it is harmless: `/api/status` reports the
 running version of the app, so the dashboard footer can show it and an external
 check can read it without a session. While a broadcast is running it also
-reports what you are playing, which the home card reads; that is the same label
+reports what you are playing, which the room's slate reads; that is the same label
 the link preview above already puts in front of anyone holding the link, so it
 is public either way. This is accepted rather than hidden: the
 source is public under the AGPL, so the version is not a secret, and knowing it
 buys an attacker nothing they could not already read in the code.
 
+## Content security policy
+
+Every page except the versioned assets is served with a strict
+`Content-Security-Policy` from the `Caddyfile`: scripts, styles, fonts, images,
+video and connections may come from this site and nowhere else, and no page
+carries an inline script, an inline style block or a `style` attribute. A
+script somebody managed to get into a page would have nowhere to load from and
+no way to run inline. The few sources past `'self'` each have a reason written
+beside them in the `Caddyfile`: `blob:` for the video player (Media Source
+Extensions and its worker) and the avatar crop, `data:` for images the browser's
+own widgets use, and the site's own `wss:` address for the chat socket, which
+some older Safari releases do not count as `'self'`.
+
 ## Framing
 
-Every page except the versioned assets is served with
-`Content-Security-Policy: frame-ancestors 'self'`, so only this site can put
+The same policy carries `frame-ancestors 'self'`, so only this site can put
 these pages in a frame. The dashboard does exactly that with the watch page, to
 show the streamer their own broadcast, and the watch page listens for messages
 from whatever framed it (it uses them to hide or show the video). Both halves are
@@ -258,8 +292,7 @@ with a long random key the same way the overlay does.
   password guessing.
 - **Nothing about your library is public.** What a session puts on a public
   endpoint is the title, year, runtime, synopsis and poster of what is playing,
-  and only to signed-in viewers (guests included, since watching is what a guest
-  pass is for). Item ids, paths and your media server's address never leave the
+  and only to signed-in viewers. Item ids, paths and your media server's address never leave the
   gate. `/api/status`, the one payload every visitor's page polls, is unchanged.
 - **A session suppresses two write paths.** While it is open nothing is
   recorded and clips are refused outright, so a film you put on for the room
@@ -355,6 +388,54 @@ sidecar. What that changes, security-wise, is worth being explicit about:
   retried rather than discarded, and nothing is deleted while the store cannot
   confirm it (`docs/04-run.md`, "When the store cannot be reached").
 
+## Go-live notifications
+
+When you go live, the server sends a push notification to every device whose
+owner turned it on in Options, admins included. No email is collected anywhere:
+no account has an address, no page asks for one, and the server keeps none.
+Updating from a release that had go-live email empties every stored address and
+the old Discord webhook URL on the first start, and logs only how many.
+
+- **A push travels through the browser maker's push service**: Apple for
+  Safari, iPhone and iPad, Google for Chrome, Brave and most other Chromium
+  browsers, Mozilla for Firefox, Microsoft for Edge on Windows. That is how Web Push works; a browser only
+  takes pushes from its own service. Your server encrypts each message for the
+  one device it is going to (RFC 8291), so the service carries it without being
+  able to read it.
+- **What the push service can see**: that a message went to a device that
+  signed up through your site, when, and how big it was. Your server identifies
+  itself to the service with a signed token (VAPID, RFC 8292) that names
+  `SELFSTREAM_SITE_URL` as its contact, which is why push is off until that is
+  set.
+- **What a notice says**: your site name, the stream title, and the game when
+  one is set. It carries no link: a tap opens `/watch` on your site, which asks
+  for a session like always.
+- **The server only ever sends to those services.** A subscription is a URL the
+  browser hands over, and the server posts to it later. If any URL were kept, a
+  signed-in account could make your server send requests wherever it liked, into
+  your own network included. So every subscription is checked when it is saved
+  and again before each send: `https://`, no other port, no credentials in it,
+  and a host that is exactly `fcm.googleapis.com` or ends in
+  `.push.services.mozilla.com`, `.push.apple.com` or `.notify.windows.com`.
+  Anything else is refused. Redirects are never followed. The keys that come
+  with it must be a real P-256 public key and a 16 byte secret.
+- **A subscription URL is a credential on its own**, so it is never logged: a
+  failed send logs the push service's host and its status code, nothing more.
+  One the service reports gone (404 or 410) is deleted. Each account keeps at
+  most ten, the newest, and deleting an account deletes its subscriptions.
+- **Only a signed-in account can sign a device up**, the cross-site write check
+  applies, and turning it on or off is rate limited per address. Turning a
+  device off removes only your own subscription; a browser that changes hands
+  moves its subscription to whoever turns it on next.
+- **The server's push key pair lives in the database.** It is made on the first
+  start. The private half is never logged and no endpoint returns it; browsers
+  only ever get the public half. **Database backups therefore hold the private
+  key** (`docs/10-backup.md`): with a backup, someone could send notifications
+  that look like yours to the devices signed up in it.
+- **The dashboard's test** goes only to the devices on the admin's own account,
+  and is rate limited. With the dashboard switch off you go live quietly and
+  nothing is sent.
+
 ## What this does not do
 
 - It does not hide your server's IP. The firewall and the login are the
@@ -371,11 +452,12 @@ You do not have to configure any of this; it is on by default.
 - **Request bodies are capped** at 64 KB for the API and 3 MB for the avatar
   upload. Nothing here needs more, and without a cap a stranger can make the
   server buffer and parse megabytes before it can say no.
-- **Sign-in attempts are rate limited per address**, five a minute. Redeeming a
-  guest pass draws on the same allowance, so guessing codes and guessing
+- **Sign-in attempts are rate limited per address**, five a minute. Redeeming
+  an invite code draws on the same allowance, so guessing codes and guessing
   passwords cannot be alternated for two budgets.
-- **Issuing a guest challenge question has its own, larger allowance**, since a
-  visitor legitimately asks for several while filling the form in.
+- **Posting a comment is rate limited per address**, ten a minute on its own
+  budget. A comment lands in a thread everyone reads, so one caller, however
+  many sessions they hold, cannot post them in a loop.
 - **Highlighting a message is rate limited per address**, ten a minute on its
   own budget. A highlight spends points and posts to chat, so it is a write path
   worth capping, but it draws on its own allowance rather than the sign-in one.
@@ -383,6 +465,8 @@ You do not have to configure any of this; it is on by default.
   own budget. A valid session is needed to reach that endpoint, but that is
   exactly the case worth guarding: the limit stops a borrowed session from brute
   forcing the current-password check on its way to setting a new one.
+- **Turning notifications on or off is rate limited per address**, twenty a
+  minute, and the dashboard's test push five a minute, each on its own budget.
 - **A highlighted message can be moderated like any other.** A highlight is a
   chat message with a spotlight: it goes in the same admin chat log and carries
   a message id, so a moderator can delete it, and it obeys the same word filter,
@@ -402,7 +486,7 @@ You do not have to configure any of this; it is on by default.
   chat, and removing someone's admin role reaches their open sockets, so neither
   keeps powers until they happen to reconnect. A moderator cannot rename an
   admin's clip or delete an admin's comment, the same line chat draws.
-- **The room can be capped.** Broadcast -> Room limit on the dashboard sets how
+- **The room can be capped.** The room limit on the dashboard's Go live screen sets how
   many people may pull the live video at once; `0`, the default, is no limit.
   Caddy already asks the gate to authorize every video segment, so that is
   where the limit is applied. Each check names which door it is for in the

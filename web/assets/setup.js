@@ -1,32 +1,22 @@
-// First-run setup wizard. Creates the first account as admin and names the
-// site. On success the gate signs the account in and sends it to the home
-// page. If setup is already done (any account exists) this page redirects to the
-// login page: the wizard is a one-time bootstrap.
+// First-run setup. Makes the first account, as the admin, and names the site.
+// On success the gate signs the account in and this sends it home. If setup
+// is already done (any account exists) the page goes to sign in instead: the
+// wizard is a one-time bootstrap.
 
 const form = document.getElementById("setup-form");
 const errorBox = document.getElementById("error");
 
-// Sync the channel accent from the public status endpoint (the head bootstrap
-// already painted the last-seen value from localStorage). A fresh install is
-// green, but this keeps the wizard consistent with the rest of the site.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
-}
-(async () => {
-  try { applyAccent((await (await fetch("/api/status")).json()).accent); } catch (e) {}
-})();
+// The lamp strip, with no menu: nobody is signed in yet. It also brings the
+// channel's accent in from the public status poll.
+mountStrip({ siteName: "upperroom", pageName: "setup" });
 
 function showError(message) {
   errorBox.textContent = message;
   errorBox.hidden = false;
 }
 
-// On load, confirm setup is still needed. The gate is the real gate; this check
-// only keeps the wizard from showing after an account already exists.
+// On load, confirm setup is still needed. The gate is the real gate; this only
+// keeps the wizard from showing once an account exists.
 (async () => {
   try {
     const data = await (await fetch("/api/setup")).json();

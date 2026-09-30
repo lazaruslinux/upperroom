@@ -53,9 +53,9 @@ VIEWERS = (
     ("viewer_two", "Viewer Two"),
 )
 
-# The operator's brand, shown leading the visitor pages next to "powered by
-# upperroom". A placeholder name so the demo shows off the two-layer brand: the
-# site name up top, the per-broadcast stream title on the card below.
+# The operator's brand, shown at the top of every page. A placeholder name so
+# the demo shows off the two-layer brand: the site name up top, the
+# per-broadcast stream title on the card below.
 SITE_NAME = "Northwind Live"
 STREAM_TITLE = "Demo Stream"
 STREAM_DESCRIPTION = (

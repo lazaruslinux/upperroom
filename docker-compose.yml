@@ -59,15 +59,10 @@ services:
       - SELFSTREAM_WEB_DIR=/srv/web
       - SELFSTREAM_VOD_KEEP=${SELFSTREAM_VOD_KEEP:-20}
       - SELFSTREAM_VOD_KEEP_DAYS=${SELFSTREAM_VOD_KEEP_DAYS:-0}
-      # Go-live notifications (all optional; blank values disable a channel).
+      # Go-live push notifications need the site URL; blank turns them off.
       - SELFSTREAM_SITE_URL=${SELFSTREAM_SITE_URL:-}
       - SELFSTREAM_THEATER=${SELFSTREAM_THEATER:-0}
       - SELFSTREAM_NOTIFY_COOLDOWN=${SELFSTREAM_NOTIFY_COOLDOWN:-1800}
-      - SELFSTREAM_SMTP_HOST=${SELFSTREAM_SMTP_HOST:-}
-      - SELFSTREAM_SMTP_PORT=${SELFSTREAM_SMTP_PORT:-587}
-      - SELFSTREAM_SMTP_USER=${SELFSTREAM_SMTP_USER:-}
-      - SELFSTREAM_SMTP_PASS=${SELFSTREAM_SMTP_PASS:-}
-      - SELFSTREAM_SMTP_FROM=${SELFSTREAM_SMTP_FROM:-}
     volumes:
       - gate_data:/data
       - rec_scratch:/rec
@@ -153,6 +148,8 @@ services:
     command: ["python", "demo_seed.py"]
     environment:
       - SELFSTREAM_DB=/data/selfstream.db
+      # The seeder imports the gate's modules, which read the secret at import.
+      - SELFSTREAM_JWT_SECRET=${SELFSTREAM_JWT_SECRET}
       - DEMO_ADMIN_USER=${DEMO_ADMIN_USER:-demo}
       - DEMO_ADMIN_PASSWORD=${DEMO_ADMIN_PASSWORD:-demodemo123}
       # Paired with demo-projector below, so the demo theater works with no

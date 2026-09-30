@@ -8,7 +8,6 @@ coded here; identities come from the account database, keyed by the signed
 session cookie.
 """
 
-import asyncio
 import ipaddress
 import logging
 import secrets
@@ -21,8 +20,8 @@ import jwt
 
 import db
 from config import (
-    ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, GUEST_REAP_INTERVAL,
-    JWT_SECRET, MAX_SOCKET_CONNECTS, SAFE_USERNAME, SESSION_HOURS, SITE_URL,
+    ALLOWED_COUNTRIES, COOKIE_NAME, GEO_DB_PATH, JWT_SECRET,
+    MAX_SOCKET_CONNECTS, SAFE_USERNAME, SESSION_HOURS, SITE_URL,
 )
 
 logger = logging.getLogger("upperroom.auth")
@@ -52,8 +51,8 @@ _MAX_TRACKED = 20000
 class RateLimiter:
     """Per-address attempt counting over a sliding window.
 
-    One instance per thing being limited, so a viewer fetching a new challenge
-    question does not eat into the allowance that protects password guessing.
+    One instance per thing being limited, so a viewer reconnecting chat does
+    not eat into the allowance that protects password guessing.
     """
 
     def __init__(self, max_attempts, name):
@@ -104,16 +103,9 @@ class RateLimiter:
         return len(self._hits)
 
 
-# Password guessing and pass-code guessing share this one, so an attacker cannot
-# get two budgets by alternating between them.
+# Password guessing and invite-code guessing share this one, so an attacker
+# cannot get two budgets by alternating between them.
 _LOGIN_LIMITER = RateLimiter(5, "login")
-
-# Fetching a challenge question is not an attempt at anything, so it gets its own
-# and a far higher ceiling: the page asks for one on load and again after every
-# wrong answer, and a household behind one address might do that a few times a
-# minute quite legitimately. It is limited at all because each one costs a
-# signature, and this box has one core.
-_CHALLENGE_LIMITER = RateLimiter(60, "challenge")
 
 
 # Opening a chat socket. Its own budget again: a viewer reconnecting after a
@@ -136,10 +128,26 @@ _REDEEM_LIMITER = RateLimiter(10, "redeem")
 _PASSWORD_LIMITER = RateLimiter(5, "password")
 
 
+# Posting a comment on a recording or a clip. Its own budget: a comment is a
+# write that lands in a thread everyone reads, so a script holding one valid
+# session must not be able to fill it, and it must not draw on the login
+# allowance. Ten a minute is far past a person typing replies.
+_COMMENT_LIMITER = RateLimiter(10, "comment")
+
+
 # Opening the projector socket. One machine reconnecting after a network blip
 # needs a handful; ten a minute covers a backoff cycle and leaves nothing for
 # someone guessing the key over that socket.
 _PROJECTOR_LIMITER = RateLimiter(10, "projector")
+
+
+# Turning the go-live push on or off for a device. A person does it a handful of
+# times at most; the ceiling keeps a script from churning the table.
+_PUSH_LIMITER = RateLimiter(20, "push")
+
+# The dashboard's test push. Each one is a real message to every device the
+# admin has, so it gets a small budget of its own.
+_PUSH_TEST_LIMITER = RateLimiter(5, "push test")
 
 
 def too_many_attempts(ip):
@@ -162,6 +170,18 @@ def too_many_projector_connects(ip):
     return _PROJECTOR_LIMITER.hit(ip)
 
 
+def too_many_comments(ip):
+    return _COMMENT_LIMITER.hit(ip)
+
+
+def too_many_push_changes(ip):
+    return _PUSH_LIMITER.hit(ip)
+
+
+def too_many_push_tests(ip):
+    return _PUSH_TEST_LIMITER.hit(ip)
+
+
 def reset_limiters():
     """Clear every limiter. For the tests, which share one process: state
     carried between cases makes them order-dependent. They are reset together
@@ -169,14 +189,11 @@ def reset_limiters():
     reset it is exactly the kind of thing that produces a test that passes
     alone and fails in the suite."""
     for limiter in (
-        _LOGIN_LIMITER, _CHALLENGE_LIMITER, _SOCKET_LIMITER,
-        _REDEEM_LIMITER, _PASSWORD_LIMITER, _PROJECTOR_LIMITER,
+        _LOGIN_LIMITER, _SOCKET_LIMITER, _REDEEM_LIMITER,
+        _PASSWORD_LIMITER, _PROJECTOR_LIMITER, _COMMENT_LIMITER,
+        _PUSH_LIMITER, _PUSH_TEST_LIMITER,
     ):
         limiter.clear()
-
-
-def too_many_challenges(ip):
-    return _CHALLENGE_LIMITER.hit(ip)
 
 
 # Kept for tests that reach in directly.
@@ -188,11 +205,6 @@ _ATTEMPTS = _LOGIN_LIMITER._hits
 def issue_token(user):
     now = int(time.time())
     expires = now + SESSION_HOURS * 3600
-    # A guest's token ends with the guest, so a copy of it replayed later is
-    # worthless everywhere, not only on the routes that re-read the row.
-    guest_until = int(user["guest_expires_at"] or 0) if user["is_guest"] else 0
-    if guest_until:
-        expires = min(expires, guest_until)
     payload = {
         "sub": user["username"],
         "name": user["display_name"],
@@ -265,53 +277,16 @@ def mod_actor(request):
     return user
 
 
-def guest_expired(user, now=None):
-    """Whether this row is a guest whose time is up.
-
-    Read from the row, never from the session cookie, for the same reason
-    is_admin is: the cookie outlives the decision. This runs on /api/verify,
-    which Caddy calls once per video segment, so it stays a comparison on data
-    the caller has already loaded rather than anything that touches the database
-    again."""
-    if not user or not user["is_guest"]:
-        return False
-    expires = user["guest_expires_at"] or 0
-    return expires > 0 and expires <= (time.time() if now is None else now)
-
-
-# What a guest is told when they reach something that needs an account. One
-# wording, in one place, so every refusal reads the same.
-GUEST_REFUSED = "Guests can watch and chat. Sign in or use an invite code to do that."
-
-
 def session_user(request):
     """The signed-in account's row, or None.
 
-    None covers all three ways a cookie can be worthless: it does not verify, the
-    account behind it is gone, or it is a guest whose pass has run out. Routes
-    get expiry enforcement by using this rather than reading the session
-    themselves, which is the point of having it."""
+    None covers both ways a cookie can be worthless: it does not verify, or the
+    account behind it is gone. Read fresh from the database on every call, so
+    deleting an account signs it out at once."""
     session = read_session(request.cookies.get(COOKIE_NAME, ""))
     if not session:
         return None
-    user = db.get_user(session["sub"])
-    if not user or guest_expired(user):
-        return None
-    return user
-
-
-def member_user(request):
-    """As session_user, but None for guests as well.
-
-    The line this draws: a guest may watch and chat, because those are the two
-    things the pass is for. Everything that leaves a mark on the channel or on
-    an account (clipping, points, the library, editing a profile) needs an
-    account somebody actually owns. is_guest is read from the row, never from
-    the session cookie, exactly as is_admin is."""
-    user = session_user(request)
-    if not user or user["is_guest"]:
-        return None
-    return user
+    return db.get_user(session["sub"])
 
 
 def can_moderate(user):
@@ -390,16 +365,9 @@ def client_ip(request):
     )
 
 
-# Guest accounts are named guest_<random>. Reserve the prefix so a member can
-# never register a name that reads as a guest in chat, or vice versa.
-GUEST_USERNAME_PREFIX = "guest_"
-
-
 def _clean_username(raw):
     name = (raw or "").strip().lower()
     if not SAFE_USERNAME.match(name):
-        return None
-    if name.startswith(GUEST_USERNAME_PREFIX):
         return None
     return name
 
@@ -417,37 +385,6 @@ except Exception as exc:
         "geo database unavailable at %s (%r); the country gate is open",
         GEO_DB_PATH, exc,
     )
-
-
-async def guest_reaper():
-    """Delete guest accounts whose passes have run out, on a timer.
-
-    Expiry is already enforced on every request, so this is housekeeping rather
-    than a gate: without it the users table would keep a row per guest who ever
-    visited. It reuses db.delete_user(), which already clears watch sessions,
-    chat log and bans, so a reaped guest leaves nothing orphaned behind.
-
-    It also closes the guest's chat socket. That is the part that is not merely
-    tidying: a guest sitting in chat when their time runs out would otherwise
-    keep the socket open indefinitely, since the connect-time check only catches
-    guests who arrive already expired.
-    """
-    # Imported here rather than at module scope: hub imports nothing from auth
-    # today, and a module level import would make that a cycle waiting to
-    # happen the first time it does.
-    from hub import hub
-
-    while True:
-        try:
-            now = int(time.time())
-            for username in db.expired_guests(now):
-                await hub.disconnect_user(username)
-                if db.delete_user(username):
-                    logger.info("guest account expired and removed: %s", username)
-        except Exception:
-            # A failed sweep must not kill the worker; the next one retries.
-            logger.warning("guest reaper pass failed", exc_info=True)
-        await asyncio.sleep(GUEST_REAP_INTERVAL)
 
 
 def country_allowed(ip):

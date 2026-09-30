@@ -75,11 +75,30 @@
 	header @assets Cache-Control "public, max-age=31536000, immutable"
 	header @dynamic Cache-Control "no-cache"
 
-	# Only this site may put these pages in a frame. The dashboard does exactly
-	# that with the watch page, and the watch page accepts messages from the page
-	# framing it, so the framing itself is pinned to our own origin: a stranger's
-	# site cannot embed the watch page, overlay it, and collect the clicks.
-	header @dynamic Content-Security-Policy "frame-ancestors 'self'"
+	# The content security policy for every page. Everything the site runs is
+	# its own: no inline script, no inline style, no script or font from anyone
+	# else, so a script tag somebody managed to smuggle into a page has nowhere
+	# to load from and no way to run inline. Setting a style from JavaScript
+	# (element.style) is still allowed; style attributes in markup are not.
+	#
+	# Past 'self', each extra source has a reason:
+	#   img-src data: blob:   the avatar crop draws a picked file (blob:), and
+	#                         the browser's own form widgets use data: images.
+	#   media-src blob:       hls.js plays the stream through Media Source
+	#                         Extensions, which hands the video a blob: URL.
+	#   worker-src blob:      hls.js parses segments in a worker it builds from
+	#                         a blob:.
+	#   connect-src wss://{host}   the chat socket. 'self' already covers it
+	#                         in current browsers; some older Safari releases do
+	#                         not count a wss: address as 'self', and on a phone
+	#                         that would be the whole room without chat. Same
+	#                         host only.
+	#
+	# frame-ancestors keeps its old job: only this site may frame these pages.
+	# The dashboard frames the watch page and the watch page accepts messages
+	# from the page framing it, so a stranger's site cannot embed it, overlay
+	# it, and collect the clicks.
+	header @dynamic Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss://{host}; font-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 
 	# Browser hardening that costs nothing. HSTS pins HTTPS for a year on this
 	# host only: no includeSubDomains and no preload, because other names under
@@ -140,7 +159,7 @@
 		# Login, session, chat config, and stream status.
 		#
 		# Everything here takes a small JSON body, so cap it hard. Without a cap
-		# a single unauthenticated caller can post megabytes to /api/guest or
+		# a single unauthenticated caller can post megabytes to /api/register or
 		# /api/auth and the gate will buffer and parse all of it before it can
 		# reject it, which on a small box is a cheap way to exhaust memory. 64 KB
 		# is far more than any request here needs. Rejecting at the proxy means
@@ -168,8 +187,8 @@
 			reverse_proxy mediamtx:8888
 		}
 
-		# Theater posters, which everyone in the room sees, guests included.
-		# Before /media/* below, which is members only. They live on the gate's
+		# Theater posters, which everyone in the room sees. Before /media/*
+		# below, which would otherwise take them. They live on the gate's
 		# own data volume rather than in the media store (they are not
 		# recordings), so the gate serves them, and checks the session again
 		# itself. The whole path is passed on, not stripped, because the gate's
@@ -248,6 +267,16 @@
 		# each check the session separately. Exact path only, so /watch.html and
 		# everything else stay with the static handler below.
 		handle /watch {
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
+		}
+
+		# An invite link, /join#<code>: the sign-in page with a card that says
+		# whose room it is, rendered by the gate and routed exactly as /watch
+		# is. The code rides after the #, which a browser never sends, so it
+		# never reaches this log, the gate or a preview fetcher. Exact path.
+		handle /join {
 			reverse_proxy gate:8000 {
 				import to_gate
 			}

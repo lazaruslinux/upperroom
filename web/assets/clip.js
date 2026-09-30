@@ -17,6 +17,13 @@
 // and nothing to guess at: an unknown token is answered the same way a revoked
 // one is.
 
+// The site's name, from the preview tags the gate rendered into this page.
+// Read off the page itself, so the rule above holds: no second request.
+const siteMeta = document.querySelector('meta[property="og:site_name"]');
+if (siteMeta && siteMeta.content) {
+  document.getElementById("site-title").textContent = siteMeta.content;
+}
+
 const loading = document.getElementById("loading");
 const body = document.getElementById("clip-body");
 const missing = document.getElementById("missing");

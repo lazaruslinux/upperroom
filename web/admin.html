@@ -4,108 +4,452 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>upperroom - dashboard</title>
-  <script>
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
+  <link rel="stylesheet" href="/assets/dash.css?v=2">
 </head>
-<body class="admin">
+<body class="dash">
   <div id="site-nav"></div>
 
-  <!-- The channel exactly as a viewer sees it, pinned to the top: the watch page
-       itself in a frame, so the picture, the chat and the watching list are all
-       here while the streamer works. A frame rather than copied markup, so this
-       can never drift from the page that is actually served. Everything below is
-       the controls. -->
-  <section class="live-console">
-    <!-- First thing on the page: whether the broadcast is up and being recorded,
-         so it is seen before anything else. Filled by admin.js from
-         /api/admin/stream, which is why it starts blank. -->
-    <section class="stream-strip is-offline" id="stream-strip" aria-live="polite">
-      <span class="stream-strip-dot" aria-hidden="true"></span>
-      <span class="stream-strip-state" id="stream-state">Offline</span>
-      <span class="stream-strip-since" id="stream-since" hidden></span>
-      <span class="stream-strip-watching" id="stream-watching" hidden></span>
-      <!-- What the broadcast has cost so far: MediaMTX counts the bytes it has
-           sent since this one went live, so it reads for tonight, not all time. -->
-      <span class="stream-strip-sent" id="stream-sent" hidden></span>
-      <span class="stream-strip-rec" id="stream-rec" hidden></span>
+  <main class="dash-main">
+
+    <!-- ==== Go live: the screen the dashboard opens on ====================
+         Three steps on the left that tick as they become true, the room on
+         the right. Everything else is behind the section menu. -->
+    <section class="dash-section golive" data-panel="golive" aria-labelledby="golive-title">
+      <h1 id="golive-title" class="sr-only" tabindex="-1">Go live</h1>
+      <div class="desk">
+        <ol class="steps">
+          <li class="step" id="step-obs" data-state="now">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">1</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Settings in OBS <span class="sr-only step-sr"></span></h2>
+              <p class="step-state">Settings <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Stream <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Service: <b>Custom</b></p>
+              <p id="obs-note" class="step-note" hidden>This key is new. OBS needs it before the next broadcast.</p>
+              <div class="kv">
+                <div class="kv-row">
+                  <label class="field-label">
+                    <span class="engraved">Server</span>
+                    <input id="stream-server" class="field code" type="text" readonly autocomplete="off" spellcheck="false">
+                  </label>
+                  <div class="kv-tools">
+                    <button type="button" id="server-copy" class="chip">Copy</button>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <label class="field-label">
+                    <span class="engraved">Stream Key</span>
+                    <input id="stream-key" class="field code" type="password" readonly autocomplete="off" spellcheck="false">
+                  </label>
+                  <div class="kv-tools">
+                    <button type="button" id="stream-key-show" class="chip" aria-pressed="false">Show</button>
+                    <button type="button" id="stream-key-copy" class="chip">Copy</button>
+                  </div>
+                </div>
+              </div>
+              <p class="step-aside">
+                <button type="button" id="stream-key-regen" class="link-btn">Regenerate the key</button>
+              </p>
+              <p id="stream-key-msg" class="notify-msg" role="status" hidden></p>
+            </div>
+          </li>
+
+          <li class="step" id="step-air" data-state="wait">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">2</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Start Streaming in OBS <span class="sr-only step-sr"></span></h2>
+              <p id="air-state" class="step-state" aria-live="polite">Press Start Streaming in OBS.</p>
+            </div>
+          </li>
+
+          <!-- Lights once on air, but works off air too. A link preview is
+               made when the link is pasted, so one sent off air shows the
+               offline card. -->
+          <li class="step" id="step-link" data-state="wait">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">3</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Send the link <span class="sr-only step-sr"></span></h2>
+              <p class="step-state">Anyone with an account opens it straight into the room.</p>
+              <p id="link-note" class="step-state" hidden>Send it once you're on air so the preview shows tonight's title and a live frame.</p>
+              <button type="button" id="copy-link" class="loud">
+                <span>Copy watch link</span>
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+              </button>
+              <p id="link-msg" class="notify-msg" role="status" hidden></p>
+              <!-- Shown only when the browser refuses the clipboard: the link,
+                   selected, to copy by hand. -->
+              <label id="link-fallback" class="field-label link-fallback" hidden>
+                <span class="engraved">Your link</span>
+                <input id="link-fallback-url" class="field code" type="text" readonly spellcheck="false">
+              </label>
+            </div>
+          </li>
+        </ol>
+
+        <section class="room-panel" aria-labelledby="room-title">
+          <h2 id="room-title" class="sr-only">The room</h2>
+          <!-- The watch page itself, in a frame: the monitor and the chat
+               exactly as the room has them. Spoken to with postMessage, never
+               reloaded, so switching the view keeps its chat socket. -->
+          <div class="program" id="program">
+            <iframe id="live-view" src="/watch" title="Your channel, as the room sees it"
+                    allow="autoplay; fullscreen"></iframe>
+          </div>
+
+          <div class="slate">
+            <div class="slate-text">
+              <p id="slate-title" class="slate-title">Live Stream</p>
+              <p id="slate-sub" class="slate-sub">No game</p>
+            </div>
+            <div class="slate-tools">
+              <button type="button" id="dash-sound" class="chip" aria-pressed="false" hidden>
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path id="dash-sound-off" d="m17 9 4 6M21 9l-4 6"/><path id="dash-sound-on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" hidden/></svg>
+                <span>Sound</span>
+              </button>
+              <button type="button" id="view-chat" class="chip" aria-pressed="false">Chat only</button>
+              <a class="chip icon-only" href="/watch" target="_blank" rel="noopener" aria-label="Open the room in a new tab" title="Open the room in a new tab">
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+              </a>
+              <button type="button" id="slate-edit" class="chip" aria-expanded="false" aria-controls="slate-form">Edit</button>
+            </div>
+          </div>
+          <!-- What tonight is called and what is being played: the two lines
+               of the link preview, edited together. -->
+          <form id="slate-form" class="slate-form" hidden>
+            <label class="field-label">
+              <span class="engraved">Title</span>
+              <input id="onair-title" class="field" type="text" maxlength="100" autocomplete="off" placeholder="What tonight is called">
+            </label>
+            <label class="field-label">
+              <span class="engraved">Playing</span>
+              <input id="game-input" class="field" list="game-options" maxlength="80" autocomplete="off" placeholder="A game you have played, or a new one">
+            </label>
+            <datalist id="game-options"></datalist>
+            <div class="btn-row">
+              <button type="submit" id="onair-save" class="btn primary">Save</button>
+              <button type="button" id="game-none" class="btn">No game</button>
+              <button type="button" id="slate-cancel" class="btn">Cancel</button>
+            </div>
+          </form>
+          <p id="onair-msg" class="notify-msg slate-msg" role="status" hidden></p>
+
+          <section class="board" aria-labelledby="board-title">
+            <div class="board-head">
+              <h3 id="board-title" class="engraved">In the room</h3>
+              <span id="board-count" class="engraved">0</span>
+            </div>
+            <ul id="dash-lines" class="lines"></ul>
+            <p id="board-empty" class="board-empty">Nobody is in the room.</p>
+          </section>
+
+          <!-- Real numbers only: what the gate itself counts. -->
+          <div class="readout">
+            <div class="readout-item">
+              <span class="engraved">Watching</span>
+              <strong id="ro-watching">0</strong>
+            </div>
+            <div class="readout-item">
+              <span class="engraved" id="limit-label">Room limit</span>
+              <strong id="ro-limit">None</strong>
+              <button type="button" id="limit-edit" class="link-btn readout-edit" aria-expanded="false" aria-controls="limit-form">Change</button>
+            </div>
+            <div class="readout-item">
+              <span class="engraved">Sent</span>
+              <strong id="ro-sent">0 MB</strong>
+            </div>
+          </div>
+          <form id="limit-form" class="limit-form" hidden>
+            <label class="field-label">
+              <span class="engraved">People who may watch at once</span>
+              <input id="room-limit" class="field" type="number" min="0" step="1" inputmode="numeric">
+            </label>
+            <div class="btn-row">
+              <button type="submit" id="room-limit-save" class="btn primary">Save</button>
+              <button type="button" id="limit-cancel" class="btn">Cancel</button>
+            </div>
+            <p class="group-note">Each viewer costs about 2.9 GB an hour. Past the limit the video is refused and chat still works. 0 is no limit, and you are never counted.</p>
+          </form>
+          <p id="room-limit-msg" class="notify-msg slate-msg" role="status" hidden></p>
+        </section>
+      </div>
     </section>
 
-    <div class="live-console-head">
-      <div class="live-view-toggle" role="group" aria-label="What the frame shows">
-        <button type="button" class="chip-btn is-on" data-view="full">Video + chat</button>
-        <button type="button" class="chip-btn" data-view="chat">Chat only</button>
-      </div>
-      <a class="live-console-open" href="/watch" target="_blank" rel="noopener">open watch page</a>
-    </div>
-    <div class="live-console-frame" id="live-frame">
-      <iframe id="live-view" src="/watch" title="Your channel, as viewers see it"
-              allow="autoplay; fullscreen"></iframe>
-    </div>
+    <!-- ==== People: accounts, bans, invite codes ========================== -->
+    <section class="dash-section dash-page" data-panel="people" aria-labelledby="people-title" hidden>
+      <h1 id="people-title" class="page-title" tabindex="-1">People</h1>
 
-    <!-- What tonight is called and what you are playing: the two lines of the
-         link preview, so they are edited together and beside the broadcast
-         rather than down in the channel settings you set once. -->
-    <div class="now-playing">
-      <label for="onair-title">Title</label>
-      <input id="onair-title" type="text" maxlength="100" autocomplete="off"
-             placeholder="What you're streaming">
-      <label for="game-input">Playing</label>
-      <input id="game-input" list="game-options" maxlength="80" autocomplete="off"
-             placeholder="Pick one you have played, or type a new one">
-      <datalist id="game-options"></datalist>
-      <div class="now-playing-actions">
-        <button type="button" id="onair-save" class="solid-btn">Set</button>
-        <button type="button" id="game-none" class="ghost-btn">No game</button>
-      </div>
-    </div>
-    <p id="onair-msg" class="notify-msg" hidden></p>
-  </section>
+      <section class="dash-group" aria-labelledby="acct-title">
+        <div class="group-head">
+          <h2 id="acct-title" class="engraved">Accounts <span id="acct-count"></span></h2>
+          <button type="button" id="user-new" class="btn">New account</button>
+        </div>
+        <ul id="user-list" class="rows" aria-labelledby="acct-title"></ul>
+        <p id="user-empty" class="empty" hidden>No accounts yet.</p>
+      </section>
 
-  <main class="admin-main">
-    <!-- The controls in five groups rather than one column of fourteen open
-         panels. Each group's data loads the first time it is shown, so opening
-         the dashboard is one request for the broadcast, not fourteen. -->
-    <div class="lib-tabs admin-tabs" role="tablist">
-      <button type="button" class="lib-tab selected" data-panel="broadcast">Broadcast</button>
-      <button type="button" class="lib-tab" data-panel="content">Content</button>
-      <button type="button" class="lib-tab" data-panel="people">People</button>
-      <button type="button" class="lib-tab" data-panel="channel">Channel</button>
-      <button type="button" class="lib-tab" data-panel="connections">Connections</button>
-    </div>
+      <section class="dash-group" aria-labelledby="bans-title">
+        <div class="group-head">
+          <h2 id="bans-title" class="engraved">Bans <span id="ban-count"></span></h2>
+        </div>
+        <ul id="ban-list" class="rows" aria-labelledby="bans-title"></ul>
+        <p id="ban-empty" class="empty" hidden>Nobody is banned.</p>
+      </section>
 
-    <!-- ---- Broadcast: what is on tonight ---- -->
-    <section class="admin-group" data-panel="broadcast">
-      <!-- Theater is optional on the server; admin.js shows this only when the
-           gate answers for it. -->
-      <div id="theater-panel" hidden>
-      <h2 class="section-title">Theater</h2>
-      <div class="notify-panel">
-        <span class="muted">Play titles from your library to the room. Nothing is
-          recorded and clips are off during a session. Needs a projector
-          (Connections).</span>
-        <!-- No preview here: the console at the top of the page is showing the
-             room exactly what it is seeing, so this panel is the controls alone. -->
+      <section class="dash-group" aria-labelledby="inv-title">
+        <div class="group-head">
+          <h2 id="inv-title" class="engraved">Invite codes</h2>
+          <button type="button" id="invite-clear-used" class="btn" hidden>Clear used codes</button>
+        </div>
+        <p class="group-note">A code makes one viewer account. Give it to one person.</p>
+        <div class="inline-form">
+          <label class="field-label grow">
+            <span class="engraved">Who it is for, optional</span>
+            <input id="invite-label" class="field" type="text" maxlength="60" autocomplete="off">
+          </label>
+          <button type="button" id="invite-new" class="btn primary">Generate code</button>
+        </div>
+        <!-- The code just made, and its link. The code rides after the #, so
+             it never reaches a server log or a link preview. -->
+        <div id="invite-made" class="group-actions" hidden>
+          <span class="engraved">New code</span>
+          <span id="invite-made-code" class="row-title code"></span>
+          <button type="button" id="invite-made-copy" class="btn primary">Copy invite link</button>
+        </div>
+        <p id="invite-msg" class="notify-msg" role="status" hidden></p>
+        <label id="invite-fallback" class="field-label link-fallback" hidden>
+          <span class="engraved">Invite link</span>
+          <input id="invite-fallback-url" class="field code" type="text" readonly spellcheck="false">
+        </label>
+        <ul id="invite-list" class="rows" aria-labelledby="inv-title"></ul>
+        <p id="invite-empty" class="empty" hidden>No invite codes yet.</p>
+      </section>
+    </section>
+
+    <!-- ==== Library: what was recorded, and how long it is kept ========== -->
+    <section class="dash-section dash-page" data-panel="library" aria-labelledby="library-title" hidden>
+      <h1 id="library-title" class="page-title" tabindex="-1">Library</h1>
+
+      <section class="dash-group" aria-labelledby="storage-title">
+        <div class="group-head">
+          <h2 id="storage-title" class="engraved">Storage</h2>
+        </div>
+        <p id="storage-usage" class="storage-usage">Loading…</p>
+        <div class="usage-bar" aria-hidden="true"><div id="usage-fill" class="usage-fill"></div></div>
+        <p id="retention-state" class="group-note" hidden></p>
+        <p id="storage-pending" class="notify-msg bad" hidden></p>
+        <div class="retention-grid">
+          <label class="field-label">
+            <span class="engraved">Broadcasts to keep</span>
+            <input id="ret-vod-count" class="field" type="number" min="0" step="1" inputmode="numeric">
+          </label>
+          <label class="field-label">
+            <span class="engraved">Days to keep broadcasts</span>
+            <input id="ret-vod-days" class="field" type="number" min="0" step="1" inputmode="numeric">
+          </label>
+          <label class="field-label">
+            <span class="engraved">Clips to keep</span>
+            <input id="ret-clip-count" class="field" type="number" min="0" step="1" inputmode="numeric">
+          </label>
+          <label class="field-label">
+            <span class="engraved">Days to keep clips</span>
+            <input id="ret-clip-days" class="field" type="number" min="0" step="1" inputmode="numeric">
+          </label>
+          <label class="field-label">
+            <span class="engraved">Size limit in GB</span>
+            <input id="ret-cap-gb" class="field" type="number" min="0" step="1" inputmode="numeric">
+          </label>
+        </div>
+        <p class="group-note">0 turns a limit off. Pinned items are never removed and do not use up a slot. Lowering a limit deletes the oldest unpinned items as soon as you save.</p>
+        <div class="group-actions">
+          <button type="button" id="ret-save" class="btn primary">Save</button>
+          <p id="ret-msg" class="notify-msg" role="status" hidden></p>
+        </div>
+      </section>
+      <section class="dash-group" aria-labelledby="content-title">
+        <div class="group-head">
+          <h2 id="content-title" class="engraved">Broadcasts and clips</h2>
+          <div class="tabs" role="group" aria-label="Show">
+            <button type="button" class="lib-tab selected" data-content="vods" aria-pressed="true">Broadcasts</button>
+            <button type="button" class="lib-tab" data-content="clips" aria-pressed="false">Clips</button>
+          </div>
+        </div>
+        <ul id="content-list" class="rows" aria-labelledby="content-title"></ul>
+        <p id="content-empty" class="empty" hidden>Nothing here yet.</p>
+      </section>
+
+    </section>
+
+    <!-- ==== Channel: the identity, set once =============================== -->
+    <section class="dash-section dash-page" data-panel="channel" aria-labelledby="channel-title" hidden>
+      <h1 id="channel-title" class="page-title" tabindex="-1">Channel</h1>
+
+      <section class="dash-group" aria-labelledby="ident-title">
+        <div class="group-head">
+          <h2 id="ident-title" class="engraved">Name and color</h2>
+        </div>
+        <div class="form-stack">
+          <label class="field-label">
+            <span class="engraved">Site name</span>
+            <input id="ch-site" class="field" type="text" maxlength="60" placeholder="Your brand, e.g. Northwind Live" autocomplete="off">
+          </label>
+          <label class="field-label">
+            <span class="engraved">Description</span>
+            <textarea id="ch-desc" maxlength="500" rows="2" placeholder="Shown on the home page"></textarea>
+          </label>
+          <div class="field-label">
+            <span class="engraved" id="accent-label">Accent</span>
+            <div class="accent-swatches" id="accent-swatches" role="group" aria-labelledby="accent-label">
+              <button type="button" class="accent-swatch" data-accent="green" aria-pressed="false"><span class="swatch-chip swatch-green"></span>Green</button>
+              <button type="button" class="accent-swatch" data-accent="amber" aria-pressed="false"><span class="swatch-chip swatch-amber"></span>Amber</button>
+              <button type="button" class="accent-swatch" data-accent="blue" aria-pressed="false"><span class="swatch-chip swatch-blue"></span>Blue</button>
+              <button type="button" class="accent-swatch" data-accent="ghost" aria-pressed="false"><span class="swatch-chip swatch-ghost"></span>Ghost</button>
+            </div>
+            <p class="group-note">Buttons and the current selection, for everyone who visits.</p>
+          </div>
+        </div>
+        <div class="group-actions">
+          <button type="button" id="ch-save" class="btn primary">Save</button>
+          <p id="ch-msg" class="notify-msg" role="status" hidden></p>
+        </div>
+      </section>
+
+      <section class="dash-group" aria-labelledby="notify-title">
+        <div class="group-head">
+          <h2 id="notify-title" class="engraved">Go-live notifications</h2>
+        </div>
+        <div class="form-stack">
+          <div class="setting">
+            <span class="setting-label" id="notify-on-label">Notify people when you go live</span>
+            <button id="notify-on" type="button" class="toggle" role="switch" aria-checked="true" aria-labelledby="notify-on-label"></button>
+          </div>
+          <p id="notify-status" class="group-note" role="status">Loading…</p>
+        </div>
+        <div class="group-actions">
+          <button type="button" id="notify-test" class="btn">Send a test to my devices</button>
+          <p id="notify-msg" class="notify-msg" role="status" hidden></p>
+        </div>
+      </section>
+    </section>
+
+    <!-- ==== Chat rules ===================================================== -->
+    <section class="dash-section dash-page" data-panel="chat" aria-labelledby="chat-title" hidden>
+      <h1 id="chat-title" class="page-title" tabindex="-1">Chat rules</h1>
+
+      <section class="dash-group" aria-labelledby="slow-title">
+        <div class="group-head">
+          <h2 id="slow-title" class="engraved">Slow mode</h2>
+        </div>
+        <div class="inline-form">
+          <label class="field-label">
+            <span class="engraved">Seconds between messages</span>
+            <input id="mod-slow" class="field narrow" type="number" min="0" max="3600" inputmode="numeric" placeholder="0">
+          </label>
+          <button type="button" id="mod-save" class="btn primary">Save</button>
+        </div>
+        <p class="group-note">For each viewer. 0 turns it off. Moderators and admins are exempt.</p>
+        <p id="mod-msg" class="notify-msg" role="status" hidden></p>
+      </section>
+
+      <!-- The list stays folded until asked for: it ships with about a hundred
+           entries, and nobody wants a wall of slurs on the screen every time
+           the section opens. It has its own save, so the slow mode box and
+           the list can never ride along with each other. -->
+      <section class="dash-group" aria-labelledby="words-title">
+        <div class="group-head">
+          <h2 id="words-title" class="engraved">Word filter</h2>
+        </div>
+        <div class="setting">
+          <span id="mod-banned-label" class="setting-label">Banned words</span>
+          <button type="button" id="mod-banned-open" class="btn" aria-expanded="false" aria-controls="banned-editor">Show the list</button>
+        </div>
+        <div id="banned-editor" class="banned-editor" hidden>
+          <p class="group-note">One entry per line, or separated by commas.
+            A message containing any of them is refused and never reaches the room.
+            Matching is whole word, so "ass" does not block "class", and common
+            endings are already covered: "fuck" also catches fucking and fucked.
+            This one applies to everybody, moderators and you included.</p>
+          <textarea id="mod-banned" maxlength="4000" rows="14" spellcheck="false"
+                    aria-label="Banned words" placeholder="One word or phrase per line."></textarea>
+          <div class="group-actions">
+            <button type="button" id="mod-banned-save" class="btn primary">Save list</button>
+            <p id="mod-banned-msg" class="notify-msg" role="status" hidden></p>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ==== Connections: what plugs into this server besides OBS ========== -->
+    <section class="dash-section dash-page" data-panel="connections" aria-labelledby="conn-title" hidden>
+      <h1 id="conn-title" class="page-title" tabindex="-1">Connections</h1>
+
+      <section class="dash-group" aria-labelledby="overlay-title">
+        <div class="group-head">
+          <h2 id="overlay-title" class="engraved">Chat overlay</h2>
+        </div>
+        <p class="group-note">An OBS browser source that shows chat, joins, clips and highlighted messages. Anyone with the URL can read chat, so keep it private.</p>
+        <div class="kv">
+          <div class="kv-row">
+            <label class="field-label">
+              <span class="engraved">Overlay URL</span>
+              <input id="overlay-url" class="field code" type="password" readonly autocomplete="off" spellcheck="false">
+            </label>
+            <div class="kv-tools">
+              <button type="button" id="overlay-show" class="chip" aria-pressed="false">Show</button>
+              <button type="button" id="overlay-copy" class="chip">Copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="test-row">
+          <span class="setting-label" id="overlay-test-label">Send a test to the overlay</span>
+          <div class="btn-row" role="group" aria-labelledby="overlay-test-label">
+            <button type="button" class="btn" data-overlay-test="chat">Chat</button>
+            <button type="button" class="btn" data-overlay-test="join">Join</button>
+            <button type="button" class="btn" data-overlay-test="clip">Clip</button>
+            <button type="button" class="btn" data-overlay-test="highlight">Highlight</button>
+          </div>
+        </div>
+        <p class="group-note">Corner, size and sound are URL options, listed in
+          <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/08-overlay.md" target="_blank" rel="noopener">docs/08-overlay.md</a>.</p>
+        <div class="group-actions">
+          <button type="button" id="overlay-regen" class="btn danger">Regenerate the URL</button>
+          <p id="overlay-msg" class="notify-msg" role="status" hidden></p>
+        </div>
+      </section>
+
+      <!-- Theater is optional on the server. Both of these stay hidden until
+           the gate answers for them. -->
+      <section id="theater-panel" class="dash-group" aria-labelledby="theater-title" hidden>
+        <div class="group-head">
+          <h2 id="theater-title" class="engraved">Theater</h2>
+        </div>
+        <p class="group-note">Play titles from your library to the room. Nothing is
+          recorded and clips are off during a session. Needs the projector below.</p>
         <p id="theater-status" class="theater-status">Loading…</p>
         <div class="btn-row">
-          <button type="button" id="theater-start" class="solid-btn">Start session</button>
-          <button type="button" id="theater-end" class="danger-btn" hidden>End session</button>
-          <button type="button" id="theater-stop" class="ghost-btn" hidden>Stop the title</button>
-          <button type="button" id="theater-nosubs" class="ghost-btn" hidden>Restart without subtitles</button>
+          <button type="button" id="theater-start" class="btn primary">Start session</button>
+          <button type="button" id="theater-end" class="btn danger" hidden>End session</button>
+          <button type="button" id="theater-stop" class="btn" hidden>Stop the title</button>
+          <button type="button" id="theater-nosubs" class="btn" hidden>Restart without subtitles</button>
         </div>
         <div class="ts-search">
-          <input id="theater-query" type="text" maxlength="64" placeholder="Search your library" autocomplete="off">
-          <button type="button" id="theater-search" class="solid-btn">Search</button>
+          <input id="theater-query" class="field" type="text" maxlength="64" placeholder="Search your library" autocomplete="off" aria-label="Search your library">
+          <button type="button" id="theater-search" class="btn primary">Search</button>
         </div>
         <label class="checkrow">
           <input id="theater-subs" type="checkbox"> Burn in subtitles
@@ -113,420 +457,134 @@
         <label class="checkrow">
           <input id="theater-subs-default" type="checkbox"> Enable subtitles (Unstable, might be out of sync)
         </label>
-        <p class="muted">Sets the default for every play. The box above overrides
+        <p class="group-note">Sets the default for every play. The box above overrides
           it for one showing.</p>
         <div id="theater-results" class="ts-results"></div>
-        <p id="theater-msg" class="notify-msg" hidden></p>
-      </div>
-      </div>
+        <p id="theater-msg" class="notify-msg" role="status" hidden></p>
+      </section>
 
-      <h2 class="section-title">Room limit</h2>
-      <div class="notify-panel">
-        <p class="muted">Each viewer costs roughly 2.9 GB an hour. Past the limit
-          the video is refused and chat still works. You are never counted.</p>
-        <label>People who may watch at once <span class="muted">(0 = no limit)</span>
-          <input id="room-limit" type="number" min="0" step="1" inputmode="numeric">
-        </label>
-        <div class="edit-actions">
-          <span id="room-limit-now" class="muted"></span>
-          <button type="button" id="room-limit-save" class="solid-btn">Save</button>
+      <section id="projector-panel" class="dash-group" aria-labelledby="projector-title" hidden>
+        <div class="group-head">
+          <h2 id="projector-title" class="engraved">Projector</h2>
         </div>
-        <p id="room-limit-msg" class="notify-msg" hidden></p>
-      </div>
-
-    </section>
-
-    <!-- ---- Content: what has been recorded, and how long it is kept ---- -->
-    <section class="admin-group" data-panel="content" hidden>
-      <h2 class="section-title">Broadcasts and clips</h2>
-      <div class="lib-tabs">
-        <button type="button" class="lib-tab selected" data-content="vods">Broadcasts</button>
-        <button type="button" class="lib-tab" data-content="clips">Clips</button>
-      </div>
-      <div id="content-list" class="activity-list"></div>
-      <p id="content-empty" class="muted" hidden>Nothing here yet.</p>
-
-      <h2 class="section-title">Storage</h2>
-      <div class="notify-panel">
-        <p id="storage-usage" class="muted">Loading…</p>
-        <div class="usage-bar"><div id="usage-fill" class="usage-fill"></div></div>
-        <p id="retention-state" class="notify-msg good" hidden></p>
-        <p id="storage-pending" class="notify-msg bad" hidden></p>
-        <div class="retention-grid">
-          <label>Keep this many broadcasts <span class="muted">(0 = off)</span>
-            <input id="ret-vod-count" type="number" min="0" step="1" inputmode="numeric">
-          </label>
-          <label>Keep broadcasts for this many days <span class="muted">(0 = off)</span>
-            <input id="ret-vod-days" type="number" min="0" step="1" inputmode="numeric">
-          </label>
-          <label>Keep this many clips <span class="muted">(0 = off)</span>
-            <input id="ret-clip-count" type="number" min="0" step="1" inputmode="numeric">
-          </label>
-          <label>Keep clips for this many days <span class="muted">(0 = off)</span>
-            <input id="ret-clip-days" type="number" min="0" step="1" inputmode="numeric">
-          </label>
-          <label>Total size limit in GB <span class="muted">(0 = off)</span>
-            <input id="ret-cap-gb" type="number" min="0" step="1" inputmode="numeric">
-          </label>
-        </div>
-        <p class="muted">Pinned items are never removed, and they do not use up a
-          slot. Lowering a limit deletes the oldest unpinned items as soon as you
-          save.</p>
-        <div class="edit-actions">
-          <button type="button" id="ret-save" class="solid-btn">Save</button>
-        </div>
-        <p id="ret-msg" class="notify-msg" hidden></p>
-      </div>
-    </section>
-
-    <!-- ---- People: who is here, who is barred, and how new people get in ---- -->
-    <section class="admin-group" data-panel="people" hidden>
-      <h2 class="section-title">People</h2>
-      <div class="notify-panel">
-        <span class="muted">Accounts, their activity, and who can moderate. Deleting
-          someone takes their watch history and chat with them, so it asks you to
-          type the username.</span>
-        <div class="btn-row">
-          <button type="button" id="manage-users" class="solid-btn">Manage users</button>
-          <button type="button" id="manage-bans" class="ghost-btn">Bans</button>
-        </div>
-      </div>
-
-      <!-- Invites and guest passes are the same job twice over: make a code,
-           hand it to one person, revoke it if you change your mind. One panel,
-           two tabs, rather than two panels of near-identical controls. -->
-      <h2 class="section-title">Access codes</h2>
-      <div class="notify-panel">
-        <div class="lib-tabs">
-          <button type="button" class="lib-tab selected" data-codes="invites">Invites</button>
-          <button type="button" class="lib-tab" data-codes="guest">Guest passes</button>
-        </div>
-
-        <div class="codes-view" data-codes="invites">
-          <span class="muted">Generate a single-use code. Share it with one person; they redeem it to make a viewer account.</span>
-          <div class="invite-gen">
-            <label>Label <span class="muted">(optional)</span>
-              <input id="invite-label" type="text" maxlength="60" placeholder="who it's for" autocomplete="off">
-            </label>
-            <button type="button" id="invite-new" class="solid-btn">Generate code</button>
-          </div>
-          <div class="gp-bulk">
-            <button type="button" id="invite-clear-used" class="chip-btn danger-chip" hidden>Clear used codes</button>
-          </div>
-          <div id="invite-list" class="activity-list"></div>
-          <p id="invite-empty" class="muted" hidden>No invite codes yet.</p>
-        </div>
-
-        <div class="codes-view" data-codes="guest" hidden>
-          <span class="muted">Single-use codes that let someone watch and chat for <span id="guest-minutes">30</span> minutes without an account. The clock starts when they redeem it, not when you make it. Send them to <span class="invite-code">/guest</span> to use one.</span>
-          <div class="invite-gen">
-            <label>Label <span class="muted">(optional)</span>
-              <input id="gp-label" type="text" maxlength="60" placeholder="who they're for" autocomplete="off">
-            </label>
-            <label class="gp-count-field">How many
-              <input id="gp-count" type="number" min="1" max="25" value="1">
-            </label>
-            <button type="button" id="gp-new" class="solid-btn">Generate passes</button>
-          </div>
-          <div class="gp-bulk">
-            <button type="button" id="gp-copy-all" class="chip-btn" hidden>Copy all unused</button>
-            <button type="button" id="gp-clear-used" class="chip-btn danger-chip" hidden>Clear used passes</button>
-          </div>
-          <div id="gp-list" class="activity-list"></div>
-          <p id="gp-empty" class="muted" hidden>No guest passes yet.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---- Channel: the identity and the house rules, set once ---- -->
-    <section class="admin-group" data-panel="channel" hidden>
-      <h2 class="section-title">Channel</h2>
-      <div class="notify-panel">
-        <label>Site name
-          <input id="ch-site" type="text" maxlength="60" placeholder="Your brand, e.g. Northwind Live" autocomplete="off">
-        </label>
-        <label>Description
-          <textarea id="ch-desc" maxlength="500" rows="2" placeholder="Shown on the home card"></textarea>
-        </label>
-        <!-- The stream title used to live here. It changes every broadcast and it
-             is the headline of the link preview, so it sits on the console with
-             the game instead. -->
-        <span class="muted">Accent: the brand color every visitor sees</span>
-        <div class="accent-swatches" id="accent-swatches">
-          <button type="button" class="accent-swatch" data-accent="green">
-            <span class="swatch-chip" style="background:#6ab48a"></span>green
-          </button>
-          <button type="button" class="accent-swatch" data-accent="amber">
-            <span class="swatch-chip" style="background:#c2a05c"></span>amber
-          </button>
-          <button type="button" class="accent-swatch" data-accent="blue">
-            <span class="swatch-chip" style="background:#7aa3c0"></span>blue
-          </button>
-          <button type="button" class="accent-swatch" data-accent="ghost">
-            <span class="swatch-chip" style="background:#9aa39a"></span>ghost
-          </button>
-        </div>
-        <div class="edit-actions">
-          <button type="button" id="ch-save" class="solid-btn">Save channel settings</button>
-        </div>
-        <p id="ch-msg" class="notify-msg" hidden></p>
-      </div>
-
-      <h2 class="section-title">Chat moderation</h2>
-      <div class="notify-panel">
-        <label>Slow mode: seconds between messages per viewer (0 = off)
-          <input id="mod-slow" type="number" min="0" max="3600" inputmode="numeric" placeholder="0">
-        </label>
-        <span class="muted">Starts at 2 seconds on a new install. Mods and admins are exempt from slow mode.</span>
-        <!-- The list itself lives in a modal rather than an always-open textarea:
-             it ships with about a hundred entries, and nobody wants a wall of
-             slurs sitting on the dashboard every time they open it. -->
-        <div class="settings-rows">
-          <div class="setting">
-            <span id="mod-banned-label">Banned words</span>
-            <button type="button" id="mod-banned-open" class="pill">Open banned words list</button>
-          </div>
-        </div>
-        <div class="edit-actions">
-          <button type="button" id="mod-save" class="solid-btn">Save moderation settings</button>
-        </div>
-        <p id="mod-msg" class="notify-msg" hidden></p>
-      </div>
-
-      <h2 class="section-title">Go-live notifications</h2>
-      <div class="notify-panel">
-        <p id="notify-status" class="muted">Loading…</p>
-        <label class="checkrow">
-          <input id="notify-email-on" type="checkbox"> Send emails when going live
-        </label>
-        <p class="settings-note muted">Turn this off to go live quietly. Viewers keep
-          their own preference, and Discord still posts either way. You are never
-          emailed about your own stream.</p>
-        <label>Discord webhook URL <span class="muted">(optional)</span>
-          <input id="notify-webhook" type="text" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
-        </label>
-        <div class="edit-actions">
-          <button type="button" id="notify-test" class="ghost-btn">Send test</button>
-          <button type="button" id="notify-save" class="solid-btn">Save</button>
-        </div>
-        <p id="notify-msg" class="notify-msg" hidden></p>
-      </div>
-    </section>
-
-    <!-- ---- Connections: the three things that plug into this server ---- -->
-    <section class="admin-group" data-panel="connections" hidden>
-      <h2 class="section-title">Stream key</h2>
-      <div class="notify-panel">
-        <span class="muted">Point OBS at this server and stream key to go live. Treat the key like a password; regenerate to revoke it. A broadcast already running is not cut off, but the next connection needs the new key.</span>
-        <label>Server
-          <input id="stream-server" type="text" readonly autocomplete="off">
-        </label>
-        <label>Stream key
-          <input id="stream-key" type="password" readonly autocomplete="off">
-        </label>
-        <div class="edit-actions">
-          <button type="button" id="stream-key-show" class="ghost-btn">Show</button>
-          <button type="button" id="stream-key-copy" class="solid-btn">Copy key</button>
-          <button type="button" id="stream-key-regen" class="danger-btn">Regenerate</button>
-        </div>
-        <p id="stream-key-msg" class="notify-msg" hidden></p>
-      </div>
-
-      <div id="projector-panel" hidden>
-      <h2 class="section-title">Projector</h2>
-      <div class="notify-panel">
-        <span class="muted">The projector runs on your media machine and connects
+        <p class="group-note">The projector runs on your media machine and connects
           outward to this server, so that machine needs no open port. Give it this
-          key and the stream key above. Treat it like a password; regenerating it
-          disconnects the projector at once. Setup is in
-          <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/11-theater.md" target="_blank" rel="noopener">docs/11-theater.md</a>.</span>
+          key and the stream key from Go live. Regenerating it disconnects the
+          projector at once. Setup is in
+          <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/11-theater.md" target="_blank" rel="noopener">docs/11-theater.md</a>.</p>
         <p id="projector-status" class="theater-status">Loading…</p>
-        <label>Projector key
-          <input id="projector-key" type="password" readonly autocomplete="off">
-        </label>
-        <div class="edit-actions">
-          <button type="button" id="projector-show" class="ghost-btn">Show</button>
-          <button type="button" id="projector-copy" class="solid-btn">Copy key</button>
-          <button type="button" id="projector-regen" class="danger-btn">Regenerate</button>
+        <div class="kv">
+          <div class="kv-row">
+            <label class="field-label">
+              <span class="engraved">Projector key</span>
+              <input id="projector-key" class="field code" type="password" readonly autocomplete="off" spellcheck="false">
+            </label>
+            <div class="kv-tools">
+              <button type="button" id="projector-show" class="chip" aria-pressed="false">Show</button>
+              <button type="button" id="projector-copy" class="chip">Copy</button>
+            </div>
+          </div>
         </div>
-        <p id="projector-msg" class="notify-msg" hidden></p>
-      </div>
-      </div>
-
-      <h2 class="section-title">Overlay</h2>
-      <div class="notify-panel">
-        <span class="muted">Add this URL as an OBS browser source to show chat, joins, clips and highlighted messages. Anyone with the URL can read chat, so keep it private; regenerate to revoke it.</span>
-        <label>Chat overlay URL
-          <input id="overlay-url" type="text" readonly autocomplete="off">
-        </label>
-        <div class="edit-actions">
-          <button type="button" id="overlay-copy" class="solid-btn">Copy URL</button>
-          <button type="button" id="overlay-regen" class="danger-btn">Regenerate</button>
+        <div class="group-actions">
+          <button type="button" id="projector-regen" class="btn danger">Regenerate the key</button>
+          <p id="projector-msg" class="notify-msg" role="status" hidden></p>
         </div>
-        <p class="settings-note muted">Send a test to any connected overlay, to check your OBS browser source:</p>
-        <div class="edit-actions">
-          <button type="button" class="ghost-btn" data-overlay-test="chat">chat</button>
-          <button type="button" class="ghost-btn" data-overlay-test="join">join</button>
-          <button type="button" class="ghost-btn" data-overlay-test="clip">clip</button>
-          <button type="button" class="ghost-btn" data-overlay-test="highlight">highlight</button>
-        </div>
-        <p class="settings-note muted">Corner, size and sound are set with URL options, listed in
-          <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/08-overlay.md" target="_blank" rel="noopener">docs/08-overlay.md</a>.</p>
-        <p id="overlay-msg" class="notify-msg" hidden></p>
-      </div>
+      </section>
     </section>
   </main>
 
-  <!-- Version line, filled from /api/status by admin.js so the number lives in
-       one place (config.VERSION) rather than being baked into the markup. -->
-  <footer class="admin-foot site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <!-- The running release, filled from /api/status so the number lives in one
+       place. The source link is the licence's network-use offer. -->
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <span id="version-line"></span>
-    <span class="powered-sep">·</span>
-    <a class="source-link" href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener">source</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
+    <a href="https://github.com/lazaruslinux/upperroom" target="_blank" rel="noopener">source</a>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
 
-
-  <!-- Banned words. Its own modal with its own save, so closing it without
-       saving changes nothing, and saving it does not also push whatever is
-       currently sitting in the slow-mode box. -->
-  <div id="banned-modal" class="modal" hidden>
-    <div class="modal-card admin-modal">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-      <h3>Banned words</h3>
-      <p class="settings-note muted" style="margin-bottom:10px;">One entry per line, or separated by commas.
-        A message containing any of them is refused and never reaches the room.
-        Matching is whole word, so "ass" does not block "class", and common
-        endings are already covered: "fuck" also catches fucking and fucked.
-        This one applies to everybody, moderators and you included.</p>
-      <textarea id="mod-banned" maxlength="4000" rows="14" spellcheck="false"
-        placeholder="One word or phrase per line."></textarea>
-      <div class="edit-actions">
-        <button type="button" id="mod-banned-save" class="solid-btn">Save list</button>
-      </div>
-      <p id="mod-banned-msg" class="notify-msg" hidden></p>
-    </div>
-  </div>
-
-  <!-- People. One modal that swaps its body between list, create, edit, delete,
-       activity and bans, rather than stacking modals, which would fight over
-       Escape and z-index once opened from inside another one. -->
+  <!-- One person's account: make it, change it, delete it, or read what they
+       have been doing. One panel that swaps its body, so nothing stacks. -->
   <div id="users-modal" class="modal" hidden>
-    <div class="modal-card admin-modal">
-      <button class="modal-close" type="button" data-close aria-label="Close">&times;</button>
-
-      <div class="users-view" data-view="list">
-        <div class="users-head">
-          <h3>People</h3>
-          <button type="button" id="user-new" class="pill" title="Add an account" aria-label="Add an account">+</button>
-        </div>
-        <div id="user-list" class="user-list"></div>
-        <p id="user-empty" class="muted" hidden>No accounts yet. Add one with +.</p>
-      </div>
+    <div class="modal-card dash-modal" role="dialog" aria-modal="true" aria-labelledby="users-modal-title">
+      <button class="modal-close" type="button" data-close aria-label="Close">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <h3 id="users-modal-title">Account</h3>
 
       <div class="users-view" data-view="create" hidden>
-        <button type="button" class="ghost-btn users-back" data-back>back</button>
-        <h3>New account</h3>
-        <form id="create-form" class="admin-form" autocomplete="off">
-          <label>Username
-            <input id="c-username" type="text" placeholder="lowercase, no spaces" autocomplete="off" required>
+        <form id="create-form" class="form-stack" autocomplete="off">
+          <label class="field-label">
+            <span class="engraved">Username</span>
+            <input id="c-username" class="field" type="text" placeholder="lowercase, no spaces" autocomplete="off" autocapitalize="none" spellcheck="false" required>
           </label>
-          <label>Display name <span class="muted">(optional, they can change it later)</span>
-            <input id="c-name" type="text" placeholder="Shown in chat" autocomplete="off">
+          <label class="field-label">
+            <span class="engraved">Name in chat, optional</span>
+            <input id="c-name" class="field" type="text" autocomplete="off">
           </label>
-          <label>Email <span class="muted">(optional, for go-live alerts)</span>
-            <input id="c-email" type="email" placeholder="name@example.com" autocomplete="off">
+          <label class="field-label">
+            <span class="engraved">Password</span>
+            <input id="c-password" class="field" type="text" placeholder="at least 8 characters" autocomplete="new-password" required>
           </label>
-          <label>Password
-            <input id="c-password" type="text" placeholder="at least 8 characters" autocomplete="new-password" required>
-          </label>
-          <label class="checkrow">
-            <input id="c-admin" type="checkbox"> Make this account an admin
-          </label>
-          <label class="checkrow">
-            <input id="c-mod" type="checkbox"> Make this account a moderator
-          </label>
-          <label class="checkrow">
-            <input id="c-notify" type="checkbox" checked> Email this person when the stream goes live
-          </label>
-          <p id="c-error" class="error" hidden></p>
-          <button type="submit" class="solid-btn">Create account</button>
+          <label class="checkrow"><input id="c-admin" type="checkbox"> Admin</label>
+          <label class="checkrow"><input id="c-mod" type="checkbox"> Moderator</label>
+          <p id="c-error" class="error" role="alert" hidden></p>
+          <div class="modal-actions">
+            <button type="button" class="btn" data-close>Cancel</button>
+            <button type="submit" class="btn primary">Create account</button>
+          </div>
         </form>
       </div>
 
-      <!-- No display name field: once an account exists, its name is the
-           account holder's to change, from their own settings. -->
+      <!-- No name field: once an account exists, its name is the account
+           holder's to change, from their own options. -->
       <div class="users-view" data-view="edit" hidden>
-        <button type="button" class="ghost-btn users-back" data-back>back</button>
-        <h3 id="e-title">Edit account</h3>
-        <form id="edit-form" class="admin-form" autocomplete="off">
-          <label>Email <span class="muted">(for go-live alerts)</span>
-            <input id="e-email" type="email" placeholder="name@example.com" autocomplete="off">
+        <form id="edit-form" class="form-stack" autocomplete="off">
+          <label class="field-label">
+            <span class="engraved">New password, blank keeps it</span>
+            <input id="e-password" class="field" type="text" autocomplete="new-password">
           </label>
-          <p id="e-admin-note" class="settings-note muted" hidden>Admins are never
-            emailed that their own stream is live, so this address sits unused
-            while the account is an admin.</p>
-          <label>Reset password <span class="muted">(leave blank to keep)</span>
-            <input id="e-password" type="text" placeholder="new password" autocomplete="new-password">
-          </label>
-          <label class="checkrow">
-            <input id="e-admin" type="checkbox"> Admin
-          </label>
-          <label class="checkrow">
-            <input id="e-mod" type="checkbox"> Moderator
-          </label>
-          <label class="checkrow">
-            <input id="e-notify" type="checkbox"> Email this person when the stream goes live
-          </label>
-          <p id="e-error" class="error" hidden></p>
-          <div class="edit-actions">
-            <button type="button" id="e-delete" class="danger-btn">Delete</button>
-            <button type="submit" class="solid-btn">Save changes</button>
+          <label class="checkrow"><input id="e-admin" type="checkbox"> Admin</label>
+          <label class="checkrow"><input id="e-mod" type="checkbox"> Moderator</label>
+          <p id="e-error" class="error" role="alert" hidden></p>
+          <div class="modal-actions split">
+            <button type="button" id="e-delete" class="btn danger">Delete</button>
+            <button type="submit" class="btn primary">Save changes</button>
           </div>
         </form>
       </div>
 
       <div class="users-view" data-view="delete" hidden>
-        <button type="button" class="ghost-btn users-back" data-back>back</button>
-        <h3>Delete account</h3>
-        <form id="delete-form" class="admin-form" autocomplete="off">
-          <p id="d-blurb" class="muted"></p>
-          <label>Type the username to confirm
-            <input id="d-confirm" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
+        <form id="delete-form" class="form-stack" autocomplete="off">
+          <p id="d-blurb" class="group-note"></p>
+          <label class="field-label">
+            <span class="engraved">Type the username to confirm</span>
+            <input id="d-confirm" class="field" type="text" autocomplete="off" autocapitalize="none" spellcheck="false">
           </label>
-          <p id="d-error" class="error" hidden></p>
-          <button type="submit" id="d-go" class="danger-btn" disabled>Delete for good</button>
+          <p id="d-error" class="error" role="alert" hidden></p>
+          <div class="modal-actions split">
+            <button type="button" class="btn" id="d-back">Back</button>
+            <button type="submit" id="d-go" class="btn danger" disabled>Delete for good</button>
+          </div>
         </form>
       </div>
 
       <div class="users-view" data-view="activity" hidden>
-        <button type="button" class="ghost-btn users-back" data-back>back</button>
-        <h3 id="a-title">Activity</h3>
-        <div class="activity-tabs">
-          <button type="button" class="tab selected" data-tab="watch">Watch</button>
-          <button type="button" class="tab" data-tab="chat">Chat</button>
+        <div class="tabs activity-tabs" role="group" aria-label="Show">
+          <button type="button" class="tab selected" data-tab="watch" aria-pressed="true">Watch</button>
+          <button type="button" class="tab" data-tab="chat" aria-pressed="false">Chat</button>
         </div>
-        <div id="a-watch" class="activity-list"></div>
-        <div id="a-chat" class="activity-list" hidden></div>
-      </div>
-
-      <!-- Bans belong with the people they are about, not as a section of their
-           own on the page: most of the time there are none to look at. -->
-      <div class="users-view" data-view="bans" hidden>
-        <button type="button" class="ghost-btn users-back" data-back>back</button>
-        <h3>Bans</h3>
-        <div id="ban-list" class="activity-list"></div>
-        <p id="ban-empty" class="muted" hidden>No active bans.</p>
+        <ul id="a-watch" class="rows activity-list"></ul>
+        <ul id="a-chat" class="rows activity-list" hidden></ul>
       </div>
     </div>
   </div>
 
-  <script src="/assets/nav.js?v=10"></script>
+  <script src="/assets/nav.js?v=12"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/admin.js?v=49"></script>
+  <script src="/assets/admin.js?v=51"></script>
 </body>
 </html>

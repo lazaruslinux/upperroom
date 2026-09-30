@@ -20,7 +20,6 @@ from starlette.websockets import WebSocketDisconnect
 
 import auth
 import db
-import notify
 from config import (
     COOKIE_NAME, HIGHLIGHT_COST, MAX_MESSAGE_LENGTH,
 )
@@ -343,8 +342,8 @@ def test_non_admin_is_blocked_from_every_invite_route(client):
 def test_register_with_valid_code_creates_a_signed_in_viewer(client):
     setup_admin(client)
     code = client.post("/api/admin/invites", json={}).json()["code"]
-    guest = make_client()
-    resp = guest.post(
+    newcomer = make_client()
+    resp = newcomer.post(
         "/api/register",
         json={"code": code, "username": "grandma", "password": "password1"},
     )
@@ -353,7 +352,7 @@ def test_register_with_valid_code_creates_a_signed_in_viewer(client):
     row = db.get_user("grandma")
     assert row["is_admin"] == 0 and row["is_moderator"] == 0   # viewer only
     assert row["invite_code"] == code                          # provenance stamped
-    assert guest.get("/api/verify").status_code == 200
+    assert newcomer.get("/api/verify").status_code == 200
 
 
 @pytest.mark.parametrize("state", ["invalid", "revoked", "redeemed"])
@@ -402,6 +401,8 @@ def test_register_taken_username_conflicts_and_keeps_code_unredeemed(client):
         ("GET", "/api/admin/activity", None),
         ("GET", "/api/admin/chat", None),
         ("GET", "/api/admin/notify", None),
+        ("POST", "/api/admin/notify", {"on": False}),
+        ("POST", "/api/admin/notify/test", None),
         ("GET", "/api/admin/overlay", None),
         ("POST", "/api/admin/overlay/regenerate", None),
         ("POST", "/api/admin/overlay/test", {"kind": "chat"}),
@@ -535,14 +536,16 @@ def test_profile_enforces_bio_and_font_limits(client):
 
 
 def test_the_pages_offer_exactly_the_allowed_fonts():
-    """The font map is written out twice, once per page, because there is no
-    build step to share ten lines between them. Nothing stops the two copies
-    from drifting from the server's list, and a key on only one side is a font
-    the server rejects or a saved font the page cannot render. Pin all three."""
+    """The font map is written out once per page that needs it, because there
+    is no build step to share ten lines between them: the room and the media
+    page render other people's fonts, and the options page is where you pick
+    your own. Nothing stops the copies from drifting from the server's list,
+    and a key on only one side is a font the server rejects or a saved font the
+    page cannot render. Pin them all."""
     import re
     from config import ALLOWED_FONTS
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    for name in ("watch.js", "media.js"):
+    for name in ("watch.js", "media.js", "options.js"):
         source = open(
             os.path.join(root, "web", "assets", name), encoding="utf-8"
         ).read()
@@ -775,12 +778,9 @@ def test_overlay_test_fire_rejects_an_unknown_kind(client):
     assert resp.status_code == 400
 
 
-def test_overlay_test_fire_refuses_anon_guest_viewer_and_mod(client):
+def test_overlay_test_fire_refuses_anon_viewer_and_mod(client):
     # The route is admin-gated like the rest of /api/admin/*. Prove each non-admin
-    # is refused, including a guest, so a test can never be fired without the badge.
-    # Imported here, not at module top: test_guest already imports from this module,
-    # so a top-level import would be circular.
-    from test_guest import make_pass, redeem
+    # is refused, so a test can never be fired without the badge.
     setup_admin(client, username="owner")
 
     anon = make_client()
@@ -795,10 +795,6 @@ def test_overlay_test_fire_refuses_anon_guest_viewer_and_mod(client):
     mod = make_client()
     login(mod, "mod1")
     assert mod.post("/api/admin/overlay/test", json={"kind": "chat"}).status_code == 403
-
-    guest = make_client()
-    assert redeem(guest, make_pass()).status_code == 200
-    assert guest.post("/api/admin/overlay/test", json={"kind": "chat"}).status_code in (401, 403)
 
 
 # ---- 6c. MediaMTX publish/read auth callback ------------------------------
@@ -876,6 +872,7 @@ def test_admin_stream_reports_the_broadcast_shape(client):
     assert set(body) == {
         "live", "since", "watching", "recording", "game", "recent_games",
         "sent_bytes", "video_watchers", "max_viewers", "theater_subtitles",
+        "last_publish_at", "viewers",
     }
     assert body["live"] is False
     assert body["since"] is None
@@ -890,6 +887,77 @@ def test_admin_stream_reports_the_broadcast_shape(client):
     # nothing and has nothing to offer back.
     assert body["game"] == ""
     assert body["recent_games"] == []
+    # Nobody has published with this key and nobody is in the room.
+    assert body["last_publish_at"] is None
+    assert body["viewers"] == []
+
+
+def test_admin_stream_lists_who_is_in_the_room(client):
+    """The dashboard's call board reads the same presence list the room's
+    does."""
+    setup_admin(client)
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    with ws_connect(viewer) as ws:
+        drain_join(ws)
+        board = client.get("/api/admin/stream").json()["viewers"]
+    assert [(v["username"], v["admin"]) for v in board] == [
+        ("viewer", False)
+    ]
+
+
+# ---- the dashboard's "OBS has these settings" tick ------------------------
+
+def test_an_allowed_publish_is_remembered(client):
+    setup_admin(client)
+    key = db.regenerate_stream_key()
+    before = int(time.time())
+    anon = make_client()
+    assert anon.post(
+        "/mtx-auth", json={"action": "publish", "password": key}
+    ).status_code == 200
+    stamp = client.get("/api/admin/stream").json()["last_publish_at"]
+    assert stamp is not None and stamp >= before
+
+
+def test_a_refused_publish_is_not_remembered(client):
+    setup_admin(client)
+    db.regenerate_stream_key()
+    anon = make_client()
+    assert anon.post(
+        "/mtx-auth", json={"action": "publish", "password": "wrong"}
+    ).status_code == 401
+    # A read from inside the network is allowed, and it is not a publish.
+    assert anon.post(
+        "/mtx-auth", json={"action": "read", "ip": "172.20.0.5"}
+    ).status_code == 200
+    assert client.get("/api/admin/stream").json()["last_publish_at"] is None
+
+
+def test_regenerating_the_key_clears_the_publish_tick(client):
+    """The tick means OBS holds the key it would need. A new key is one OBS has
+    not been given yet, even in the middle of a broadcast."""
+    setup_admin(client)
+    key = db.regenerate_stream_key()
+    make_client().post("/mtx-auth", json={"action": "publish", "password": key})
+    assert client.get("/api/admin/stream").json()["last_publish_at"] is not None
+    assert client.post("/api/admin/stream-key/regenerate").status_code == 200
+    assert client.get("/api/admin/stream").json()["last_publish_at"] is None
+
+
+def test_the_publish_tick_is_for_admins_only(client):
+    setup_admin(client)
+    key = db.regenerate_stream_key()
+    make_client().post("/mtx-auth", json={"action": "publish", "password": key})
+    add_user("viewer")
+    viewer = make_client()
+    login(viewer, "viewer")
+    assert viewer.get("/api/admin/stream").status_code == 403
+    # Nothing a viewer or a stranger can read carries it.
+    assert "last_publish_at" not in viewer.get("/api/status").json()
+    assert "last_publish_at" not in viewer.get("/api/channel").json()
+    assert "last_publish_at" not in make_client().get("/api/status").json()
 
 
 def test_wipe_broadcast_carries_its_reason(client):
@@ -1131,49 +1199,6 @@ def test_banned_word_message_is_dropped(client):
     assert "blocked" in frame["text"].lower()
 
 
-def test_admin_is_excluded_from_go_live_email_recipients(client):
-    setup_admin(client, username="owner")
-    db.set_email("owner", "owner@example.com")
-    add_user("viewer")
-    db.set_email("viewer", "viewer@example.com")
-    emails = [email for _, email in db.list_live_recipients()]
-    assert "viewer@example.com" in emails
-    assert "owner@example.com" not in emails
-
-
-def test_channel_email_defaults_on(client):
-    # A fresh channel, and an upgraded one, both send email: the switch only
-    # matters once an operator turns it off.
-    setup_admin(client, username="owner")
-    assert db.get_notify_settings()["email_on_live"] == 1
-
-
-def test_channel_email_switch_gates_go_live_email(client, monkeypatch):
-    # With a relay configured, the switch alone decides whether email goes out.
-    setup_admin(client, username="owner")
-    monkeypatch.setattr(notify, "SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr(notify, "SMTP_FROM", "bot@example.com")
-    assert notify.email_enabled() is True
-    db.set_email_on_live(False)
-    assert notify.email_enabled() is False
-    db.set_email_on_live(True)
-    assert notify.email_enabled() is True
-
-
-def test_channel_email_switch_cannot_send_without_a_relay(client):
-    # No SMTP configured, so the switch being on changes nothing.
-    setup_admin(client, username="owner")
-    db.set_email_on_live(True)
-    assert notify.email_enabled() is False
-
-
-def test_admin_notify_endpoint_round_trips_the_email_switch(client):
-    setup_admin(client, username="owner")
-    assert client.get("/api/admin/notify").json()["email_on_live"] is True
-    assert client.post("/api/admin/notify", json={"email_on_live": False}).status_code == 200
-    assert client.get("/api/admin/notify").json()["email_on_live"] is False
-
-
 # ---- 8. Session-gated media endpoints -------------------------------------
 
 @pytest.mark.parametrize(
@@ -1242,7 +1267,7 @@ def test_redeem_highlights_and_broadcasts_the_event(client):
     # highlight event to every connected watcher (the overlay). The event now
     # carries the sender's identity in the same shape a chat line does, so a
     # highlight can render with their avatar, name, color, font, and role. Mirror
-    # the WS event test: seat a fake watcher, then drive redeem.
+    # the WS event test: add a fake watcher, then drive redeem.
     viewer = _viewer_with_points(client, 120)
     db.set_chat_font("viewer", "sora")
     sock = _CaptureSocket()

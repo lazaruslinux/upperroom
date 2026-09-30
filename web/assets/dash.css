@@ -1,0 +1,487 @@
+/* =========================================================================
+   The operator's side: the dashboard (/admin), moderation (/mod), stats
+   (/analytics) and the first-run setup page, in the booth.
+
+   On top of style.css, whose tokens, controls, lamp strip, slate and call
+   board all of this reuses. Nothing here uses the lamp's red: on these pages
+   it is the lamp in the strip and nothing else. The accent marks the one
+   thing to do next and the current selection.
+
+   Organization: the section menu in the strip -> page frames -> the Go live
+   screen (steps, then the room) -> section pages (groups, rows, forms) ->
+   moderation -> stats -> setup.
+   ========================================================================= */
+
+/* ---- the section menu ---- */
+
+/* On a wide screen the sections run along the right of the strip, with the
+   lamp in the middle. On a narrower desktop the lamp steps left, beside the
+   site name, to make room for them. Narrower still there is no room for seven
+   of them at all, so they lead the menu sheet instead (nav.js puts them in
+   both places). */
+.strip-sections { display: none; }
+.strip-section {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  color: var(--ink-3);
+  font: 600 14px/1 var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.strip-section:hover { color: var(--ink); }
+.strip-section[aria-current="page"] {
+  color: var(--ink);
+  background: var(--raised);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* In the menu their words line up with the icon rows' words below them. */
+.menu-row.menu-section { padding-left: calc(var(--u) * 3 + 32px); }
+
+@media (min-width: 1080px) {
+  .strip-sections { display: flex; gap: calc(var(--u) * 1); }
+  .menu-section { display: none; }
+  .strip.has-sections { grid-template-columns: auto auto minmax(0, 1fr); }
+  .strip.has-sections .strip-on { justify-self: start; }
+}
+@media (min-width: 1340px) {
+  .strip.has-sections { grid-template-columns: 1fr auto 1fr; }
+  .strip.has-sections .strip-on { justify-self: center; }
+}
+
+/* ---- page frames ---- */
+
+body.dash { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.dash-main { flex: 1 0 auto; width: 100%; max-width: 1440px; margin: 0 auto; }
+.dash-page { width: 100%; max-width: 760px; margin: 0 auto; padding: calc(var(--u) * 6) calc(var(--u) * 4) calc(var(--u) * 10); }
+.dash-page.wide { max-width: 1040px; }
+.page-title:focus { outline: none; }
+
+/* A group of controls under an engraved heading, on the seam. */
+.dash-group { margin-top: calc(var(--u) * 10); }
+.dash-group:first-of-type { margin-top: calc(var(--u) * 7); }
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2) calc(var(--u) * 3);
+  min-height: 40px;
+  margin-bottom: calc(var(--u) * 3);
+  padding-bottom: calc(var(--u) * 2);
+  border-bottom: 1px solid var(--seam);
+}
+/* A step up from the field labels under it, in the same engraved voice. */
+.group-head h2 { margin: 0; font-size: 14px; color: var(--ink-2); }
+.group-note { margin: calc(var(--u) * 2) 0 0; max-width: 68ch; font-size: 14px; color: var(--ink-3); }
+.group-head + .group-note { margin-top: 0; margin-bottom: calc(var(--u) * 4); }
+.group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--u) * 2) calc(var(--u) * 3);
+  margin-top: calc(var(--u) * 5);
+}
+.group-actions .notify-msg { flex: 1 1 200px; }
+.notify-msg { margin: calc(var(--u) * 2) 0 0; font-size: 14px; }
+.group-actions .notify-msg { margin: 0; }
+.empty { margin: calc(var(--u) * 3) 0 0; font-size: 14px; color: var(--ink-3); list-style: none; }
+
+.form-stack { display: flex; flex-direction: column; gap: calc(var(--u) * 5); }
+.form-stack .field, .form-stack textarea { width: 100%; }
+/* The channel description grows with what is in it, so no line is ever cut in
+   half at the bottom edge; two lines is the floor. */
+#ch-desc { field-sizing: content; min-height: calc(2 * 1.45em + 22px); }
+/* A note belongs to the control above it, not to the gap. */
+.form-stack > .group-note { margin-top: calc(var(--u) * -3); }
+.inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: calc(var(--u) * 3); }
+.inline-form .grow { flex: 1 1 240px; }
+.inline-form .field { width: 100%; }
+.field.narrow { width: 9em; }
+.btn-row { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 2); }
+
+/* Keys, links and codes: the one place a fixed-width face is doing its job. */
+.field.code, .row-title.code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.01em;
+}
+@media (pointer: fine) {
+  .field.code { font-size: 14px; }
+}
+
+/* Chips that act on something, and chips that say something is on. */
+.chip.is-on, .chip[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.tabs { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 2); }
+
+/* A label with its switch or button at the far end. */
+.setting { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 3); }
+.setting-label { font-size: 15px; color: var(--ink); }
+
+/* ---- lists: one person, one code, one recording per row ---- */
+
+.rows { margin: 0; padding: 0; list-style: none; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3);
+  min-height: 60px;
+  padding: calc(var(--u) * 2) 0;
+  border-bottom: 1px solid var(--seam);
+}
+.row:last-child { border-bottom: 0; }
+.row-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+a.row-title { text-decoration: underline; text-decoration-color: var(--hardware); text-underline-offset: 3px; }
+a.row-title:hover { text-decoration-color: var(--ink-2); }
+.row-meta { font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; }
+.row-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(var(--u) * 2); flex: none; }
+.row.is-spent .row-title { color: var(--ink-2); }
+.row .avatar { width: 36px; height: 36px; font-size: 17px; }
+
+/* On a phone the buttons go under the words rather than squeezing them. */
+@media (max-width: 559px) {
+  .row { flex-wrap: wrap; }
+  .row-main { flex-basis: calc(100% - 52px); }
+  .row:not(.person-row) .row-main { flex-basis: 100%; }
+  .row-tools { width: 100%; justify-content: flex-start; }
+  .person-row .row-tools { padding-left: 48px; }
+}
+
+/* =========================================================================
+   Go live
+   ========================================================================= */
+
+.desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(var(--u) * 8);
+  padding: calc(var(--u) * 6) calc(var(--u) * 4) calc(var(--u) * 8);
+}
+@media (min-width: 960px) {
+  .desk {
+    grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
+    align-items: start;
+    gap: calc(var(--u) * 8);
+    padding: calc(var(--u) * 8);
+  }
+}
+
+/* ---- the steps ---- */
+
+.steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: calc(var(--u) * 4);
+  padding: calc(var(--u) * 5) 0;
+  border-bottom: 1px solid var(--seam);
+}
+.step:first-child { padding-top: 0; }
+.step:last-child { border-bottom: 0; }
+
+/* The tick: dark until the step is true, then filled with ink. The step to
+   do next carries the accent. */
+.mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--seam);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-3);
+  font: 700 16px/1 var(--display);
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+.mark-tick { display: none; width: 20px; height: 20px; stroke-width: 2.5; }
+.step[data-state="done"] .mark { background: var(--ink); border-color: var(--ink); color: var(--ground); }
+.step[data-state="done"] .mark-n { display: none; }
+.step[data-state="done"] .mark-tick { display: block; animation: fade 200ms ease-out; }
+.step[data-state="now"] .mark { border-color: var(--accent); color: var(--accent); }
+
+.step-title {
+  margin-top: 6px;
+  font: 600 18px/1.1 var(--display);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.step[data-state="done"] .step-title { color: var(--ink-2); }
+.step[data-state="wait"] .step-title { color: var(--ink-3); }
+.step-state { margin-top: calc(var(--u) * 2); font-size: 15px; color: var(--ink-2); }
+.step-state b { color: var(--ink); font-weight: 500; }
+.path-sep { color: var(--ink-3); }
+.step-note { margin-top: calc(var(--u) * 2); font-size: 14px; color: var(--ink); }
+.step-aside { margin-top: calc(var(--u) * 3); font-size: 13px; }
+.step-aside .link-btn { color: var(--ink-3); }
+.step-aside .link-btn:hover { color: var(--ink); text-decoration-color: var(--ink-2); }
+
+/* A label over a field with its buttons beside it. */
+.kv { display: grid; gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 4); }
+.kv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: calc(var(--u) * 2); align-items: end; }
+.kv-row .field { width: 100%; }
+.kv-tools { display: flex; gap: calc(var(--u) * 2); }
+.kv .chip { min-height: 40px; }
+
+/* ---- step 3: the watch link ---- */
+
+#copy-link { margin-top: calc(var(--u) * 4); }
+
+/* Off air the loud word waits its turn: still pressable, not yet the thing
+   the screen is for. */
+.loud.is-quiet {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--hardware);
+}
+.loud.is-quiet:hover { color: var(--ink); filter: none; box-shadow: inset 0 0 0 1px var(--ink-3); }
+#link-msg { margin-top: calc(var(--u) * 3); }
+#invite-made { margin-bottom: calc(var(--u) * 3); }
+/* The clipboard's fallback, here and under a new invite code. */
+.link-fallback { margin-top: calc(var(--u) * 3); }
+.link-fallback .field { width: 100%; }
+
+/* ---- the room ---- */
+
+.room-panel {
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--seam);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+/* The frame is exactly as tall as the watch page inside it needs: on a
+   narrow panel the picture alone, so its caption, the call board and the
+   numbers follow it directly. Chat is one tap away behind Chat only there
+   (style.css), not stacked underneath: the operator's anti-goal is "busy on
+   a phone" and the product keeps one screen for the operator, so the phone
+   dashboard shows the picture or the chat, never a scroll of both. From
+   640px (the width the framed page puts chat beside the picture) the
+   picture's own height, and never less than chat needs to be useful. */
+.program { border-bottom: 1px solid var(--seam); background: var(--screen); }
+.program iframe {
+  display: block;
+  width: 100%;
+  height: 200px;
+  height: calc(100cqw * 0.5625);
+  border: 0;
+}
+@container (min-width: 640px) {
+  .program iframe { height: max(300px, calc((100cqw - 301px) * 0.5625)); }
+}
+.program.is-chat-only iframe { height: 420px; }
+
+.room-panel .slate { flex-wrap: wrap; row-gap: calc(var(--u) * 2); }
+.room-panel .slate-tools { flex-wrap: wrap; }
+.slate-form {
+  display: grid;
+  gap: calc(var(--u) * 4);
+  padding: calc(var(--u) * 4) calc(var(--u) * 3);
+  border-bottom: 1px solid var(--seam);
+  background: var(--raised);
+}
+.slate-form .field { width: 100%; }
+.slate-msg { margin: 0; padding: calc(var(--u) * 2) calc(var(--u) * 3); border-bottom: 1px solid var(--seam); }
+.room-panel .board { border-bottom: 1px solid var(--seam); }
+/* Names, not initials: an operator reads the board, a phone glances at it. */
+.room-panel .lines { flex-wrap: wrap; overflow: visible; }
+.room-panel .board-empty { margin: 0; }
+.room-panel .lines:not(:empty) + .board-empty { display: none; }
+
+/* What the gate itself counts, and nothing it does not. */
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 4) calc(var(--u) * 8);
+  padding: calc(var(--u) * 4) calc(var(--u) * 3);
+}
+.readout-item { display: grid; gap: calc(var(--u) * 2); align-content: start; }
+.readout-item strong {
+  font: 600 20px/1 var(--display);
+  letter-spacing: 0.02em;
+  font-variant-numeric: normal;
+  color: var(--ink);
+}
+.readout-edit { justify-self: start; font-size: 13px; }
+.limit-form {
+  display: grid;
+  gap: calc(var(--u) * 3);
+  padding: calc(var(--u) * 4) calc(var(--u) * 3);
+  border-top: 1px solid var(--seam);
+  background: var(--raised);
+}
+.limit-form .field { width: 9em; }
+.limit-form .group-note { margin: 0; }
+.room-panel > .slate-msg:last-child { border-top: 1px solid var(--seam); border-bottom: 0; }
+
+/* =========================================================================
+   Section pages
+   ========================================================================= */
+
+.lib-tab[aria-pressed] { min-height: 36px; }
+.storage-usage { font-size: 15px; color: var(--ink); }
+/* The store against the disk it sits on: a meter, not a chart. */
+.usage-bar {
+  height: 6px;
+  margin-top: calc(var(--u) * 3);
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+/* Drawn as a scale rather than a width, so a change moves without reflowing
+   the page around it. */
+.usage-fill {
+  height: 100%;
+  background: var(--ink-2);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 200ms ease;
+}
+.usage-fill.is-tight { background: var(--ink); }
+.retention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: calc(var(--u) * 4);
+  margin-top: calc(var(--u) * 5);
+}
+.retention-grid .field { width: 100%; }
+
+/* The accent presets. Each shows its own colour whatever the channel has on;
+   none of them is a red, so none can be mistaken for the lamp. */
+.accent-swatches { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 2); }
+.accent-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  min-height: 44px;
+  padding: 0 calc(var(--u) * 4) 0 calc(var(--u) * 2);
+  border: 1px solid var(--seam);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink-2);
+  font: 500 14px/1 var(--body);
+}
+.accent-swatch:hover { color: var(--ink); border-color: var(--hardware); }
+.accent-swatch.selected { color: var(--ink); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.swatch-chip { width: 24px; height: 24px; border-radius: var(--radius); }
+.swatch-green { background: #6ab48a; }
+.swatch-amber { background: #c2a05c; }
+.swatch-blue { background: #7aa3c0; }
+.swatch-ghost { background: #9aa39a; }
+
+.banned-editor { margin-top: calc(var(--u) * 4); }
+.banned-editor textarea { width: 100%; margin-top: calc(var(--u) * 3); font-size: 15px; }
+.test-row { display: grid; gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 5); }
+.theater-status { margin: calc(var(--u) * 3) 0; font-size: 14px; color: var(--ink-2); }
+#theater-panel .btn-row, #theater-panel .ts-search { margin-top: calc(var(--u) * 3); }
+#theater-panel .checkrow { margin-top: calc(var(--u) * 3); }
+
+/* ---- the account panel ---- */
+
+.dash-modal { max-width: 460px; }
+.modal-actions.split { justify-content: space-between; }
+.activity-tabs { margin-bottom: calc(var(--u) * 3); }
+.activity-list { max-height: 52vh; overflow-y: auto; }
+.activity-row { min-height: 44px; gap: calc(var(--u) * 3); align-items: baseline; }
+.act-when { flex: none; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.act-dur { font-weight: 500; }
+.act-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* =========================================================================
+   Moderation and stats: a readout row, then lists
+   ========================================================================= */
+
+.meter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 5) calc(var(--u) * 10);
+  margin-top: calc(var(--u) * 6);
+  padding: calc(var(--u) * 4) 0 calc(var(--u) * 5);
+  border-bottom: 1px solid var(--seam);
+}
+.meter-row.flush { margin-top: 0; padding-top: calc(var(--u) * 1); border-bottom: 0; }
+.meter { display: grid; gap: calc(var(--u) * 2); align-content: start; text-align: left; }
+.meter strong {
+  font: 600 22px/1 var(--display);
+  letter-spacing: 0.02em;
+  font-variant-numeric: normal;
+  color: var(--ink);
+}
+button.meter {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+button.meter strong { text-decoration: underline; text-decoration-color: var(--hardware); text-underline-offset: 5px; text-decoration-thickness: 2px; }
+button.meter:hover strong { text-decoration-color: var(--ink-2); }
+.row-value { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* ---- stats: one chart per measure, all in the same system ---- */
+
+.charts { display: grid; gap: calc(var(--u) * 8); }
+.chart { margin: 0; }
+.chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 1) calc(var(--u) * 4); margin-bottom: calc(var(--u) * 3); }
+.chart-title { font: 600 18px/1.2 var(--display); letter-spacing: 0.02em; color: var(--ink); }
+.chart-total { font-size: 14px; color: var(--ink-2); }
+.chart-note { font-size: 13px; color: var(--ink-3); }
+.chart-plot { position: relative; }
+.chart-svg { display: block; width: 100%; height: 180px; overflow: visible; }
+.chart-svg .grid { stroke: var(--seam); stroke-width: 1; shape-rendering: crispEdges; }
+.chart-svg .bar { fill: var(--ink-2); }
+.chart-svg .hit { fill: transparent; }
+.chart-svg .hit:focus { outline: none; }
+.chart-svg .col.is-hot .bar { fill: var(--accent); }
+.chart-svg .tick { fill: var(--ink-3); font: 400 12px/1 var(--body); font-variant-numeric: tabular-nums; }
+.chart-svg .peak { fill: var(--ink); font: 500 12px/1 var(--body); font-variant-numeric: tabular-nums; }
+.chart-axis { display: flex; justify-content: space-between; margin-top: calc(var(--u) * 2); font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.chart-tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  min-width: 96px;
+  padding: calc(var(--u) * 2) calc(var(--u) * 3);
+  border: 1px solid var(--seam);
+  border-radius: var(--radius);
+  background: var(--raised);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.chart-tip strong { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
+.chart-tip span { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+.chart-empty { margin: 0; padding: calc(var(--u) * 8) 0; font-size: 14px; color: var(--ink-3); text-align: center; border-top: 1px solid var(--seam); border-bottom: 1px solid var(--seam); }
+.chart-table { margin-top: calc(var(--u) * 3); font-size: 13px; }
+.chart-table summary { cursor: pointer; color: var(--ink-3); width: max-content; }
+.chart-table summary:hover { color: var(--ink-2); }
+.chart-table table { width: 100%; max-width: 360px; margin-top: calc(var(--u) * 2); border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { padding: 4px 0; border-bottom: 1px solid var(--seam); text-align: left; font-weight: 400; }
+.chart-table th { color: var(--ink-3); }
+.chart-table td:last-child, .chart-table th:last-child { text-align: right; }
+
+/* =========================================================================
+   First-run setup: a door, like signing in.
+   ========================================================================= */
+
+/* The product's own name, always lowercase, even in a title that is not. */
+.door-title.brand-title { text-transform: none; }
+.brand-title .door-sub { margin-top: calc(var(--u) * 2); font-size: 0.5em; letter-spacing: 0.08em; text-transform: uppercase; }
+.brand-title .wm-accent { color: var(--accent); }
+.setup-intro { margin: calc(var(--u) * -3) 0 0; max-width: 44ch; font-size: 15px; color: var(--ink-2); }

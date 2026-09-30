@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.23.0"
+VERSION = "0.24.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -185,7 +185,6 @@ MAX_VIEWER_LIMIT = 500
 # network without holding a slot for somebody who closed the tab.
 WATCHER_WINDOW_SECONDS = 30
 
-MAX_EMAIL = 254
 MAX_INVITE_LABEL = 60
 
 # Channel points. Viewers earn this many points per minute while the stream is
@@ -241,9 +240,9 @@ RECORD_TMP = os.environ.get("SELFSTREAM_RECORD_TMP", "/data/rec")
 STORE_URL = os.environ.get("SELFSTREAM_STORE_URL", "http://store:8080").rstrip("/")
 STORE_KEY = os.environ.get("SELFSTREAM_STORE_KEY", "")
 # Poster art for whatever a theater session is showing, on the gate's own data
-# volume and served by the gate itself, behind a session check that lets guests
-# in. It is not in the media store on purpose: it is not a recording, retention
-# has nothing to say about it, and it is small enough to live with the database.
+# volume and served by the gate itself, behind a session check. It is not in
+# the media store on purpose: it is not a recording, retention has nothing to
+# say about it, and it is small enough to live with the database.
 ART_DIR = os.environ.get("SELFSTREAM_ART_DIR", "/data/art")
 # Retention lives in the dashboard now (channel_settings), not here: the limits
 # are per-channel state the operator changes without a restart, and they ship at
@@ -314,17 +313,6 @@ MAX_SOCKET_CONNECTS = 30
 # before it is parsed on the one event loop everybody shares.
 MAX_CHAT_FRAME = 8 * 1024
 
-# ---- Guest passes ---------------------------------------------------------
-# A guest pass is a single-use code that lets someone watch and chat without an
-# account. Redeeming one creates a real users row flagged is_guest, because
-# presence, watch sessions, bans and every moderator command resolve their
-# target through that row: a guest with no row could talk in chat and could not
-# be timed out, banned or purged.
-GUEST_MINUTES = 30                 # the clock starts on redemption, not on issue
-GUEST_REAP_INTERVAL = 300          # how often expired guest accounts are removed
-MAX_GUEST_NAME = 24                # shorter than a member's; it is on screen only
-MAX_GUEST_PASS_BATCH = 25          # how many passes one click may mint
-
 # Recorder resilience. The stream watcher supervises the recording ffmpeg while
 # the stream is live: if the process dies or its scratch file stops growing, the
 # partial recording is finalized (when it holds usable content) or discarded, and
@@ -336,16 +324,10 @@ RECORD_SURVIVAL_SECONDS = 60       # a recording alive this long clears the back
 RECORD_BACKOFF = (0, 10, 30, 60)   # seconds between successive restart attempts
 
 # ---- Go-live notifications ------------------------------------------------
-# When a broadcast starts, announce it once over any channel the operator has
-# configured: a Discord webhook and/or email through an SMTP relay (e.g. Brevo).
-# Everything here is best effort and gated on configuration: with nothing set,
-# notifications are simply skipped.
+# When a broadcast starts, send a Web Push notice once to every device that
+# turned it on (webpush.py). Push needs SITE_URL, the contact its VAPID token
+# names; with it unset, push is off.
 SITE_URL = os.environ.get("SELFSTREAM_SITE_URL", "").rstrip("/")
 # Re-announcing is suppressed within this window, so a brief HLS blip (offline ->
 # online flap) or a gate restart mid-broadcast cannot spam viewers.
 NOTIFY_COOLDOWN = int(os.environ.get("SELFSTREAM_NOTIFY_COOLDOWN", "1800"))
-SMTP_HOST = os.environ.get("SELFSTREAM_SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SELFSTREAM_SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SELFSTREAM_SMTP_USER", "")
-SMTP_PASS = os.environ.get("SELFSTREAM_SMTP_PASS", "")
-SMTP_FROM = os.environ.get("SELFSTREAM_SMTP_FROM", "")

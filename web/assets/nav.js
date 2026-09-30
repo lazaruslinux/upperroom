@@ -1,453 +1,443 @@
-// The site header shared by every signed-in page.
+// The lamp strip: the top edge of every page.
 //
-// One bar, built in one place, so the pages do not each hand-roll their own:
-// brand and page links on the left, a search field in the middle, and the
-// personal cluster (notifications, messages, points, you) on the right.
+// One strip, built in one place: the menu key and the site name on the left,
+// the ON AIR lamp and the on-air clock on the right (the centre, on a wide
+// screen). The lamp is lit only while the stream is live, and it is the only
+// thing on the site in that red.
 //
-// Account settings used to hang off this file as a modal. They are a page now,
-// /options, so all that lives in options.js instead. What is left here is the
-// bar itself plus the first-login email nudge, which has to fire on the page
-// people land on and nowhere else.
+// The menu is the way around a signed-in site: the room, past broadcasts,
+// options, the role pages, and signing out. Search lives on the browse page.
 //
-// The watch page is not covered: its bar is icon-only and lives inside the chat
-// column because the video needs the room.
+// This file also owns the one notice that belongs to whichever page a person
+// lands on (the one-time "what changed" note), because the room and home both
+// are that page, depending on whether anyone is on air.
 //
-// Usage, after the page has its own /api/me result:
-//   mountNav(me, { current: "browse", siteName, promptEmail: true })
+// Usage, once the page has its own /api/me answer:
+//   const strip = mountNav(me, { current: "browse" });
+//   strip.setStatus(statusFromApi);     // pages that poll /api/status themselves
+// Pages with no session (sign-in) use mountStrip({}) instead,
+// which draws the strip without a menu.
+//
+// The dashboard also hands over its sections, [{ key, label, href }], and the
+// one it is showing as `section`. They sit on the right of the strip on a wide
+// screen and at the top of the menu on anything narrower; strip.setSection()
+// moves the mark when the dashboard switches section without a page load.
 
 (function () {
-  const EMAIL_PROMPT_KEY = "selfstream_email_prompt_dismissed";
-  const SEARCH_MIN = 2;
-  const SEARCH_DEBOUNCE = 200;
-  const SEARCH_LIMIT = 8;
+  const ACCENTS = ["green", "amber", "blue", "ghost"];
+  const POLL_MS = 15000;
 
-  // The three destinations everyone has. Role pages are not here: they live in
-  // the avatar menu, where an admin looks for them once and a viewer never has
-  // to read past them.
-  const LINKS = [
-    { key: "home", label: "Home", href: "/home" },
-    { key: "browse", label: "Browse", href: "/browse" },
-    { key: "options", label: "Options", href: "/options" },
-  ];
+  // Authored icons, one stroke weight (see svg.i in style.css). Static
+  // markup with nobody's input in it.
+  const ICON = {
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    room: '<rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/>',
+    library: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M8 4v5M16 4v5"/>',
+    options: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+    dashboard: '<rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><rect x="13" y="11" width="8" height="10" rx="1"/><rect x="3" y="15" width="8" height="6" rx="1"/>',
+    mod: '<path d="M12 3 5 6v5c0 4.5 3 8.4 7 10 4-1.6 7-5.5 7-10V6l-7-3Z"/>',
+    stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    signout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H4"/>',
+  };
 
-  let me = null;
-  let opts = {};
-  let openPanel = null;
+  function icon(name, extra) {
+    return `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"${extra || ""}>${ICON[name]}</svg>`;
+  }
 
-  // ---- small helpers (private copies, same as every other page keeps) ----
+  // ---- small helpers, kept private like every other page keeps its own ----
 
   function avatarColor(seed) {
     let hash = 0;
     for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-    return `hsl(${hash}, 55%, 45%)`;
+    return `hsl(${hash}, 34%, 66%)`;
   }
 
-  function avatarNode(username, name, version, cls) {
+  function avatarNode(username, name, version) {
     if (version) {
       const img = document.createElement("img");
-      img.className = cls;
+      img.className = "avatar";
       img.alt = "";
       img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
       return img;
     }
     const span = document.createElement("span");
-    span.className = cls;
+    span.className = "avatar";
     span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
     span.style.background = avatarColor(username || "?");
     return span;
   }
 
-  function openModal(m) { m.hidden = false; }
-  function closeModal(m) { m.hidden = true; }
-
-  async function saveProfile(patch) {
-    try {
-      const reply = await fetch("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      return reply.ok;
-    } catch {
-      return false;
+  // The accent rides every status answer; remember it for head.js's next
+  // first paint.
+  function applyAccent(value) {
+    if (!ACCENTS.includes(value)) return;
+    if (document.documentElement.dataset.accent !== value) {
+      document.documentElement.dataset.accent = value;
     }
+    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
   }
 
-  // The bell and the inbox are not built; see the bar markup below.
-  const SHOW_INBOX = false;
+  function onAirClock(seconds) {
+    const s = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const pad = (n) => String(n).padStart(2, "0");
+    return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+  }
 
-  // ---- icons ----
+  // ---- the strip ----
 
-  const ICON = {
-    bell: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>`,
-    inbox: `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v14H3z"></path><polyline points="3 6 12 13 21 6"></polyline></svg>`,
-    search: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16" y2="16"></line></svg>`,
-    menu: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line></svg>`,
-  };
+  function buildStrip(opts) {
+    const host = document.getElementById("site-nav");
+    if (!host) return null;
+    const strip = document.createElement("header");
+    strip.className = "strip";
+    strip.id = "strip";
+    strip.innerHTML = `
+      <div class="strip-left"></div>
+      <div class="strip-on">
+        <p class="lamp" id="lamp" role="status">Off air</p>
+        <span class="clock" id="clock" hidden></span>
+      </div>
+      <div class="strip-end"></div>`;
+    const left = strip.querySelector(".strip-left");
+    const name = document.createElement(opts.homeLink ? "a" : "span");
+    name.className = "strip-name";
+    name.id = "site-title";
+    name.textContent = opts.siteName || "upperroom";
+    if (opts.homeLink) name.href = "/home";
+    left.appendChild(name);
+    host.replaceWith(strip);
+    return strip;
+  }
 
-  // ---- markup ----
+  function controller(strip, opts) {
+    const lamp = strip.querySelector("#lamp");
+    const clock = strip.querySelector("#clock");
+    let since = null;
+    let ticker = null;
+    let last = null;
+    const listeners = [];
+    if (opts.onStatus) listeners.push(opts.onStatus);
 
-  function barMarkup() {
-    // A guest never reaches a page that mounts this bar; every one of them
-    // redirects to /watch first. If one ever does, they get the way out and
-    // nothing that would 401 on them.
-    const links = me.guest ? "" : LINKS.map((item) => {
-      const current = item.key === opts.current ? " is-current" : "";
-      return `<a href="${item.href}" class="nav-link${current}">${item.label}</a>`;
-    }).join("\n      ");
-
-    const menuRows = [];
-    if (!me.guest) {
-      // The three bar links again, for the phone layout where the bar has no
-      // room for them. Hidden by CSS on anything wider.
-      LINKS.forEach((item) => {
-        menuRows.push(`<a href="${item.href}" class="nav-menu-row nav-menu-narrow">${item.label}</a>`);
-      });
-      menuRows.push(`<a href="/options" class="nav-menu-row nav-menu-wide">Options</a>`);
-      if (me.admin) {
-        menuRows.push(`<a href="/admin" class="nav-menu-row">Dashboard</a>`);
-        menuRows.push(`<a href="/analytics" class="nav-menu-row">Analytics</a>`);
-      }
-      // An admin already has every moderator power and the dashboard is a
-      // superset, so only a plain moderator needs this.
-      if (me.mod && !me.admin) menuRows.push(`<a href="/mod" class="nav-menu-row">Mod</a>`);
+    function tick() {
+      if (since) clock.textContent = onAirClock(Date.now() / 1000 - since);
     }
-    menuRows.push(`<button type="button" class="nav-menu-row" data-nav="logout">Sign out</button>`);
 
-    const search = me.guest ? "" : `
-    <div class="nav-search">
-      <button type="button" class="icon-btn nav-search-toggle" aria-label="Search" aria-expanded="false">${ICON.search}</button>
-      <div class="nav-search-field">
-        <span class="nav-search-icon" aria-hidden="true">${ICON.search}</span>
-        <input id="nav-search" type="search" maxlength="64" autocomplete="off"
-               role="combobox" aria-expanded="false" aria-controls="nav-search-results"
-               placeholder="Search broadcasts and clips" aria-label="Search broadcasts and clips">
-      </div>
-      <div id="nav-search-results" class="nav-pop nav-pop-search" role="listbox" hidden></div>
-    </div>`;
+    function setStatus(data) {
+      if (!data) return;
+      last = data;
+      applyAccent(data.accent);
+      if (data.site_name) {
+        const title = strip.querySelector("#site-title");
+        if (title && title.textContent !== data.site_name) title.textContent = data.site_name;
+        const page = opts.pageName ? `${data.site_name} - ${opts.pageName}` : data.site_name;
+        if (document.title !== page) document.title = page;
+      }
+      const live = !!data.online;
+      lamp.classList.toggle("on", live);
+      lamp.textContent = live ? "On air" : "Off air";
+      since = live ? (data.since || Math.floor(Date.now() / 1000)) : null;
+      clock.hidden = !live;
+      if (live && !ticker) ticker = setInterval(tick, 1000);
+      if (!live && ticker) { clearInterval(ticker); ticker = null; }
+      tick();
+      listeners.forEach((fn) => { try { fn(data); } catch (e) { /* a page's own bug */ } });
+    }
 
-    const points = me.guest ? "" : `
-    <div class="nav-item">
-      <button type="button" id="nav-points" class="points-chip nav-points" aria-expanded="false" aria-label="Your points" hidden>pts 0</button>
-      <div class="nav-pop" hidden>
-        <p class="nav-pop-title" id="nav-points-balance">pts 0</p>
-        <p class="nav-pop-note">Points are earned by watching and chatting while the stream is live.</p>
-      </div>
-    </div>`;
+    async function poll() {
+      try {
+        const reply = await fetch("/api/status");
+        if (reply.ok) setStatus(await reply.json());
+      } catch {
+        /* keep what the lamp last said; the next poll tries again */
+      }
+    }
 
-    // Notifications and messages are placeholders with nothing behind them yet,
-    // so the bar leaves them out. Flip SHOW_INBOX when either is built.
-    const bells = me.guest || !SHOW_INBOX ? "" : `
-    <div class="nav-item">
-      <button type="button" class="icon-btn nav-icon" aria-label="Notifications" aria-expanded="false">${ICON.bell}</button>
-      <div class="nav-pop" hidden><p class="nav-pop-note">No notifications yet.</p></div>
-    </div>
-    <div class="nav-item">
-      <button type="button" class="icon-btn nav-icon" aria-label="Messages" aria-expanded="false">${ICON.inbox}</button>
-      <div class="nav-pop" hidden><p class="nav-pop-note">Messages are coming soon.</p></div>
-    </div>`;
+    if (opts.poll !== false) {
+      poll();
+      setInterval(poll, POLL_MS);
+    }
 
-    return `
-    <a class="nav-brand" href="/home">
-      <img class="nav-glyph" src="/assets/icons/icon.svg?v=1" alt="">
-      <span id="site-title">upperroom</span>
-    </a>
-    <nav class="nav-links">
-      ${links}
-    </nav>
-    ${search}
-    <div class="nav-right">
-      ${bells}
-      ${points}
-      <div class="nav-item nav-account">
-        <button type="button" id="nav-avatar" class="nav-avatar-btn" aria-label="Your account" aria-expanded="false"><span class="nav-menu-glyph" aria-hidden="true">${ICON.menu}</span></button>
-        <div class="nav-pop nav-pop-menu" hidden>
-          <div class="nav-menu-who"></div>
-          ${menuRows.join("\n          ")}
+    return {
+      setStatus,
+      poll,
+      onStatus(fn) { listeners.push(fn); if (last) fn(last); },
+      get status() { return last; },
+    };
+  }
+
+  // ---- the menu ----
+
+  function menuItems(me, opts) {
+    const items = [
+      { key: "watch", label: "The room", href: "/watch", icon: "room" },
+      { key: "browse", label: "Past broadcasts", href: "/browse", icon: "library" },
+      { key: "options", label: "Options", href: "/options", icon: "options" },
+    ];
+    const roles = [];
+    // A page that carries the dashboard's own sections already offers both of
+    // these, as Go live and Stats.
+    if (me.admin && !opts.sections) {
+      roles.push({ key: "dashboard", label: "Dashboard", href: "/admin", icon: "dashboard" });
+      roles.push({ key: "analytics", label: "Stats", href: "/analytics", icon: "stats" });
+    }
+    // An admin already has every moderator power, and the dashboard is a
+    // superset of the moderation page, so only a plain moderator needs it.
+    if (me.mod && !me.admin) {
+      roles.push({ key: "mod", label: "Moderation", href: "/mod", icon: "mod" });
+    }
+    if (roles.length) items.push("rule", ...roles);
+    // On a narrow screen the strip has no room for the dashboard's sections, so
+    // they lead the menu instead. On a wide one the CSS hides these rows,
+    // because the strip is already showing them.
+    if (opts.sections) {
+      const sections = opts.sections.map((sec) => ({
+        key: `section:${sec.key}`, label: sec.label, href: sec.href, section: true,
+      }));
+      items.unshift(...sections, "section-rule");
+    }
+    items.push("rule", { key: "logout", label: "Sign out", icon: "signout" });
+    return items;
+  }
+
+  function buildMenu(strip, me, opts) {
+    const left = strip.querySelector(".strip-left");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "icon-btn";
+    button.id = "menu-btn";
+    button.setAttribute("aria-label", "Menu");
+    button.setAttribute("aria-haspopup", "true");
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", "menu");
+    button.innerHTML = icon("menu");
+    left.prepend(button);
+
+    const menu = document.createElement("nav");
+    menu.className = "menu";
+    menu.id = "menu";
+    menu.hidden = true;
+    menu.setAttribute("aria-label", "Menu");
+
+    const who = document.createElement("div");
+    who.className = "menu-who";
+    who.appendChild(avatarNode(me.username, me.name, me.avatar || 0));
+    const whoText = document.createElement("span");
+    const whoName = document.createElement("span");
+    whoName.className = "menu-who-name";
+    whoName.textContent = me.name || me.username;       // a name somebody typed
+    const whoSub = document.createElement("span");
+    whoSub.className = "menu-who-sub";
+    whoSub.textContent = me.admin ? "Host" : me.mod ? "Moderator" : "";
+    whoText.append(whoName, whoSub);
+    who.appendChild(whoText);
+    menu.appendChild(who);
+
+    menuItems(me, opts).forEach((item) => {
+      if (item === "rule" || item === "section-rule") {
+        const rule = document.createElement("hr");
+        rule.className = item === "rule" ? "menu-rule" : "menu-rule menu-section";
+        menu.appendChild(rule);
+        return;
+      }
+      const row = document.createElement(item.href ? "a" : "button");
+      row.className = item.section ? "menu-row menu-section" : "menu-row";
+      if (item.section) row.dataset.section = item.key.slice(8);
+      if (item.href) row.href = item.href;
+      else row.type = "button";
+      if (item.key === opts.current || (item.section && item.key === `section:${opts.section}`)) {
+        row.setAttribute("aria-current", "page");
+      }
+      // The dashboard's sections are one group under the host's name, so they
+      // carry no icon each; the rows below them keep theirs.
+      if (!item.section) row.innerHTML = icon(item.icon);
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      row.appendChild(label);
+      if (item.key === "logout") {
+        row.addEventListener("click", async () => {
+          try { await fetch("/api/logout", { method: "POST" }); } catch {}
+          window.location.href = "/";
+        });
+      }
+      // A section on the same page only changes the hash, so nothing reloads
+      // and the menu would otherwise stay open over the section it opened.
+      if (item.section) row.addEventListener("click", () => close(false));
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+
+    // Only the rows on screen: the dashboard's section rows are hidden on a
+    // wide screen, and focus cannot land on something that is not drawn.
+    const rows = () => Array.from(menu.querySelectorAll(".menu-row"))
+      .filter((row) => row.offsetParent !== null);
+    let pointsAsked = false;
+
+    function open() {
+      menu.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      const current = rows().find((row) => row.getAttribute("aria-current") === "page") || rows()[0];
+      if (current) current.focus();
+      // The points balance is only worth a request once somebody looks.
+      if (!pointsAsked) {
+        pointsAsked = true;
+        fetch("/api/points")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (!data) return;
+            const pts = `${data.points} ${data.points === 1 ? "point" : "points"}`;
+            whoSub.textContent = whoSub.textContent ? `${whoSub.textContent} · ${pts}` : pts;
+          })
+          .catch(() => {});
+      }
+    }
+
+    function close(returnFocus) {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      if (returnFocus) button.focus();
+    }
+
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (menu.hidden) open();
+      else close(false);
+    });
+    menu.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => close(false));
+    menu.addEventListener("keydown", (e) => {
+      const list = rows();
+      const at = list.indexOf(document.activeElement);
+      if (e.key === "Escape") { e.preventDefault(); close(true); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); list[(at + 1) % list.length].focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); list[(at - 1 + list.length) % list.length].focus(); }
+      else if (e.key === "Home") { e.preventDefault(); list[0].focus(); }
+      else if (e.key === "End") { e.preventDefault(); list[list.length - 1].focus(); }
+    });
+    // Tabbing out of the menu closes it, rather than leaving it open behind.
+    menu.addEventListener("focusout", (e) => {
+      if (e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== button) close(false);
+    });
+  }
+
+  // The dashboard's sections, along the right of the strip on a wide screen.
+  function buildSections(strip, opts) {
+    const nav = document.createElement("nav");
+    nav.className = "strip-sections";
+    nav.setAttribute("aria-label", "Dashboard");
+    opts.sections.forEach((sec) => {
+      const link = document.createElement("a");
+      link.className = "strip-section";
+      link.href = sec.href;
+      link.dataset.section = sec.key;
+      link.textContent = sec.label;
+      if (sec.key === opts.section) link.setAttribute("aria-current", "page");
+      nav.appendChild(link);
+    });
+    strip.classList.add("has-sections");
+    strip.querySelector(".strip-end").appendChild(nav);
+  }
+
+  function setSection(key) {
+    document.querySelectorAll("[data-section]").forEach((el) => {
+      if (!el.matches(".strip-section, .menu-section")) return;
+      if (el.dataset.section === key) el.setAttribute("aria-current", "page");
+      else el.removeAttribute("aria-current");
+    });
+  }
+
+  // ---- the notices that belong to the landing page ----
+
+  // Shown once, and only for the release actually running. Acknowledging it is
+  // what marks it read, so closing the tab instead leaves it for next time.
+  function showWhatsNew(info) {
+    if (!info || !info.notes || !info.notes.length) return;
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    modal.id = "whats-new";
+    modal.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="whats-new-title">
+        <h3 id="whats-new-title"></h3>
+        <ul class="whats-new-list" id="whats-new-list"></ul>
+        <div class="modal-actions">
+          <button type="button" id="whats-new-ok" class="btn primary">Got it</button>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+    modal.querySelector("#whats-new-title").textContent =
+      `upperroom has been updated to v${info.version}`;
+    const list = modal.querySelector("#whats-new-list");
+    info.notes.forEach((note) => {
+      const item = document.createElement("li");
+      item.textContent = note;
+      list.appendChild(item);
+    });
+    document.body.appendChild(modal);
+    const ok = modal.querySelector("#whats-new-ok");
+    ok.addEventListener("click", async () => {
+      modal.remove();
+      // Best effort: a failed acknowledgement means it is offered again, the
+      // harmless direction to fail in.
+      try { await fetch("/api/whats-new/seen", { method: "POST" }); } catch (e) {}
+    });
+    // Dismissing it any other way puts it off without marking it read.
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+    modal.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.remove(); });
+    ok.focus();
   }
 
-  // The one modal the bar still owns: the first-login nudge for viewers with no
-  // address on file. Only the page that asks for it runs this, so it fires once
-  // at the landing page rather than on every navigation.
-  const EMAIL_MODAL = `
-  <div id="email-modal" class="modal" hidden>
-    <div class="modal-card">
-      <h3>Get a heads-up when the stream goes live?</h3>
-      <p class="muted">Add your email and we'll let you know when the channel goes live. You can change or remove it anytime on the options page.</p>
-      <input id="email-prompt-input" type="email" placeholder="name@example.com" autocomplete="email">
-      <p id="email-prompt-msg" class="pw-msg"></p>
-      <label class="check-line"><input id="email-dont-show" type="checkbox" checked> Don't show this again</label>
-      <div class="crop-actions">
-        <button id="email-ignore" type="button" class="pill" data-close>Not now</button>
-        <button id="email-prompt-save" type="button" class="pill primary">Save</button>
-      </div>
-    </div>
-  </div>`;
-
-  // ---- popover primitive ----
-  // Every popover in the bar is a trigger button followed by a hidden panel.
-  // One open at a time, closed by Escape or a click anywhere else.
-
-  function closePanel() {
-    if (!openPanel) return;
-    openPanel.panel.hidden = true;
-    openPanel.trigger.setAttribute("aria-expanded", "false");
-    openPanel = null;
-  }
-
-  function showPanel(trigger, panel) {
-    closePanel();
-    panel.hidden = false;
-    trigger.setAttribute("aria-expanded", "true");
-    openPanel = { trigger, panel };
-  }
-
-  function wirePopover(trigger, panel, onOpen) {
-    trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (openPanel && openPanel.panel === panel) return closePanel();
-      showPanel(trigger, panel);
-      if (onOpen) onOpen();
-    });
-    panel.addEventListener("click", (e) => e.stopPropagation());
-  }
-
-  function wireDismissal() {
-    document.addEventListener("click", closePanel);
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closePanel();
-    });
-  }
-
-  // ---- search ----
-  // Titles only, matched in the browser. The listings are small and already
-  // fetched wholesale by the browse page, so a search endpoint would be a
-  // backend for something the client can do without one.
-
-  function wireSearch(host) {
-    const wrap = host.querySelector(".nav-search");
-    if (!wrap) return;
-    const input = host.querySelector("#nav-search");
-    const results = host.querySelector("#nav-search-results");
-    const toggle = host.querySelector(".nav-search-toggle");
-    let items = null;
-    let loading = null;
-    let timer = null;
-
-    function load() {
-      if (items) return Promise.resolve(items);
-      if (loading) return loading;
-      loading = Promise.all([
-        fetch("/api/vods").then((r) => (r.ok ? r.json() : { vods: [] })).catch(() => ({ vods: [] })),
-        fetch("/api/clips").then((r) => (r.ok ? r.json() : { clips: [] })).catch(() => ({ clips: [] })),
-      ]).then(([v, c]) => {
-        items = []
-          .concat((v.vods || []).map((x) => ({ id: x.id, kind: "vod", title: x.title || "" })))
-          .concat((c.clips || []).map((x) => ({ id: x.id, kind: "clip", title: x.name || "" })));
-        return items;
-      });
-      return loading;
-    }
-
-    function render(list) {
-      results.innerHTML = "";
-      if (!list.length) {
-        const empty = document.createElement("p");
-        empty.className = "nav-pop-note";
-        empty.textContent = "Nothing matches that.";
-        results.appendChild(empty);
-        return;
-      }
-      list.forEach((item) => {
-        const row = document.createElement("a");
-        row.className = "nav-result";
-        row.setAttribute("role", "option");
-        row.href = `/media?type=${item.kind}&id=${item.id}`;
-        const title = document.createElement("span");
-        title.className = "nav-result-title";
-        title.textContent = item.title || "(untitled)";
-        const tag = document.createElement("span");
-        tag.className = "nav-result-tag";
-        tag.textContent = item.kind;
-        row.append(title, tag);
-        results.appendChild(row);
-      });
-    }
-
-    async function search() {
-      const q = input.value.trim().toLowerCase();
-      if (q.length < SEARCH_MIN) return closePanel();
-      const all = await load();
-      const hits = all.filter((x) => x.title.toLowerCase().includes(q)).slice(0, SEARCH_LIMIT);
-      render(hits);
-      showPanel(input, results);
-    }
-
-    input.addEventListener("focus", load, { once: true });
-    input.addEventListener("click", (e) => e.stopPropagation());
-    input.addEventListener("input", () => {
-      clearTimeout(timer);
-      timer = setTimeout(search, SEARCH_DEBOUNCE);
-    });
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const first = results.querySelector(".nav-result");
-        if (first) window.location.href = first.href;
-      }
-      if (e.key === "Escape") {
-        closePanel();
-        input.blur();
-      }
-    });
-    results.addEventListener("click", (e) => e.stopPropagation());
-
-    // On a phone the field is collapsed to its magnifier until asked for.
-    toggle.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const open = wrap.classList.toggle("is-open");
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      if (open) input.focus();
-      else closePanel();
-    });
-  }
-
-  // ---- points ----
-
-  async function wirePoints(host) {
-    const chip = host.querySelector("#nav-points");
-    if (!chip) return;
-    const panel = chip.parentElement.querySelector(".nav-pop");
-    const balance = host.querySelector("#nav-points-balance");
-    let data = null;
-    try {
-      const reply = await fetch("/api/points");
-      if (!reply.ok) return;                // guests and signed-out: no balance
-      data = await reply.json();
-    } catch {
-      return;
-    }
-    const text = `pts ${data.points}`;
-    chip.textContent = text;
-    balance.textContent = text;
-    chip.hidden = false;
-    wirePopover(chip, panel);
-  }
-
-  // ---- email nudge ----
-
-  function wireEmailPrompt() {
-    const emailModal = document.getElementById("email-modal");
-    const input = document.getElementById("email-prompt-input");
-    const msg = document.getElementById("email-prompt-msg");
-
-    function remember() {
-      const dontShow = document.getElementById("email-dont-show");
-      if (dontShow && dontShow.checked) {
-        try { localStorage.setItem(EMAIL_PROMPT_KEY, "1"); } catch {}
-      }
-    }
-
-    document.getElementById("email-ignore").addEventListener("click", remember);
-    emailModal.addEventListener("click", (e) => {
-      if (e.target === emailModal || e.target.hasAttribute("data-close")) remember();
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !emailModal.hidden) remember();
-    });
-
-    document.getElementById("email-prompt-save").addEventListener("click", async () => {
-      const email = input.value.trim();
-      if (!email || !email.includes("@")) {
-        msg.textContent = "Enter a valid email, or choose Not now.";
-        return;
-      }
-      const ok = await saveProfile({ email });
-      if (ok) {
-        me.email = email;
-        try { localStorage.removeItem(EMAIL_PROMPT_KEY); } catch {}
-        closeModal(emailModal);
-      } else {
-        msg.textContent = "Could not save. Try again.";
-      }
-    });
-
-    if (me.admin) return;                                 // the host runs the stream
-    if (me.email) return;                                 // already has one
-    try { if (localStorage.getItem(EMAIL_PROMPT_KEY)) return; } catch {}
-    openModal(emailModal);
-    input.focus();
-  }
-
-  // Click the backdrop or press Escape to close any modal on the page. Shared
-  // because every page that mounts the bar can carry one (the email nudge here,
-  // the release notice on home) and none of them should hand-roll this.
+  // Click the dim room around a modal, a [data-close] control inside it, or
+  // Escape, to close any modal on the page. Shared because every page that
+  // mounts the strip can carry one (the dashboard's people panel, the crop
+  // stage on options) and none of them should hand-roll it.
   function wireModalDismissal() {
     document.querySelectorAll(".modal").forEach((m) => {
       m.addEventListener("click", (e) => {
-        if (e.target === m || e.target.hasAttribute("data-close")) closeModal(m);
+        if (e.target === m || e.target.closest("[data-close]")) m.hidden = true;
       });
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
+      if (e.key === "Escape") {
+        document.querySelectorAll(".modal:not([hidden])").forEach((m) => { m.hidden = true; });
+      }
     });
   }
 
-  async function applySiteName() {
-    // The operator's site name leads the bar and names the tab. Pages that
-    // already know it can pass it in; the rest ask, cheaply.
-    let name = opts.siteName;
-    if (!name) {
-      try { name = (await (await fetch("/api/status")).json()).site_name; } catch {}
-    }
-    if (!name) return;
-    const el = document.getElementById("site-title");
-    if (el) el.textContent = name;
-    document.title = opts.current && opts.current !== "home"
-      ? `${name} - ${opts.current}`
-      : name;
-  }
+  // ---- entry points ----
 
-  window.mountNav = function (identity, options) {
-    me = identity;
-    opts = options || {};
-
-    const host = document.getElementById("site-nav");
-    if (!host) return;
-    host.className = "site-bar";
-    host.innerHTML = barMarkup();
-
-    const holder = document.createElement("div");
-    holder.innerHTML = EMAIL_MODAL;
-    while (holder.firstChild) document.body.appendChild(holder.firstChild);
-
-    // The avatar leads and the menu glyph follows it, so the pill reads as a
-    // button rather than as a picture of you.
-    const avatarBtn = host.querySelector("#nav-avatar");
-    avatarBtn.prepend(avatarNode(me.username, me.name, me.avatar || 0, "avatar"));
-    // The first row of the menu says who you are. Set as text: it is a name the
-    // person typed.
-    const who = host.querySelector(".nav-menu-who");
-    if (who) who.textContent = me.name || me.username;
-    wirePopover(avatarBtn, avatarBtn.parentElement.querySelector(".nav-pop"));
-
-    host.querySelectorAll(".nav-icon").forEach((btn) => {
-      wirePopover(btn, btn.parentElement.querySelector(".nav-pop"));
+  // A signed-in page: the strip with its menu.
+  window.mountNav = function (me, options) {
+    const opts = options || {};
+    const framed = window.top !== window.self;
+    const strip = buildStrip({
+      siteName: opts.siteName,
+      // The site name leads home, except inside the dashboard's frame, where
+      // a link home would load the whole site into a panel of itself.
+      homeLink: !framed,
     });
-
-    host.querySelector('[data-nav="logout"]').addEventListener("click", async () => {
-      try { await fetch("/api/logout", { method: "POST" }); } catch {}
-      window.location.href = "/";
-    });
-
-    wireSearch(host);
-    wirePoints(host);
-    wireDismissal();
+    if (!strip) return null;
+    buildMenu(strip, me, opts);
+    if (opts.sections) buildSections(strip, opts);
     wireModalDismissal();
-    if (opts.promptEmail) wireEmailPrompt();
-    applySiteName();
+    const ctl = controller(strip, {
+      poll: opts.poll,
+      onStatus: opts.onStatus,
+      pageName: opts.pageName,
+    });
+    ctl.setSection = setSection;
+    if (opts.siteName) document.title = opts.pageName ? `${opts.siteName} - ${opts.pageName}` : opts.siteName;
+    if (opts.landing && !framed) {
+      showWhatsNew(me.whats_new);
+    }
+    return ctl;
+  };
+
+  // A page with nobody signed in: the strip, and no menu.
+  window.mountStrip = function (options) {
+    const opts = options || {};
+    const strip = buildStrip({ siteName: opts.siteName, homeLink: false });
+    if (!strip) return null;
+    return controller(strip, { poll: opts.poll, onStatus: opts.onStatus, pageName: opts.pageName });
   };
 })();

@@ -18,7 +18,7 @@ import config
 import db
 import wordfilter
 from auth import (
-    country_allowed, guest_expired, key_matches, origin_allowed, read_session,
+    country_allowed, key_matches, origin_allowed, read_session,
     resolve_client_ip, too_many_projector_connects, too_many_socket_connects,
 )
 from config import (
@@ -374,8 +374,7 @@ async def chat_socket(websocket: WebSocket):
     # instead, and the browser reports 1006 with no code of ours attached, so
     # the 4401 and 4403 below were never actually observable by the client. That
     # matters now: a client that cannot tell "you are not welcome" from "the
-    # network blipped" has no choice but to retry forever, and with guest passes
-    # every session ends this way.
+    # network blipped" has no choice but to retry forever.
     await websocket.accept()
 
     # A browser always says which page opened a socket. The cookie is SameSite
@@ -409,19 +408,16 @@ async def chat_socket(websocket: WebSocket):
 
     user = db.get_user(session["sub"])
     # If the account was deleted, the token may still be valid but there is no
-    # one to be: refuse the socket rather than seating a ghost in chat.
-    # A guest whose pass has run out is the same case, one moment earlier: the
-    # reaper has not deleted the row yet. Guests already in chat when their time
-    # runs out are closed by the reaper, not here.
-    if not user or guest_expired(user):
+    # one to be: refuse the socket rather than putting a ghost in chat.
+    if not user:
         await websocket.close(code=4401)
         return
 
     # One account's share of the room. Joining broadcasts to every open socket,
-    # so this is not about being tidy: without it one signed-in viewer, or one
-    # thirty minute guest pass, can open sockets in a loop and make quadratic
-    # work for everybody. Refused with its own code so the page can tell this
-    # apart from being signed out and does not sit in a reconnect loop.
+    # so this is not about being tidy: without it one signed-in viewer can open
+    # sockets in a loop and make quadratic work for everybody. Refused with its
+    # own code so the page can tell this apart from being signed out and does
+    # not sit in a reconnect loop.
     if hub.socket_count(session["sub"]) >= MAX_SOCKETS_PER_USER:
         logger.info(
             "refusing a chat socket for %s: already at %d open",
@@ -448,9 +444,6 @@ async def chat_socket(websocket: WebSocket):
     await hub.join(websocket, who)
 
     sent_times = deque(maxlen=5)
-    # A guest's time is on the row, kept here so every frame can check it without
-    # a query. The reaper closes expired guests too, but only every few minutes.
-    guest_until = (user["guest_expires_at"] or 0) if user["is_guest"] else 0
     try:
         while True:
             try:
@@ -469,9 +462,6 @@ async def chat_socket(websocket: WebSocket):
                     break
                 logger.debug("ignoring an unreadable chat frame", exc_info=True)
                 continue
-            if guest_until and time.time() >= guest_until:
-                await websocket.close(code=4401)
-                break
             if len(raw) > MAX_CHAT_FRAME:
                 continue
             try:

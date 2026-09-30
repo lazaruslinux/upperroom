@@ -16,6 +16,13 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.24.0": [
+        "A new look across the whole site.",
+        "Get a notification when the stream goes live: turn it on in Options.",
+        "On an iPhone, add the site to your Home Screen first and turn it on there.",
+        "Email alerts are gone, and saved email addresses have been deleted.",
+        "Guest passes are gone. New people join with an invite link.",
+    ],
     "0.23.0": [
         "Saved broadcasts and clips are back.",
         "If saving is ever unavailable, the site now says so instead of hanging.",

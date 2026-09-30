@@ -17,12 +17,17 @@ Set every value. A couple of tips:
   `SELFSTREAM_STORE_KEY` and a different one for `SELFSTREAM_STORE_READ_KEY`.
   The store refuses to start without both, so recordings and clips have nowhere
   to go until they are set.
-- `PUBLISH_PASS` is optional now: the stream key lives on the admin dashboard and
-  is generated for you the first time you open the Stream key panel. Set
-  `PUBLISH_PASS` only if you want to seed a specific key on first start (an
-  existing install carries its old value over), or if you run the demo profile.
+- `PUBLISH_PASS` is optional now: the stream key lives on the dashboard's **Go
+  live** screen, in the first step, **Settings in OBS**, and is generated for
+  you the first time you open it. Set `PUBLISH_PASS` only if you want to seed a
+  specific key on first start (an existing install carries its old value over),
+  or if you run the demo profile.
 - `SELFSTREAM_DOMAIN` is just the hostname, like `watch.example.com`, with no
   `https://` in front.
+- `SELFSTREAM_SITE_URL` is the full address, with `https://` in front, like
+  `https://watch.example.com`. Go-live notifications need it (see 4.4); left
+  blank they are off, and the dashboard says so. There is no mail relay to set
+  up: the app sends no email at all.
 
 ## 4.2 Start the stack
 
@@ -42,44 +47,36 @@ docker compose logs -f
 Open `https://watch.example.com` in a browser. On a brand new install the login
 page sends you straight to a one-time setup wizard at `/setup`. Fill in a
 username, a display name, a password, and a site name (your own brand, shown
-above "powered by upperroom" on every page), then create the account. That first account is the admin, you are signed in at once, and the
+at the top of every page), then create the account. That first account is the admin, you are signed in at once, and the
 wizard closes for good the moment it exists.
 
-From then on there are two ways to let people in, and they answer different
-questions.
+From then on everyone watches with an account; there is no way in without one.
 
-**Invite codes** are for someone you want to keep. Open the dashboard at
-`/admin`, go to **People**, and generate a single-use code under **Access
-codes** with the **Invites** tab selected, then share it. They
-redeem it from the login page ("have an invite?") to make their own viewer
-account, and it is theirs from then on. No terminal, and no email is involved.
+**Invite codes** are how people get one. Open the dashboard at `/admin`, go to
+**People**, and generate a single-use code under **Invite codes**, then send it
+with **Copy invite link**. The link, `/join#<code>`, opens the sign-up form with
+the code filled in; the code sits after the `#`, which never reaches a server
+log. They can also type the code on the login page ("Have an invite code?").
+Either way they make their own viewer account, and it is theirs from then on.
+No terminal, and no email is involved.
 
-**Guest passes** are for someone who just wants to watch this one. On the
-**Guest passes** tab of the same panel, choose how many you want and generate
-them: each is single
-use and lets one person watch and chat for half an hour without making an
-account. "Copy all unused" puts the whole batch on your clipboard, one per
-line, which is the point: one message, one code each, first come first served.
-Send people to `/guest` to redeem one. The half hour starts when they redeem
-it, not when you make it, so you can prepare a batch days ahead.
-
-A guest can watch and chat, and nothing else. No clipping, no library, no
-likes or comments, no points. They can be timed out, banned, `/del`ed and
-`/purge`d exactly like anyone else, which is the whole reason they exist as
-real accounts rather than as a separate kind of visitor. When the time is up
-their video stops, they are shown a sign-in prompt, and the account removes
-itself a few minutes later.
+Once somebody has an account, the watch link is all they need. **Copy watch
+link**, the third step on the dashboard's **Go live** screen, copies it in one
+press. Send it once you are on air, so its preview shows tonight's title and a
+live frame.
 
 See `docs/06-accounts-and-chat.md` for the details.
 
-Everything you run the place with is on the dashboard at `/admin`, in five
-tabs under your own watch page: **Broadcast** (theater and the room limit),
-**Content** (past broadcasts, clips and storage limits), **People** (accounts,
-bans, invites and guest passes), **Channel** (branding, chat rules and
-notifications) and **Connections** (the stream key, the projector and the
-overlay). `/analytics` sits beside it and holds the numbers: watch time,
-broadcasts, library and invite use, plus line charts of watch time, unique
-viewers and chat messages per day over the last thirty days.
+Everything you run the place with is on the dashboard at `/admin`. It opens on
+**Go live**: the OBS settings, whether you are on air, the watch link, and the
+room itself with the title, the game, who is here and the room limit. The rest
+are sections in the strip (in the menu, on a phone): **People** (accounts, bans
+and invites), **Library** (storage limits, past broadcasts and clips),
+**Channel** (branding and notifications), **Chat rules** (slow mode and banned
+words), **Connections** (the chat overlay, and the theater and projector when
+theater is on) and **Stats**, which is `/analytics`: watch time, broadcasts,
+library and invite use, plus a column a day of watch time, people who watched
+and chat messages over the last thirty days.
 
 If you ever need to bootstrap or recover an account from the command line (for
 example if you are locked out), `manage.py` still works; it is described in
@@ -90,6 +87,30 @@ example if you are locked out), `manage.py` still works; it is described in
 Open `https://watch.example.com` in a browser. You should see the login page.
 Sign in with the account you made. Until OBS is streaming you will see the
 offline card. Start OBS and the video appears.
+
+### Go-live notifications
+
+When you go live, every device whose owner turned notifications on gets one:
+your site name, the stream title and the game. Tapping it opens the room. It is
+standard Web Push: the message goes from your server through the browser
+maker's push service (Apple, Google, Mozilla or Microsoft), encrypted so that
+service cannot read it. `docs/05-security.md` has the details.
+
+- **Turning it on is per device**, in **Options** under **Notifications**, or
+  with the **Notify me when it goes live** chip under the offline card on the
+  room and home pages. The browser asks for permission only after that tap,
+  never on its own. Admins turn it on the same way.
+- **On an iPhone or iPad** it only works from the Home Screen: in Safari tap
+  **Share**, then **Add to Home Screen**, open the site from the new icon, sign
+  in, and turn it on in Options. Options says this when it is opened in Safari
+  instead.
+- **The dashboard**, under **Channel**, **Go-live notifications**: one switch
+  for whether going live notifies anyone (off lets you go live quietly), how
+  many devices on how many accounts will get it, and **Send a test to my
+  devices**, which sends a test only to the devices on your own account. Turn it
+  on for your phone first, then press it.
+- A short stream drop does not announce twice: after a notice, the next one
+  waits for `SELFSTREAM_NOTIFY_COOLDOWN` seconds (30 minutes by default).
 
 ## 4.5 Recordings and clips
 
@@ -121,7 +142,7 @@ so retuning them is an environment change rather than a dashboard toggle.
 Clips are deleted after two days unless you pin them. That is the one retention
 limit a fresh install ships switched on, and it is deliberate: a clip is the
 thing you hand to other people, so a short life keeps a mistake from standing
-forever. Change it under **Content** > **Storage**, or pin a clip to keep it
+forever. Change it under **Library** > **Storage**, or pin a clip to keep it
 regardless.
 
 ### Sharing a clip publicly
@@ -155,12 +176,14 @@ said live, comments are what people say afterwards. An author can delete their
 own; you and your moderators can delete any. A comment obeys the same chat
 rules, so someone banned from chat cannot comment instead.
 
-A strip at the top of the dashboard shows the broadcast at a glance so you never
-have to read the container logs to know it is up: **Live** or **Offline**, how
-long you have been live, how many people are watching, and whether the broadcast
-is being recorded (**recording**, **recording (restarting)** while the recorder
-is cycling, or **not recording** if it is live but nothing is being captured). It
-refreshes on its own while the page is open.
+The dashboard's **Go live** screen shows the broadcast at a glance so you never
+have to read the container logs to know it is up: the lamp in the strip says
+**On air** or **Off air** with how long you have been on, the second step says
+since when and whether the broadcast is being recorded ("recording to the
+library", "the recorder is restarting" while it is cycling, "not recording" if
+it is live but nothing is being captured, or that the library is not answering
+and the recording is saved once it is), and the numbers under the room say how
+many are watching. It refreshes on its own while the page is open.
 
 Recording recovers on its own. If the recorder ever dies or its file stops
 growing mid-broadcast (for example, a rough reconnect on a long session), the
@@ -168,8 +191,8 @@ gate finalizes whatever it captured, starts a fresh recording while you stay
 live, and backs off if failures repeat. You may see more than one recording for a
 single broadcast when this happens; nothing is lost.
 
-Nothing is deleted automatically unless you ask for it. The **Storage** panel
-on the dashboard's **Content** tab shows what your recordings and clips are
+Nothing is deleted automatically unless you ask for it. **Storage**, at the top
+of the dashboard's **Library** section, shows what your recordings and clips are
 using and how much room is left on the disk, and lets you set limits: a number
 of recordings, a number of days, the same two for clips, and a ceiling on the
 total size. Every one of them is off until you set it, and lowering a limit
@@ -179,7 +202,7 @@ Anything you want to keep for good, pin. A pinned recording or clip is never
 removed by any limit, and it does not use up a slot in the count, so "keep the
 last 20, plus the ones I pinned" is exactly what you get. The size limit never
 removes your newest recording or newest clip, so one large broadcast cannot
-delete itself. Pin and Delete both sit next to each item in the same tab.
+delete itself. Pin and Delete both sit next to each item in the same section.
 
 The one thing to know if you are updating an older install: it has been keeping
 only the most recent 20 recordings, from a setting in `.env`. That value is
@@ -340,8 +363,8 @@ two things across when updating past 0.21: every `reverse_proxy gate:8000` and
 `forward_auth gate:8000` block imports the `to_gate` snippet, and each
 `forward_auth` names its door (`/api/verify?scope=live` for `/live/*`,
 `scope=art` for `/media/art/*`, `scope=media` for `/media/*`). Without the
-scope, the gate treats a check as the members-only library and refuses guests
-the live video.
+scope, the gate treats a check as the library, so the live video is not counted
+against the viewer limit.
 
 With the media store, three blocks change, so compare yours with the repo's:
 `/media/art/*` is a `handle` (not `handle_path`) that proxies to the gate;
@@ -350,6 +373,16 @@ With the media store, three blocks change, so compare yours with the repo's:
 `header_up -Cookie` in place of their `root` and `file_server`. Caddy then needs
 `SELFSTREAM_STORE_UPSTREAM` and `SELFSTREAM_STORE_READ_KEY` in its environment,
 and no longer mounts the media volume.
+
+### Updating from email notifications
+
+Earlier releases could email people, and post to a Discord webhook, when you
+went live. Both are gone. On the first start after the update the gate empties
+every stored email address and the webhook URL, and logs only how many it
+emptied. The dashboard's go-live switch keeps the position the email switch
+had, so a channel that went live quietly still does. Nobody is signed up for
+the new notifications until they turn them on (4.4). The `SELFSTREAM_SMTP_*`
+lines in an older `.env` are no longer read; delete them.
 
 ### Telling people what changed
 
@@ -380,7 +413,9 @@ both for the watch page's link preview:
 
 ```
 handle /watch {
-	reverse_proxy gate:8000
+	reverse_proxy gate:8000 {
+		import to_gate
+	}
 }
 ```
 
@@ -394,13 +429,29 @@ replace the `handle /clip/*` block that rewrites to `/clip.html` with
 
 ```
 handle /clip/* {
-	reverse_proxy gate:8000
+	reverse_proxy gate:8000 {
+		import to_gate
+	}
 }
 ```
 
 keeping it above the catch-all and below the `handle /shared/*` block, which
 serves the video and its poster. Without this the clip page works
 exactly as before and shared links keep the generic card.
+
+Invite links are rendered by the gate the same way, so an invite previews as
+one. Add, beside the `/watch` block:
+
+```
+handle /join {
+	reverse_proxy gate:8000 {
+		import to_gate
+	}
+}
+```
+
+Without it an invite link still works (the static handler serves the sign-in
+page, which reads the code itself); it just previews with the generic card.
 
 ## 4.7 Troubleshooting
 
@@ -409,8 +460,27 @@ exactly as before and shared links keep the generic card.
   logs caddy` for certificate errors.
 - The video never starts. Confirm OBS says it is streaming. Check
   `docker compose logs mediamtx` for a connection from your address. Make sure
-  the OBS stream key matches the one shown in the dashboard's Stream key panel
-  under **Connections**
-  (it looks like `live?pass=...`).
+  the OBS stream key matches the one in the first step of the dashboard's
+  **Go live** screen (it looks like `live?pass=...`). That step ticks only once
+  OBS has gone live with the current key.
 - OBS cannot connect. The firewall rule for port 1935 may not match your current
   home IP. See `docs/01-vps-setup.md`, section 1.4.
+- Notifications are off on the dashboard and Options says they are not set up.
+  `SELFSTREAM_SITE_URL` is blank; set it in `.env` and restart the gate.
+- The notifications switch in Options is greyed out. The line under it says
+  why: on an iPhone or iPad the site has to be opened from the Home Screen
+  (4.4); "blocked" means notifications for the site were refused once, and the
+  browser will not ask again until you allow them in its site settings (the
+  lock icon by the address, or the phone's settings for the installed app);
+  some browsers cannot show notifications at all.
+- The switch turns on but nothing arrives. Press **Send a test to my devices**
+  on the dashboard from an admin account that has the device turned on. If it
+  says a device did not accept it, `docker compose logs gate` names the push
+  service and its answer (never the full address). A phone in a focus or
+  do-not-disturb mode holds notifications back.
+- Brave says it blocks this. Brave ships with push turned off: turn on "Use
+  Google services for push messaging" in its settings, under Privacy and
+  security, then turn the switch on again in Options.
+- A device stops getting notices. Its browser may have renewed or dropped the
+  subscription; the server deletes one its push service reports gone. Turn it
+  off and on again in Options on that device.

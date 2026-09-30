@@ -1,0 +1,32 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "web/assets/style.css"
+        ],
+        "createdAt": "2026-09-30T02:02:26.211Z",
+        "reason": "direction contract .impeccable/surfaces/web-watch-html.md OWN-WORLD: 'no glow except the lamp'; the ON AIR lamp glow is the one sanctioned glow in the approved prototype"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-30T02:09:07.633Z",
+        "reason": "build brief (decisions already made): body face = Inter, self-hosted; display face is Barlow Condensed"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "web/*.html"
+        ],
+        "createdAt": "2026-09-30T02:09:14.075Z",
+        "reason": "the pages inherit the ON AIR lamp's glow from style.css; direction contract: no glow except the lamp"
+      }
+    ]
+  }
+}

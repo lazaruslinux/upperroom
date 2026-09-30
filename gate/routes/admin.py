@@ -2,8 +2,8 @@
 Admin routes.
 
 The channel's stream title and cooldowns, full account management, chat review,
-and go-live notification config. Every route here is admin only; the admin flag
-is read fresh from the database on each call.
+and the go-live push switch and test. Every route here is admin only; the admin
+flag is read fresh from the database on each call.
 """
 
 import time
@@ -12,20 +12,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import db
-from auth import _clean_username, admin_user
+import webpush
+from auth import _clean_username, admin_user, client_ip, too_many_push_tests
 from config import (
-    GUEST_MINUTES, MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME, MAX_EMAIL,
-    MAX_GAME_NAME, MAX_GUEST_PASS_BATCH, MAX_INVITE_LABEL,
+    MAX_BANNED_WORDS_LEN, MAX_DISPLAY_NAME,
+    MAX_GAME_NAME, MAX_INVITE_LABEL,
     MAX_SITE_NAME, MAX_SLOW_SECONDS, MAX_STREAM_DESC,
-    MAX_STREAM_TITLE, MAX_VIEWER_LIMIT, MIN_PASSWORD, SITE_URL, SMTP_FROM,
-    SMTP_HOST,
+    MAX_STREAM_TITLE, MAX_VIEWER_LIMIT, MIN_PASSWORD,
 )
 import watchers
 from hub import hub
 from media import (
     enforce_retention, fetch_path, media_usage, ready_epoch, recording_status,
 )
-from notify import notify_live
 
 router = APIRouter()
 
@@ -124,6 +123,13 @@ async def admin_stream(request: Request):
         # title on seed their per-play box from it, and neither has a poll of
         # its own to read it from.
         "theater_subtitles": db.get_theater_subtitles(),
+        # When OBS last published with the current key (None for never, which
+        # includes "not since the key was regenerated"). The dashboard's first
+        # go-live step ticks on it.
+        "last_publish_at": db.get_last_publish() or None,
+        # Who is in the room, the same list the watch page's call board draws
+        # from, so the dashboard's board can never disagree with the room's.
+        "viewers": hub.viewers(),
     }
 
 
@@ -258,17 +264,9 @@ async def admin_create(request: Request):
     display_name = (body.get("display_name") or username).strip()[:MAX_DISPLAY_NAME]
     is_admin = bool(body.get("is_admin"))
     is_moderator = bool(body.get("is_moderator"))
-    email = (body.get("email") or "").strip()[:MAX_EMAIL]
-    if email and "@" not in email:
-        return JSONResponse(
-            {"error": "That email address looks invalid."}, status_code=400
-        )
-    notify_live_opt = bool(body.get("notify_live", True))
-    db.add_user(username, display_name, password, is_admin=is_admin, email=email)
+    db.add_user(username, display_name, password, is_admin=is_admin)
     if is_moderator:
         db.update_user(username, is_moderator=True)
-    if not notify_live_opt:
-        db.set_notify_live(username, False)
     return {"ok": True, "username": username}
 
 
@@ -315,17 +313,6 @@ async def admin_update(username: str, request: Request):
             is_moderator=is_moderator,
         )
         await hub.update_role(username, mod=is_moderator, admin=is_admin)
-
-    if "email" in body:
-        email = (body.get("email") or "").strip()[:MAX_EMAIL]
-        if email and "@" not in email:
-            return JSONResponse(
-                {"error": "That email address looks invalid."}, status_code=400
-            )
-        db.set_email(username, email)
-
-    if "notify_live" in body:
-        db.set_notify_live(username, bool(body.get("notify_live")))
 
     if "password" in body:
         password = body.get("password", "")
@@ -452,81 +439,6 @@ def admin_invites_clear_used(request: Request):
     return {"ok": True, "removed": db.clear_used_invites()}
 
 
-# ---- Guest passes ---------------------------------------------------------
-# The same shape as invites above, deliberately: he generates a handful, pastes
-# them into a group text, and each person redeems one. Unlike invites, these are
-# built with a real delete from the start rather than revoke-only, because the
-# complaint about invites piling up applies here twice over: a pass is spent
-# within the hour and its row has nothing to say afterwards.
-
-@router.get("/api/admin/guest-passes")
-def admin_guest_passes_list(request: Request):
-    if not admin_user(request):
-        return JSONResponse({"error": "Admins only."}, status_code=403)
-    return {
-        "passes": db.list_guest_passes(),
-        "minutes": GUEST_MINUTES,
-        "now": int(time.time()),
-    }
-
-
-@router.post("/api/admin/guest-passes")
-async def admin_guest_passes_create(request: Request):
-    actor = admin_user(request)
-    if not actor:
-        return JSONResponse({"error": "Admins only."}, status_code=403)
-    body = await request.json()
-    label = (body.get("label") or "").strip()[:MAX_INVITE_LABEL]
-    # Making several at once is the actual workflow: one text message, one code
-    # each. Capped so a slip on the number field cannot mint thousands.
-    try:
-        count = int(body.get("count") or 1)
-    except (TypeError, ValueError):
-        count = 1
-    count = max(1, min(count, MAX_GUEST_PASS_BATCH))
-    now = int(time.time())
-    codes = [
-        db.create_guest_pass(label, actor["username"], now) for _ in range(count)
-    ]
-    return {"ok": True, "codes": codes}
-
-
-@router.delete("/api/admin/guest-passes/{code}")
-def admin_guest_passes_revoke(code: str, request: Request):
-    """Revoke an unused pass. Spent passes are removed with the route below;
-    this one only ever stops a code that could still be redeemed."""
-    if not admin_user(request):
-        return JSONResponse({"error": "Admins only."}, status_code=403)
-    if not db.revoke_guest_pass(code.strip().lower(), int(time.time())):
-        return JSONResponse(
-            {"error": "That guest pass is not active."}, status_code=400
-        )
-    return {"ok": True}
-
-
-@router.post("/api/admin/guest-passes/{code}/remove")
-def admin_guest_passes_remove(code: str, request: Request):
-    """Delete a spent pass row for good. Only revoked or redeemed passes go: an
-    active code has to be revoked first, so removing can never be a quiet way to
-    un-issue a code somebody is still holding."""
-    if not admin_user(request):
-        return JSONResponse({"error": "Admins only."}, status_code=403)
-    if not db.delete_guest_pass(code.strip().lower()):
-        return JSONResponse(
-            {"error": "Revoke that pass before removing it."}, status_code=400
-        )
-    return {"ok": True}
-
-
-@router.post("/api/admin/guest-passes/clear-used")
-def admin_guest_passes_clear_used(request: Request):
-    """Sweep every redeemed and revoked pass at once, which is the thing that
-    actually gets asked for once a few broadcasts have gone by."""
-    if not admin_user(request):
-        return JSONResponse({"error": "Admins only."}, status_code=403)
-    return {"ok": True, "removed": db.clear_used_guest_passes()}
-
-
 # ---- Overlay key ----------------------------------------------------------
 
 @router.get("/api/admin/overlay")
@@ -621,18 +533,16 @@ def admin_stream_key_regenerate(request: Request):
 
 @router.get("/api/admin/notify")
 def admin_notify_get(request: Request):
-    # Current go-live notification config, plus what is wired up, so the dashboard
-    # can show whether email is available and how many people would be emailed.
+    # The go-live switch, how many devices would get the push, and whether the
+    # server can send one at all (it needs SITE_URL).
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    settings = db.get_notify_settings()
+    devices, accounts = db.count_push_subscriptions()
     return {
-        "discord_webhook": settings["discord_webhook"],
-        "last_notified_at": settings["last_notified_at"],
-        "email_on_live": bool(settings["email_on_live"]),
-        "smtp_configured": bool(SMTP_HOST and SMTP_FROM),
-        "site_url": SITE_URL,
-        "recipients": len(db.list_live_recipients()),
+        "on": bool(db.get_notify_settings()["notify_on_live"]),
+        "devices": devices,
+        "accounts": accounts,
+        "ready": webpush.ready(),
     }
 
 
@@ -641,18 +551,31 @@ async def admin_notify_set(request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
     body = await request.json()
-    if "discord_webhook" in body:
-        url = (body.get("discord_webhook") or "").strip()
-        if url and not url.startswith("https://"):
-            return JSONResponse(
-                {"error": "A webhook URL must start with https://."}, status_code=400
-            )
-        db.set_discord_webhook(url)
-    if "email_on_live" in body:
-        db.set_email_on_live(bool(body.get("email_on_live")))
-    if body.get("test"):
-        # Fire a one-off announcement now, ignoring the cooldown, so the operator
-        # can confirm Discord and email are actually wired up.
-        await notify_live(force=True)
-        return {"ok": True, "tested": True}
-    return {"ok": True}
+    if "on" in body:
+        db.set_notify_on_live(bool(body.get("on")))
+    return {"ok": True, "on": bool(db.get_notify_settings()["notify_on_live"])}
+
+
+@router.post("/api/admin/notify/test")
+async def admin_notify_test(request: Request):
+    # A test push to the calling admin's own devices only. It ignores the switch
+    # and the cooldown, so it works on a quiet channel and never delays the next
+    # real announcement.
+    user = admin_user(request)
+    if not user:
+        return JSONResponse({"error": "Admins only."}, status_code=403)
+    if too_many_push_tests(client_ip(request)):
+        return JSONResponse(
+            {"error": "Too many tests. Wait a minute and try again."}, status_code=429
+        )
+    if not webpush.ready():
+        return JSONResponse(
+            {"error": "Set SELFSTREAM_SITE_URL on the server first."}, status_code=503
+        )
+    mine = db.list_push_subscriptions(user["username"])
+    site_name = db.get_stream_info()["site_name"] or "upperroom"
+    result = await webpush.send(mine, {
+        "title": f"Test from {site_name}",
+        "body": "This device will be told when you go live.",
+    })
+    return {**result, "devices": len(mine)}

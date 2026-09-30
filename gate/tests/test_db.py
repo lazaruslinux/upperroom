@@ -158,27 +158,16 @@ def test_invite_revoke_blocks_redeem(fresh_db):
     assert db.revoke_invite(used, now) is False
 
 
-# ---- go-live notification recipients --------------------------------------
-
-def test_live_recipients_respects_email_and_optout(fresh_db):
-    db.add_user("with_email", "A", "password1", email="a@example.com")
-    db.add_user("no_email", "B", "password1")                 # no address
-    db.add_user("opted_out", "C", "password1", email="c@example.com")
-    db.set_notify_live("opted_out", False)
-    recipients = dict((email, name) for name, email in db.list_live_recipients())
-    assert "a@example.com" in recipients
-    assert "c@example.com" not in recipients                  # opted out
-    assert len(recipients) == 1                               # no_email excluded
-
+# ---- go-live notifications ------------------------------------------------
 
 def test_notify_settings_and_cooldown_stamp(fresh_db):
     settings = db.get_notify_settings()
-    assert settings["discord_webhook"] == ""
+    assert settings["notify_on_live"] == 1
     assert settings["last_notified_at"] == 0
-    db.set_discord_webhook("https://discord.com/api/webhooks/xyz")
+    db.set_notify_on_live(False)
     db.mark_notified(12345)
     settings = db.get_notify_settings()
-    assert settings["discord_webhook"].endswith("/xyz")
+    assert settings["notify_on_live"] == 0
     assert settings["last_notified_at"] == 12345
 
 

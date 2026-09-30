@@ -2,7 +2,7 @@
 Likes and comments on recordings and clips.
 
 Accounts only, and deliberately beside the chat replay rather than inside it.
-The interesting cases are the boundaries: a guest must be refused, a deleted
+The interesting cases are the boundaries: a stranger must be refused, a deleted
 recording must not leave its comments behind, and a comment must obey the same
 chat moderation as a live message so it is not a way around a ban.
 """
@@ -14,7 +14,6 @@ from config import MAX_COMMENT_LENGTH
 from hub import hub
 
 from test_api import add_user, login, make_client, setup_admin
-from test_guest import make_pass, redeem
 
 
 def a_clip(name="A clip", creator="owner"):
@@ -159,22 +158,32 @@ def test_a_comment_obeys_the_same_moderation_as_chat(client):
     ).status_code == 200
 
 
-# ---- guests are refused ----------------------------------------------------
+# ---- refusals --------------------------------------------------------------
 
-def test_a_guest_can_neither_like_nor_comment(client):
-    """Both outlive a guest's half hour, so both are refused the same way
-    clipping is."""
+def test_comments_are_rate_limited_per_address(client):
+    """A comment lands in a thread everyone reads, so one caller, however many
+    sessions they hold, cannot post them in a loop. Each address has its own
+    budget, and the limiter is reset between tests with all the others."""
+    import auth
     setup_admin(client)
     clip_id = a_clip()
-    guest = make_client()
-    assert redeem(guest, make_pass()).status_code == 200
-
-    like = guest.post(f"/api/clips/{clip_id}/like", json={"liked": True})
-    comment = guest.post(f"/api/clips/{clip_id}/comments", json={"text": "hi"})
-    assert like.status_code == 403 and comment.status_code == 403
-    assert "Guests" in like.json()["error"]
-    # And they cannot even read the thread, since it is part of the library.
-    assert guest.get(f"/api/clips/{clip_id}/reactions").status_code == 401
+    ip = {"X-Forwarded-For": "203.0.113.140"}
+    codes = [
+        client.post(
+            f"/api/clips/{clip_id}/comments", json={"text": f"n{i}"}, headers=ip
+        ).status_code
+        for i in range(auth._COMMENT_LIMITER.max_attempts + 2)
+    ]
+    assert codes[:auth._COMMENT_LIMITER.max_attempts] == [200] * auth._COMMENT_LIMITER.max_attempts
+    assert codes[-1] == 429
+    # Only the posts that were let through were stored.
+    comments = client.get(f"/api/clips/{clip_id}/reactions").json()["comments"]
+    assert len(comments) == auth._COMMENT_LIMITER.max_attempts
+    # Somebody else is not caught by it.
+    assert client.post(
+        f"/api/clips/{clip_id}/comments", json={"text": "hi"},
+        headers={"X-Forwarded-For": "203.0.113.141"},
+    ).status_code == 200
 
 
 def test_a_stranger_gets_nothing(client):
@@ -212,8 +221,8 @@ def test_the_retention_sweep_also_takes_them(client):
 
 
 def test_deleting_an_account_takes_its_likes_and_comments(client):
-    """The guest reaper runs delete_user every few minutes, so a comment left
-    naming a deleted account would be a ghost in the thread."""
+    """A comment left naming a deleted account would be a ghost in the
+    thread."""
     setup_admin(client, username="owner")
     add_user("leaver")
     clip_id = a_clip()

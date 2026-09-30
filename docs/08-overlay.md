@@ -12,10 +12,10 @@ password: keep it to yourself, and regenerate it if it ever leaks.
 
 ## Get the URL
 
-1. Open the admin dashboard (`/admin`), go to the **Connections** tab, and find
-   the **Overlay** panel at the bottom of it.
-2. Copy the URL shown there with **Copy URL**. It looks like
-   `https://your-domain/overlay?key=...`.
+1. Open the admin dashboard (`/admin`), go to the **Connections** section (in
+   the strip, or in the menu on a phone), and find **Chat overlay**.
+2. Copy the URL with **Copy**. It is hidden until you press **Show**, because it
+   is a key, and it looks like `https://your-domain/overlay?key=...`.
 
 That one URL is the whole overlay. Paste it into OBS as it is; the options
 further down are optional adjustments, not things you have to choose.
@@ -63,8 +63,8 @@ overlay too, and the overlay clears when a broadcast ends.
 
 ## Test buttons
 
-Under the URL are four small buttons: **chat**, **join**, **clip** and
-**highlight**. Each one sends a single fake event to any overlay you have open, so
+Under the URL are four buttons: **Chat**, **Join**, **Clip** and
+**Highlight**. Each one sends a single fake event to any overlay you have open, so
 you can line the browser source up in OBS and confirm it works without waiting for
 a real viewer to do anything. The test events are clearly labelled as tests, are
 sent only to the overlay, and never appear in real chat or the chat history.
@@ -102,6 +102,7 @@ lines with `max`.
 The key in the URL is a bearer token: whoever holds the full URL can read chat
 through the overlay, with no account needed. It is read-only (the overlay can
 never send chat or run commands), but you should still not share or screen-record
-the URL. If it leaks, open the **Overlay** panel and press **Regenerate**: that
+the URL. If it leaks, open **Chat overlay** under **Connections** and press
+**Regenerate the URL**: that
 mints a new key, instantly invalidates the old URL, and you then paste the new URL
 into your OBS browser source.

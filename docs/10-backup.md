@@ -25,9 +25,17 @@ In the archive:
 - every account, including password hashes, roles, avatars, bios and points
 - the chat log and the chat replay attached to each recording and clip
 - channel settings: site name, stream title, accent, retention limits, chat
-  moderation, your stream key and overlay key
+  moderation, your stream key and overlay key, and the key pair the server
+  signs go-live notifications with (its private half included)
+- the devices signed up for go-live notifications, so after a restore they keep
+  getting them without anyone turning them on again
 - invites and bans
 - the list of recordings and clips
+
+Keep the archive as private as the server itself. Besides the password hashes,
+it holds the notification private key and every signed-up device, and with both
+someone could send those devices notifications that look like yours. No email
+address is in it: the app does not collect any.
 
 Not in the archive, on purpose:
 
@@ -42,7 +50,7 @@ Not in the archive, on purpose:
   machine (see `docs/04-run.md`). Be aware that snapshotting it pins every
   recording retention deletes, so the space will not come back until the
   snapshots age out.
-- **Your `.env`.** It holds your session secret and your SMTP password, and
+- **Your `.env`.** It holds your session secret and the media store's keys, and
   putting secrets in a file you copy to a laptop is how secrets get out. It also
   lives on the host, outside the container, so this command cannot see it. Keep
   your own copy somewhere safe. If you restore without the original session

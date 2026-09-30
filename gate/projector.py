@@ -62,7 +62,7 @@ class ProjectorLink:
         return self._last_seen
 
     async def attach(self, socket):
-        """Seat a newly authenticated projector, replacing any current one.
+        """Attach a newly authenticated projector, replacing any current one.
 
         Newest wins: an operator restarting the projector, or moving it to
         another machine, must not have to wait for a half-dead socket to time

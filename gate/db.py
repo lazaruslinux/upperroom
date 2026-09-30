@@ -9,6 +9,7 @@ stored directly, only a scrypt hash with a per account salt.
 import datetime
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import sqlite3
@@ -19,6 +20,8 @@ import wordfilter
 # Only for stamping a new account with the release it was made on, so nobody
 # is welcomed by a list of things that changed before they arrived.
 from config import VERSION
+
+logger = logging.getLogger("upperroom.db")
 
 DB_PATH = os.environ.get("SELFSTREAM_DB", "/data/selfstream.db")
 
@@ -38,11 +41,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_version INTEGER NOT NULL DEFAULT 0,
     chat_font TEXT NOT NULL DEFAULT 'system',
     bio TEXT NOT NULL DEFAULT '',
-    -- Optional address for the "channel is live" email. notify_live is the
-    -- viewer's own opt-out; it defaults on since the admin only makes accounts
-    -- for known people, and an email is sent only when both are set.
-    email TEXT NOT NULL DEFAULT '',
-    notify_live INTEGER NOT NULL DEFAULT 1,
+    -- Legacy: an older database also has email and notify_live here, from the
+    -- go-live email. The address is emptied at startup and nothing reads either.
     -- Channel points, earned by watching the stream live and spent to highlight
     -- a short message on stream.
     points INTEGER NOT NULL DEFAULT 0,
@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS users (
     -- They ride along on the viewer's messages so everyone sees them.
     name_color TEXT NOT NULL DEFAULT '',
     msg_color TEXT NOT NULL DEFAULT ''
+    -- Older databases also carry is_guest and guest_expires_at: legacy and
+    -- unused. init_db removes guest rows (_purge_guests); nothing reads them.
 );
 
 -- One row per time someone opened the watch page. left_at is filled in when
@@ -80,10 +82,10 @@ CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_log (ts);
 -- the home card and stamped onto each VOD when a broadcast begins. A single row.
 CREATE TABLE IF NOT EXISTS channel_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    -- The operator's own brand, shown leading the visitor pages next to
-    -- "powered by upperroom". Distinct from stream_title (the per-broadcast
-    -- title): this is the permanent site identity. Defaults to the platform
-    -- name until the operator sets their own.
+    -- The operator's own brand, shown at the top of every page. Distinct from
+    -- stream_title (the per-broadcast title): this is the permanent site
+    -- identity. Defaults to the platform name until the operator sets their
+    -- own.
     site_name TEXT NOT NULL DEFAULT 'upperroom',
     stream_title TEXT NOT NULL DEFAULT 'Live Stream',
     stream_description TEXT NOT NULL DEFAULT '',
@@ -97,15 +99,16 @@ CREATE TABLE IF NOT EXISTS channel_settings (
     -- above, retention below) already are and there was no reason for this one
     -- to be different.
     clip_seconds INTEGER NOT NULL DEFAULT 60,
-    -- Go-live notifications. discord_webhook is an optional Discord incoming
-    -- webhook URL; last_notified_at guards against re-announcing on a brief
-    -- stream blip or a gate restart mid-broadcast. email_on_live is the
-    -- channel's master switch for the go-live email: viewers each have their own
-    -- opt-in, this decides whether the channel sends any at all. It does not
-    -- affect Discord.
-    discord_webhook TEXT NOT NULL DEFAULT '',
+    -- Go-live notifications. last_notified_at guards against re-announcing on
+    -- a brief stream blip or a gate restart mid-broadcast. notify_on_live is
+    -- the channel's switch for the go-live push. vapid_private and vapid_public
+    -- are the server's push key pair (base64url), made on first start; the
+    -- private half is never logged or sent anywhere. Legacy: an older database
+    -- also has discord_webhook (emptied at startup) and email_on_live here.
     last_notified_at INTEGER NOT NULL DEFAULT 0,
-    email_on_live INTEGER NOT NULL DEFAULT 1,
+    notify_on_live INTEGER NOT NULL DEFAULT 1,
+    vapid_private TEXT,
+    vapid_public TEXT,
     -- The channel-wide accent flavor every visitor sees (the brand color). One
     -- of the presets in ACCENTS; the per-user dark/light toggle is separate.
     accent TEXT NOT NULL DEFAULT 'green',
@@ -228,8 +231,7 @@ CREATE TABLE IF NOT EXISTS media_views (
 -- while an admin can lift any.
 -- A like on a recording or a clip. Exactly the shape of media_views, and for
 -- the same reason: the primary key makes one person count once, so liking twice
--- is not two likes and unliking is a plain delete. Accounts only; a guest has
--- nothing to leave behind.
+-- is not two likes and unliking is a plain delete.
 CREATE TABLE IF NOT EXISTS media_likes (
     kind TEXT NOT NULL,
     ref_id INTEGER NOT NULL,
@@ -279,22 +281,6 @@ CREATE TABLE IF NOT EXISTS invites (
     redeemed_at INTEGER
 );
 
--- Guest passes: single-use codes that let someone watch and chat for a while
--- without making an account. Deliberately the same shape as invites, because
--- they are the same idea with a different outcome: an invite creates a
--- permanent account, a guest pass creates a temporary one. The account a pass
--- creates is recorded in redeemed_by exactly as it is for invites, so a pass
--- can be traced to whoever used it even after the account is reaped.
-CREATE TABLE IF NOT EXISTS guest_passes (
-    code TEXT PRIMARY KEY,
-    label TEXT DEFAULT '',
-    created_by TEXT,
-    created_at INTEGER,
-    revoked_at INTEGER,
-    redeemed_by TEXT,
-    redeemed_at INTEGER
-);
-
 -- A theater session: the operator is playing titles from their own library to
 -- the room rather than broadcasting themselves. While one is open the gate does
 -- not record, refuses clips, holds the chat wipe, and announces going live once
@@ -333,6 +319,19 @@ CREATE TABLE IF NOT EXISTS recent_games (
     name TEXT PRIMARY KEY,
     last_used INTEGER NOT NULL
 );
+
+-- One row per browser that asked for the go-live push. The endpoint is a URL on
+-- the browser maker's push service and works as a credential on its own;
+-- p256dh and auth are the browser's keys that each message is encrypted to.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (username);
 """
 
 
@@ -365,20 +364,14 @@ def init_db():
         _ensure_column(conn, "users", "chat_font", "TEXT NOT NULL DEFAULT 'system'")
         _ensure_column(conn, "users", "bio", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "is_moderator", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "email", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "users", "notify_live", "INTEGER NOT NULL DEFAULT 1")
         _ensure_column(conn, "users", "points", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "users", "name_color", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "users", "msg_color", "TEXT NOT NULL DEFAULT ''")
         # Provenance: which invite code (if any) this account was created from.
         _ensure_column(conn, "users", "invite_code", "TEXT")
-        # A guest is a real account with a short life. Keeping it a row rather
-        # than a rowless session is what lets presence, watch sessions, bans and
-        # every moderator command keep working on guests unchanged; all of those
-        # resolve their target through a users row. is_guest is read fresh from
-        # the row wherever it matters, never trusted from the session cookie.
-        _ensure_column(conn, "users", "is_guest", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "users", "guest_expires_at", "INTEGER NOT NULL DEFAULT 0")
+        # Accounts only: remove whatever an older install left of guest
+        # access, before anything can be served.
+        _purge_guests(conn)
         # The release whose "what changed" notice this person has already seen.
         # Empty on an existing account, which is what makes the notice appear
         # once after an upgrade; a new account is stamped with the running
@@ -404,9 +397,6 @@ def init_db():
             conn, "channel_settings", "clip_cooldown_admin", "INTEGER NOT NULL DEFAULT 1"
         )
         _ensure_column(
-            conn, "channel_settings", "discord_webhook", "TEXT NOT NULL DEFAULT ''"
-        )
-        _ensure_column(
             conn, "channel_settings", "last_notified_at", "INTEGER NOT NULL DEFAULT 0"
         )
         _ensure_column(
@@ -427,12 +417,14 @@ def init_db():
         _ensure_column(conn, "theater_sessions", "now_series", "TEXT")
         _ensure_column(conn, "theater_sessions", "now_season", "INTEGER")
         _ensure_column(conn, "theater_sessions", "now_episode", "INTEGER")
-        # 1, matching a new install: before this switch existed the channel sent
-        # go-live email whenever SMTP was configured, so defaulting it on is what
-        # keeps an existing channel behaving exactly as it did yesterday.
-        _ensure_column(
-            conn, "channel_settings", "email_on_live", "INTEGER NOT NULL DEFAULT 1"
-        )
+        # The go-live switch, now for push. On an upgrade it starts where the
+        # old email switch was, so an operator who went quiet stays quiet.
+        if _ensure_column(
+            conn, "channel_settings", "notify_on_live", "INTEGER NOT NULL DEFAULT 1"
+        ) and "email_on_live" in _columns(conn, "channel_settings"):
+            conn.execute("UPDATE channel_settings SET notify_on_live = email_on_live")
+        _ensure_column(conn, "channel_settings", "vapid_private", "TEXT")
+        _ensure_column(conn, "channel_settings", "vapid_public", "TEXT")
         # 0, not the 2 a new install gets: this branch runs on a channel that
         # already exists, and its chat should carry on behaving exactly as it
         # did yesterday until the operator says otherwise.
@@ -513,6 +505,14 @@ def init_db():
         # seconds out is seconds out for the whole room.
         _ensure_column(
             conn, "channel_settings", "theater_subtitles", "INTEGER NOT NULL DEFAULT 0"
+        )
+        # When OBS last connected with the current stream key, 0 for never. The
+        # dashboard's first go-live step ticks on it, so it is cleared whenever
+        # the key changes. 0 on an upgrade too: the key may have changed since
+        # the last broadcast, and a tick the next publish earns is the honest
+        # one.
+        _ensure_column(
+            conn, "channel_settings", "last_publish_at", "INTEGER NOT NULL DEFAULT 0"
         )
         # The admin-defined rewards catalog was replaced by a single built-in
         # redemption (highlight a message), so its table is dropped in place, the
@@ -620,6 +620,10 @@ def _env_int(name, fallback):
         return fallback
 
 
+def _columns(conn, table):
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def _ensure_column(conn, table, column, decl):
     """Add a column if the table does not have it yet. Returns True when the
     column was actually added, which is the one moment a caller can tell an
@@ -629,6 +633,32 @@ def _ensure_column(conn, table, column, decl):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
         return True
     return False
+
+
+def _purge_guests(conn):
+    """Delete every guest account an older install left behind, with the same
+    child rows delete_user clears, then drop the guest pass tables. Idempotent:
+    once done, it finds nothing and logs nothing. Without it, a leftover guest
+    cookie would sign in as an ordinary account once nothing reads is_guest."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    removed = 0
+    if "is_guest" in columns:
+        usernames = [r["username"] for r in conn.execute(
+            "SELECT username FROM users WHERE is_guest = 1"
+        )]
+        for username in usernames:
+            removed += _delete_user_rows(conn, username)
+    tables = {r["name"] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name IN ('guest_passes', 'guest_link_guests')"
+    )}
+    for table in sorted(tables):
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+    if removed or tables:
+        logger.info(
+            "guest access removed: %d account(s) deleted, %d table(s) dropped",
+            removed, len(tables),
+        )
 
 
 def hash_password(password):
@@ -672,15 +702,15 @@ def list_users():
         return [dict(r) for r in rows]
 
 
-def add_user(username, display_name, password, is_admin=False, email=""):
+def add_user(username, display_name, password, is_admin=False):
     with connect() as conn:
         conn.execute(
             "INSERT INTO users "
             "(username, display_name, password_hash, is_admin, created_at, "
-            "email, last_seen_version) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "last_seen_version) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (username, display_name, hash_password(password),
-             1 if is_admin else 0, int(time.time()), email or "", VERSION),
+             1 if is_admin else 0, int(time.time()), VERSION),
         )
 
 
@@ -945,33 +975,22 @@ def set_chat_moderation(slow_mode_seconds=None, banned_words=None):
 
 
 def get_notify_settings():
-    """The channel's go-live notification settings: the Discord webhook URL, the
-    epoch of the last announcement (used for the cooldown), and whether the
-    channel sends go-live email at all."""
+    """The channel's go-live settings: the epoch of the last announcement (for
+    the cooldown) and whether the channel sends the go-live push at all."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT discord_webhook, last_notified_at, email_on_live "
+            "SELECT last_notified_at, notify_on_live "
             "FROM channel_settings WHERE id = 1"
         ).fetchone()
         if not row:
-            return {"discord_webhook": "", "last_notified_at": 0, "email_on_live": 1}
+            return {"last_notified_at": 0, "notify_on_live": 1}
         return dict(row)
 
 
-def set_discord_webhook(url):
+def set_notify_on_live(on):
     with connect() as conn:
         conn.execute(
-            "UPDATE channel_settings SET discord_webhook = ? WHERE id = 1",
-            (url or "",),
-        )
-
-
-def set_email_on_live(on):
-    """Turn the channel's go-live email on or off. Viewers keep their own
-    per-account opt-in; this is the switch above all of them."""
-    with connect() as conn:
-        conn.execute(
-            "UPDATE channel_settings SET email_on_live = ? WHERE id = 1",
+            "UPDATE channel_settings SET notify_on_live = ? WHERE id = 1",
             (1 if on else 0,),
         )
 
@@ -981,6 +1000,112 @@ def mark_notified(when):
         conn.execute(
             "UPDATE channel_settings SET last_notified_at = ? WHERE id = 1", (when,)
         )
+
+
+def clear_legacy_contacts():
+    """Empty the stored email addresses and the webhook URL left from the old
+    go-live email and Discord post. Idempotent; returns how many of each it
+    emptied, (addresses, webhooks)."""
+    with connect() as conn:
+        emails = hooks = 0
+        if "email" in _columns(conn, "users"):
+            emails = conn.execute(
+                "UPDATE users SET email = '' WHERE email != ''"
+            ).rowcount
+        if "discord_webhook" in _columns(conn, "channel_settings"):
+            hooks = conn.execute(
+                "UPDATE channel_settings SET discord_webhook = '' "
+                "WHERE discord_webhook != ''"
+            ).rowcount
+        return emails, hooks
+
+
+# ---- Web Push -------------------------------------------------------------
+# The server's VAPID key pair and the browsers subscribed to the go-live push.
+# webpush.py does the cryptography; these only store it.
+
+# Each account keeps its newest this many devices.
+MAX_PUSH_PER_ACCOUNT = 10
+
+
+def get_vapid_keys():
+    """{"private", "public"} (base64url), or None before they are made."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT vapid_private, vapid_public FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        if not row or not row["vapid_private"] or not row["vapid_public"]:
+            return None
+        return {"private": row["vapid_private"], "public": row["vapid_public"]}
+
+
+def set_vapid_keys(private, public):
+    """Store a key pair unless one is already there. True when stored."""
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE channel_settings SET vapid_private = ?, vapid_public = ? "
+            "WHERE id = 1 AND (vapid_private IS NULL OR vapid_private = '')",
+            (private, public),
+        )
+        return cur.rowcount > 0
+
+
+def add_push_subscription(username, endpoint, p256dh, auth, now):
+    """Save a browser's subscription for `username`. An endpoint already saved
+    under another account moves to this one (same browser, someone else signed
+    in). Past the per-account cap, the oldest go."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO push_subscriptions "
+            "(username, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET username = excluded.username, "
+            "p256dh = excluded.p256dh, auth = excluded.auth, "
+            "created_at = excluded.created_at",
+            (username, endpoint, p256dh, auth, now),
+        )
+        conn.execute(
+            "DELETE FROM push_subscriptions WHERE username = ? AND id NOT IN "
+            "(SELECT id FROM push_subscriptions WHERE username = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?)",
+            (username, username, MAX_PUSH_PER_ACCOUNT),
+        )
+
+
+def remove_push_subscription(username, endpoint):
+    """Drop one of this account's own subscriptions. True if one went."""
+    with connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM push_subscriptions WHERE username = ? AND endpoint = ?",
+            (username, endpoint),
+        )
+        return cur.rowcount > 0
+
+
+def delete_push_subscription(endpoint):
+    """Drop a subscription the push service says is gone."""
+    with connect() as conn:
+        conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+
+def list_push_subscriptions(username=None):
+    """Every subscription, or one account's."""
+    query = "SELECT endpoint, p256dh, auth, username FROM push_subscriptions"
+    args = ()
+    if username is not None:
+        query += " WHERE username = ?"
+        args = (username,)
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(query + " ORDER BY id", args)]
+
+
+def count_push_subscriptions():
+    """(devices, accounts) signed up for the go-live push."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS devices, COUNT(DISTINCT username) AS accounts "
+            "FROM push_subscriptions"
+        ).fetchone()
+        return row["devices"], row["accounts"]
 
 
 # ---- Overlay key ----------------------------------------------------------
@@ -1031,10 +1156,32 @@ def regenerate_stream_key():
     per-connection, so the change only bites on the next publish."""
     key = secrets.token_urlsafe(32)
     with connect() as conn:
+        # Nothing has published with the new key yet, so the dashboard's "OBS
+        # has these settings" tick goes out with the old one.
         conn.execute(
-            "UPDATE channel_settings SET stream_key = ? WHERE id = 1", (key,)
+            "UPDATE channel_settings SET stream_key = ?, last_publish_at = 0 "
+            "WHERE id = 1",
+            (key,),
         )
     return key
+
+
+def note_publish(when):
+    """Remember that a publish with the current key was just allowed."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE channel_settings SET last_publish_at = ? WHERE id = 1",
+            (int(when),),
+        )
+
+
+def get_last_publish():
+    """When OBS last published with the current key, or 0 if it never has."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT last_publish_at FROM channel_settings WHERE id = 1"
+        ).fetchone()
+        return int(row["last_publish_at"] or 0) if row else 0
 
 
 # ---- Projector key --------------------------------------------------------
@@ -1230,50 +1377,24 @@ def set_bio(username, bio):
         conn.execute("UPDATE users SET bio = ? WHERE username = ?", (bio, username))
 
 
-def set_email(username, email):
-    with connect() as conn:
-        conn.execute(
-            "UPDATE users SET email = ? WHERE username = ?", (email or "", username)
-        )
-
-
-def set_notify_live(username, on):
-    with connect() as conn:
-        conn.execute(
-            "UPDATE users SET notify_live = ? WHERE username = ?",
-            (1 if on else 0, username),
-        )
-
-
-def list_live_recipients():
-    """Email addresses to notify when the channel goes live: non-admin accounts
-    that have an address and have not opted out. Admins run the broadcast, so
-    they are never emailed that their own stream is live. Guests are excluded
-    outright: they have no address and a thirty minute account has no business
-    receiving mail about future broadcasts. Returns a list of
-    (display_name, email)."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT display_name, email FROM users "
-            "WHERE notify_live = 1 AND email != '' AND is_admin = 0 AND is_guest = 0"
-        ).fetchall()
-        return [(r["display_name"], r["email"]) for r in rows]
-
-
 def delete_user(username):
     with connect() as conn:
-        # Remove the account and everything tied to it, so a deleted user leaves
-        # no orphaned watch history, chat, or ban behind.
-        conn.execute("DELETE FROM watch_sessions WHERE username = ?", (username,))
-        conn.execute("DELETE FROM chat_log WHERE username = ?", (username,))
-        conn.execute("DELETE FROM bans WHERE username = ?", (username,))
-        # Their likes and comments go with them, the same as their chat. A
-        # comment naming a deleted account would be a ghost in the thread, and
-        # the guest reaper runs this every few minutes.
-        conn.execute("DELETE FROM media_likes WHERE username = ?", (username,))
-        conn.execute("DELETE FROM media_comments WHERE username = ?", (username,))
-        cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
-        return cur.rowcount > 0
+        return _delete_user_rows(conn, username) > 0
+
+
+def _delete_user_rows(conn, username):
+    """Remove the account and everything tied to it, so a deleted user leaves
+    no orphaned watch history, chat, ban or push subscription behind. Returns
+    how many users rows went (0 or 1)."""
+    conn.execute("DELETE FROM watch_sessions WHERE username = ?", (username,))
+    conn.execute("DELETE FROM chat_log WHERE username = ?", (username,))
+    conn.execute("DELETE FROM bans WHERE username = ?", (username,))
+    # Their likes and comments go with them, the same as their chat. A
+    # comment naming a deleted account would be a ghost in the thread.
+    conn.execute("DELETE FROM media_likes WHERE username = ?", (username,))
+    conn.execute("DELETE FROM media_comments WHERE username = ?", (username,))
+    conn.execute("DELETE FROM push_subscriptions WHERE username = ?", (username,))
+    return conn.execute("DELETE FROM users WHERE username = ?", (username,)).rowcount
 
 
 # ---- Bans -----------------------------------------------------------------
@@ -1334,9 +1455,8 @@ def list_bans():
 # words themselves stay easy to read out loud, type on a phone, and tell apart.
 #
 # The size of this list is a security property, not a matter of taste. An invite
-# code only reaches a private sign-up form, but a guest pass reaches a public
-# redemption endpoint that anyone can post to, so the list has to be big enough
-# that guessing is hopeless on its own. Three words from 48 is 110,592
+# code reaches a public sign-up endpoint that anyone can post to, so the list has
+# to be big enough that guessing is hopeless on its own. Three words from 48 is 110,592
 # combinations, which a script would walk through in minutes. This list is sized
 # so that three words clear 10 million, and redemption is rate limited per
 # address on top of that.
@@ -1526,154 +1646,6 @@ def register_via_invite(code, username, display_name, password, when):
             (username, display_name, hash_password(password), when, code, VERSION),
         )
         return "ok"
-
-
-# ---- Guest passes ---------------------------------------------------------
-# Same single-use, race-safe, revocable shape as invites, but redeeming one
-# creates a temporary account instead of a permanent one.
-
-# Stored in place of a password hash on a guest row. verify_password() splits on
-# "$" and needs three parts, so this can never match any password: a guest
-# cannot sign in through /api/auth at all, whatever they type.
-GUEST_PASSWORD_SENTINEL = "guest-account-no-password"
-
-
-def create_guest_pass(label, created_by, created_at):
-    """Generate a fresh single-use guest pass and store it. Returns the code."""
-    with connect() as conn:
-        for _ in range(20):
-            code = _new_code()
-            try:
-                conn.execute(
-                    "INSERT INTO guest_passes (code, label, created_by, created_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (code, label or "", created_by, created_at),
-                )
-                return code
-            except sqlite3.IntegrityError:
-                continue
-        raise RuntimeError("could not generate a unique guest pass code")
-
-
-def get_guest_pass(code):
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM guest_passes WHERE code = ?", (code,)
-        ).fetchone()
-        return dict(row) if row else None
-
-
-def list_guest_passes():
-    """Every guest pass, newest first, with the display name of the guest it
-    created. The name survives in guest_passes.redeemed_by after the reaper has
-    deleted the account, so a spent pass still shows what it was used for."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT g.code, g.label, g.created_by, g.created_at, g.revoked_at, "
-            "g.redeemed_by, g.redeemed_at, u.display_name AS redeemed_by_name, "
-            "u.guest_expires_at "
-            "FROM guest_passes g LEFT JOIN users u ON u.username = g.redeemed_by "
-            "ORDER BY g.created_at DESC"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-def revoke_guest_pass(code, when):
-    """Revoke an unused pass. Returns True if one changed. Revoking does not end
-    a session already redeemed from it; that expires on its own."""
-    with connect() as conn:
-        cur = conn.execute(
-            "UPDATE guest_passes SET revoked_at = ? "
-            "WHERE code = ? AND revoked_at IS NULL AND redeemed_at IS NULL",
-            (when, code),
-        )
-        return cur.rowcount > 0
-
-
-def delete_guest_pass(code):
-    """Remove a spent pass row for good. Only a pass that is already revoked or
-    redeemed can go: an active code must be revoked first, so deleting can never
-    become a quiet way to un-issue a code somebody is still holding. Returns
-    True if a row was removed."""
-    with connect() as conn:
-        cur = conn.execute(
-            "DELETE FROM guest_passes WHERE code = ? "
-            "AND (revoked_at IS NOT NULL OR redeemed_at IS NOT NULL)",
-            (code,),
-        )
-        return cur.rowcount > 0
-
-
-def clear_used_guest_passes():
-    """Remove every redeemed or revoked pass at once. Returns how many went."""
-    with connect() as conn:
-        cur = conn.execute(
-            "DELETE FROM guest_passes "
-            "WHERE revoked_at IS NOT NULL OR redeemed_at IS NOT NULL"
-        )
-        return cur.rowcount
-
-
-def redeem_guest_pass(code, username, display_name, when, expires_at):
-    """Atomically claim a single-use guest pass and create the guest account.
-
-    The claim and the insert share one transaction, mirroring
-    register_via_invite(), so two people racing on one code cannot both win.
-    Returns 'ok', 'used' (missing, revoked or already redeemed), or
-    'user_exists' (the generated username collided; the claim is rolled back so
-    the pass is not burned).
-    """
-    with connect() as conn:
-        cur = conn.execute(
-            "UPDATE guest_passes SET redeemed_by = ?, redeemed_at = ? "
-            "WHERE code = ? AND redeemed_at IS NULL AND revoked_at IS NULL",
-            (username, when, code),
-        )
-        if cur.rowcount == 0:
-            return "used"
-        taken = conn.execute(
-            "SELECT 1 FROM users WHERE username = ?", (username,)
-        ).fetchone()
-        if taken:
-            conn.execute(
-                "UPDATE guest_passes SET redeemed_by = NULL, redeemed_at = NULL "
-                "WHERE code = ?",
-                (code,),
-            )
-            return "user_exists"
-        conn.execute(
-            "INSERT INTO users "
-            "(username, display_name, password_hash, is_admin, created_at, "
-            " is_guest, guest_expires_at, notify_live, last_seen_version) "
-            "VALUES (?, ?, ?, 0, ?, 1, ?, 0, ?)",
-            (username, display_name, GUEST_PASSWORD_SENTINEL, when, expires_at,
-             VERSION),
-        )
-        return "ok"
-
-
-def expired_guests(now):
-    """Usernames of guest accounts whose time is up. Separate from the delete so
-    the reaper can log what it removed and so this is testable on its own."""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT username FROM users "
-            "WHERE is_guest = 1 AND guest_expires_at > 0 AND guest_expires_at <= ?",
-            (now,),
-        ).fetchall()
-        return [r["username"] for r in rows]
-
-
-def count_guests(now):
-    """How many guest accounts are currently live, for the analytics page. Guests
-    are filtered out of the account list, so without this they would be invisible
-    rather than merely separate."""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM users "
-            "WHERE is_guest = 1 AND guest_expires_at > ?", (now,)
-        ).fetchone()
-        return row["n"] if row else 0
 
 
 # ---- Likes and comments ---------------------------------------------------
@@ -2524,13 +2496,8 @@ def count_media():
 def admin_list_users(include_admins=True):
     """Every real account with rolled-up activity stats, for the dashboards. The
     mod dashboard passes include_admins=False so admin accounts never appear
-    there.
-
-    Guests are always excluded. They are accounts only so that moderation and
-    presence keep working on them; they are not people who signed up, and a busy
-    broadcast would otherwise bury the real account list under expiring rows.
-    The analytics page counts them separately instead (count_guests)."""
-    where = "WHERE u.is_guest = 0" + ("" if include_admins else " AND u.is_admin = 0")
+    there."""
+    where = "" if include_admins else "WHERE u.is_admin = 0"
     with connect() as conn:
         rows = conn.execute(
             f"""
@@ -2541,8 +2508,6 @@ def admin_list_users(include_admins=True):
                 u.is_moderator,
                 u.created_at,
                 u.avatar_version,
-                u.email,
-                u.notify_live,
                 (SELECT MAX(COALESCE(left_at, joined_at))
                    FROM watch_sessions w WHERE w.username = u.username) AS last_seen,
                 (SELECT COUNT(*)

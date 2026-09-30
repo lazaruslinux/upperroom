@@ -4,42 +4,55 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>upperroom - setup</title>
-  <script>
-    // Apply the saved theme before first paint so the page never flashes.
-    try { document.documentElement.dataset.theme = localStorage.getItem("selfstream_theme") || "dark"; } catch (e) {}
-    // Apply the saved accent flavor too, so the brand color never flashes.
-    try { document.documentElement.dataset.accent = localStorage.getItem("selfstream_accent") || "green"; } catch (e) {}
-  </script>
+  <script src="/assets/head.js?v=2"></script>
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg?v=1">
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png?v=1">
   <link rel="manifest" href="/api/manifest.webmanifest">
-  <meta name="theme-color" content="#0b0c0b">
+  <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=63">
+  <link rel="stylesheet" href="/assets/style.css?v=65">
+  <link rel="stylesheet" href="/assets/dash.css?v=2">
 </head>
-<body class="center">
-  <main class="card">
-    <h1 class="brand"><span class="wordmark">upper<span class="wm-accent">room</span></span></h1>
-    <p class="muted">first-run setup</p>
-    <p class="setup-intro muted">This creates the first account as the admin and names the site. It runs only once.</p>
-    <form id="setup-form" autocomplete="off">
-      <input type="text" id="username" placeholder="Username" autocomplete="off" required>
-      <input type="text" id="display-name" placeholder="Display name" autocomplete="off" required>
-      <input type="password" id="password" placeholder="Password (at least 8 characters)" autocomplete="new-password" required>
-      <input type="text" id="site-name" placeholder="Site name (your brand)" maxlength="60" autocomplete="off" required>
-      <button type="submit">Create admin</button>
-      <p id="error" class="error" hidden></p>
+<body class="door-page">
+  <div id="site-nav"></div>
+
+  <!-- The first door of a new install: it makes the first account, as the
+       admin, and names the site. It runs once. -->
+  <main class="door">
+    <h1 class="door-title brand-title">upper<span class="wm-accent">room</span><span class="door-sub">first-run setup</span></h1>
+    <p class="setup-intro">This makes the first account, as the admin, and names the site. It only runs once.</p>
+
+    <form id="setup-form" class="door-form" autocomplete="off">
+      <label class="field-label">
+        <span class="engraved">Username</span>
+        <input type="text" id="username" class="field" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Name in chat</span>
+        <input type="text" id="display-name" class="field" autocomplete="off" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Password, 8 characters or more</span>
+        <input type="password" id="password" class="field" autocomplete="new-password" required>
+      </label>
+      <label class="field-label">
+        <span class="engraved">Site name, your brand</span>
+        <input type="text" id="site-name" class="field" maxlength="60" autocomplete="off" required>
+      </label>
+      <button type="submit" class="loud">Create admin</button>
+      <p id="error" class="error" role="alert" hidden></p>
     </form>
   </main>
 
-  <footer class="site-foot mono muted">
-    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="" aria-hidden="true">
+  <footer class="site-foot">
+    <img class="foot-logo" src="/assets/icons/icon.svg?v=1" alt="">
     <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>
-    <span class="powered-sep">·</span>
+    <span class="powered-sep" aria-hidden="true">·</span>
     <span>developed by <a href="https://lazaruslinux.com" target="_blank" rel="noopener">Lazarus Labs</a></span>
   </footer>
-  <script src="/assets/setup.js?v=3"></script>
+  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/setup.js?v=4"></script>
 </body>
 </html>

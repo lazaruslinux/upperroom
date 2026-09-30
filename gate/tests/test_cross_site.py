@@ -1,24 +1,22 @@
 """
 The 2026-09 review round: writes and the chat socket must come from this site's
 own pages, a socket whose send failed must end rather than spin the event loop,
-and a person who is deleted, demoted or whose guest time is up must stop having
-powers on sockets and routes that only read the token.
+and a person who is deleted or demoted must stop having powers on sockets and
+routes that only read the token.
 """
 
 import time
 
-import jwt
 import pytest
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 import auth
 import db
-from config import COOKIE_NAME, JWT_SECRET
+from config import COOKIE_NAME
 from conftest import make_client
 from hub import hub
 
 from test_api import add_user, drain_join, login, setup_admin, ws_connect
-from test_guest import make_pass, redeem
 from test_theater import wait_until
 
 
@@ -163,17 +161,6 @@ def test_a_deleted_accounts_token_is_signed_out(client):
     db.delete_user("nell")
     assert client.get("/api/me").json() == {"authed": False}
     assert client.get("/api/channel").status_code == 401
-
-
-def test_a_guest_token_ends_with_the_guest(client):
-    setup_admin(client)
-    visitor = make_client()
-    assert redeem(visitor, make_pass()).status_code == 200
-    claims = jwt.decode(
-        visitor.cookies.get(COOKIE_NAME), JWT_SECRET, algorithms=["HS256"],
-    )
-    row = db.get_user(claims["sub"])
-    assert claims["exp"] <= row["guest_expires_at"]
 
 
 def test_a_foreign_character_in_a_key_is_a_refusal_not_a_crash(client):

@@ -16,7 +16,7 @@ import pytest
 import db
 from config import THUMB_PATH
 from hub import hub
-from test_api import add_user, login, setup_admin
+from test_api import add_user, login, make_client, setup_admin
 
 
 def go_live():
@@ -55,9 +55,15 @@ def test_watch_page_is_served_without_a_session(client):
 
 
 def test_watch_page_carries_the_home_button(client):
-    # The chat bar's one way off the page. watch.js removes it for a guest and
-    # inside the dashboard frame, so the served markup must always ship it.
-    assert 'id="home-btn"' in client.get("/watch").text
+    # A member's way home from the room is the site name in the lamp strip,
+    # which nav.js draws on every signed-in page. It is a link everywhere but
+    # inside the dashboard's frame (where it would load the whole site into a
+    # panel of itself).
+    assert '<script src="/assets/nav.js' in client.get("/watch").text
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    nav = open(os.path.join(root, "web", "assets", "nav.js"), encoding="utf-8").read()
+    assert "homeLink: !framed" in nav
+    assert 'name.href = "/home"' in nav
 
 
 def test_preview_is_the_channel_and_title_over_the_game(client):
@@ -347,3 +353,56 @@ def test_the_preview_names_an_episode_by_its_show(client):
     body = client.get("/watch").text
     assert '<meta property="og:description" content="playing Silo (2023) S3E1">' in body
     assert "Freedom Day" not in body
+
+
+# ---- an invite link's card ------------------------------------------------
+# /join#<code> is the sign-in page rendered with an invite card. The code rides
+# after the #, which no fetcher sends, so the card can never name it.
+
+def test_the_invite_page_is_served_without_a_session(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    stranger = make_client()
+    resp = stranger.get("/join")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert 'id="register-form"' in body          # the real page, not a stub
+    assert "<meta property=\"og:title\" content=\"You&#x27;re invited to Northwind Live\">" in body
+    assert '<meta property="og:description" content="Make an account to watch.">' in body
+    assert '<meta property="og:url" content="https://testserver/join">' in body
+    assert ('<meta property="og:image" '
+            'content="https://testserver/assets/icons/og-default.png?v=1">') in body
+    assert '<meta name="twitter:card" content="summary_large_image">' in body
+    assert '<meta name="robots" content="noindex, nofollow">' in body
+    assert body.count('<meta property="og:title"') == 1
+    assert "og:start" not in body and "og:end" not in body
+
+
+def test_the_invite_card_carries_the_channel_description(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    db.set_stream_info(description="Games, mostly.")
+    body = make_client().get("/join").text
+    assert '<meta property="og:description" content="Games, mostly.">' in body
+
+
+def test_the_invite_card_escapes_the_channel_settings(client):
+    setup_admin(client, username="owner", channel="ok")
+    db.set_stream_info(site_name='"><script>alert(1)</script>',
+                       description='<img src=x onerror=alert(2)>')
+    body = make_client().get("/join").text
+    assert "<script>alert(1)</script>" not in body
+    assert "<img src=x" not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+
+
+def test_the_invite_page_answers_head(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    assert make_client().head("/join").status_code == 200
+
+
+def test_the_invite_page_never_carries_a_code(client):
+    setup_admin(client, username="owner", channel="Northwind Live")
+    code = client.post("/api/admin/invites", json={"label": "Nell"}).json()["code"]
+    body = make_client().get("/join").text
+    assert code not in body
+    assert "Nell" not in body

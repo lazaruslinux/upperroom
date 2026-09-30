@@ -1,15 +1,34 @@
-// Analytics: the numbers the app already keeps, in one place.
+// Stats: the numbers the app already keeps, in one place.
 //
-// Deliberately no new backend and no new tracking. Everything here is composed
-// from endpoints that already exist, so the page costs nothing to run and shows
+// No new backend and no new tracking. Everything here is composed from
+// endpoints that already exist, so the page costs nothing to run and shows
 // history from before it was written. What it cannot show is anything the app
-// never recorded: there is no time series of concurrent viewers, because
+// never recorded: there is no series of people watching at once, because
 // presence lives in memory and is never written down, and no watch time for
-// VODs, because a view is counted once and its duration is not measured.
+// recordings, because a view is counted once and its length is not measured.
+//
+// The charts are one system: a column per day in one ink, one axis each (the
+// three measures have nothing in common to share a scale), a clean top tick,
+// the peak labelled and nothing else, a tooltip on hover and on the arrow
+// keys, and every value in a table underneath for anyone who wants it plain.
 
-let me = null;               // this browser's identity, for the shared nav
+let me = null;               // this browser's identity, for the strip
+
+// The dashboard's sections, which this page is the last of. The same list
+// admin.js hands the strip.
+const SECTIONS = [
+  { key: "golive", label: "Go live", href: "/admin#golive" },
+  { key: "people", label: "People", href: "/admin#people" },
+  { key: "library", label: "Library", href: "/admin#library" },
+  { key: "channel", label: "Channel", href: "/admin#channel" },
+  { key: "chat", label: "Chat rules", href: "/admin#chat" },
+  { key: "connections", label: "Connections", href: "/admin#connections" },
+  { key: "stats", label: "Stats", href: "/analytics" },
+];
 
 // ---- small helpers (private copies, as every other page keeps) ----
+
+function $(id) { return document.getElementById(id); }
 
 function formatDuration(secs) {
   if (!secs || secs < 60) return `${secs || 0}s`;
@@ -37,23 +56,32 @@ function formatBytes(bytes) {
   return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
 }
 
-function statCard(value, label) {
-  const card = document.createElement("div");
-  card.className = "stat-card is-static";
-  const v = document.createElement("span");
-  v.className = "stat-value";
-  v.textContent = value;
-  const l = document.createElement("span");
-  l.className = "stat-label";
-  l.textContent = label;
-  card.append(v, l);
-  return card;
+function textNode(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  el.textContent = text;
+  return el;
 }
 
-function fillStrip(id, cards) {
-  const strip = document.getElementById(id);
-  strip.innerHTML = "";
-  cards.forEach(([value, label]) => strip.appendChild(statCard(value, label)));
+// A readout: an engraved label over a number.
+function fillMeters(id, meters) {
+  const row = $(id);
+  row.textContent = "";
+  meters.forEach(([value, label]) => {
+    const meter = document.createElement("div");
+    meter.className = "meter";
+    meter.append(textNode("span", "engraved", label), textNode("strong", "", String(value)));
+    row.appendChild(meter);
+  });
+}
+
+function rowNode() {
+  const row = document.createElement("li");
+  row.className = "row";
+  const main = document.createElement("div");
+  main.className = "row-main";
+  row.appendChild(main);
+  return { row, main };
 }
 
 async function getJSON(url) {
@@ -66,75 +94,63 @@ async function getJSON(url) {
   }
 }
 
-// ---- load + render ----
-
 async function requireAdmin() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
-  // A guest pass buys the stream and chat, nothing else on the site.
-  // Send them where their pass actually works rather than rendering a
-  // page whose every request will 401.
-  if (data.guest) { window.location.href = "/watch"; return false; }
   if (!data.admin) { window.location.href = "/home"; return false; }
   me = data;
   return true;
 }
 
+// ---- the readouts and the lists ----
+
 function renderPeople(users) {
   const admins = users.filter((u) => u.is_admin).length;
   const watch = users.reduce((sum, u) => sum + (u.watch_seconds || 0), 0);
   const messages = users.reduce((sum, u) => sum + (u.messages || 0), 0);
-  fillStrip("stat-strip", [
-    [users.length, users.length === 1 ? "account" : "accounts"],
-    [admins, admins === 1 ? "admin" : "admins"],
-    [formatDuration(watch), "watch time"],
+  fillMeters("people-meters", [
+    [users.length, users.length === 1 ? "Account" : "Accounts"],
+    [admins, admins === 1 ? "Admin" : "Admins"],
+    [formatDuration(watch), "Watch time"],
     // Chat is purged on a timer, so this is a rolling window rather than a
-    // lifetime total. Say so rather than implying it is everything.
-    [messages, "messages (last 7 days)"],
+    // lifetime total, and the label says so.
+    [messages, "Messages, 7 days"],
   ]);
 
-  const board = document.getElementById("watch-board");
+  const board = $("watch-board");
   const ranked = users
     .filter((u) => u.watch_seconds > 0)
     .sort((a, b) => b.watch_seconds - a.watch_seconds);
-  document.getElementById("watch-empty").hidden = ranked.length > 0;
-  board.innerHTML = "";
+  $("watch-empty").hidden = ranked.length > 0;
+  board.textContent = "";
   ranked.forEach((u) => {
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-    const left = document.createElement("span");
-    left.innerHTML = `<b></b> <span class="muted"></span>`;
-    left.querySelector("b").textContent = u.display_name;
-    left.querySelector(".muted").textContent = `@${u.username} · ${u.messages} messages`;
-    const right = document.createElement("span");
-    right.className = "act-dur";
-    right.textContent = formatDuration(u.watch_seconds);
-    row.append(left, right);
+    const { row, main } = rowNode();
+    main.append(
+      textNode("span", "row-title", u.display_name),
+      textNode("span", "row-meta", `@${u.username} · ${u.messages} messages`),
+    );
+    row.appendChild(textNode("span", "row-value", formatDuration(u.watch_seconds)));
     board.appendChild(row);
   });
 }
 
 function renderBroadcasts(vods) {
-  const list = document.getElementById("broadcasts");
-  document.getElementById("broadcast-empty").hidden = vods.length > 0;
-  list.innerHTML = "";
+  const list = $("broadcasts");
+  $("broadcast-empty").hidden = vods.length > 0;
+  list.textContent = "";
   vods.forEach((v) => {
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-    const left = document.createElement("span");
-    left.innerHTML = `<a></a> <span class="muted"></span>`;
-    const link = left.querySelector("a");
+    const { row, main } = rowNode();
+    const link = document.createElement("a");
+    link.className = "row-title";
     link.href = `/media?type=vod&id=${v.id}`;
     link.textContent = v.title || "Live Stream";
-    left.querySelector(".muted").textContent =
+    main.append(link, textNode("span", "row-meta",
       new Date(v.started_at * 1000).toLocaleString([], {
         month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-      });
-    const right = document.createElement("span");
-    right.className = "act-dur";
-    right.textContent = `${durationClock(v.duration)} · ${v.views} views`;
-    row.append(left, right);
+      })));
+    row.appendChild(textNode("span", "row-value",
+      `${durationClock(v.duration)} · ${v.views} ${v.views === 1 ? "view" : "views"}`));
     list.appendChild(row);
   });
 }
@@ -142,11 +158,12 @@ function renderBroadcasts(vods) {
 function renderLibrary(vods, clips, retention) {
   const views = [...vods, ...clips].reduce((sum, m) => sum + (m.views || 0), 0);
   const usage = retention && retention.usage ? retention.usage : {};
-  fillStrip("library-strip", [
-    [vods.length, vods.length === 1 ? "broadcast" : "broadcasts"],
-    [clips.length, clips.length === 1 ? "clip" : "clips"],
-    [views, "views"],
-    [formatBytes(usage.total_bytes || 0), "stored"],
+  fillMeters("library-meters", [
+    [vods.length, vods.length === 1 ? "Broadcast" : "Broadcasts"],
+    [clips.length, clips.length === 1 ? "Clip" : "Clips"],
+    [views, "Views"],
+    // The store may be away; an unknown size is not zero.
+    [usage.available === false ? "Unknown" : formatBytes(usage.total_bytes || 0), "Stored"],
   ]);
 }
 
@@ -154,22 +171,18 @@ function renderInvites(invites) {
   const redeemed = invites.filter((i) => i.redeemed_at).length;
   const revoked = invites.filter((i) => !i.redeemed_at && i.revoked_at).length;
   const active = invites.length - redeemed - revoked;
-  fillStrip("invite-strip", [
-    [invites.length, "generated"],
-    [redeemed, "redeemed"],
-    [active, "still active"],
-    [revoked, "revoked"],
+  fillMeters("invite-meters", [
+    [invites.length, "Made"],
+    [redeemed, "Used"],
+    [active, "Still open"],
+    [revoked, "Revoked"],
   ]);
 }
 
-// ---- over-time line charts ------------------------------------------------
-// Hand-rolled inline SVG, no chart library (the repo is self-contained). Each
-// chart is theme-aware through the same CSS variables the rest of the chrome
-// uses (accent line, border baseline, muted axis), scales to its column via a
-// responsive viewBox, carries a per-point <title> tooltip, and keeps square
-// corners throughout.
+// ---- one column per day -----------------------------------------------------
 
 const SVGNS = "http://www.w3.org/2000/svg";
+const PLOT_H = 180;
 
 function svgEl(name, attrs) {
   const el = document.createElementNS(SVGNS, name);
@@ -177,111 +190,229 @@ function svgEl(name, attrs) {
   return el;
 }
 
-function lineChart(title, series, unit) {
+function dayLabel(iso) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString([], {
+    month: "short", day: "numeric", timeZone: "UTC",
+  });
+}
+
+// The top gridline sits on a round number, so the one scale reads at a
+// glance: 1, 2 or 5 times a power of ten, at or above the peak.
+function niceCeil(value) {
+  if (value <= 0) return 1;
+  const power = 10 ** Math.floor(Math.log10(value));
+  for (const step of [1, 2, 5, 10]) {
+    if (step * power >= value) return step * power;
+  }
+  return 10 * power;
+}
+
+// A column with its data end rounded and its foot square on the baseline.
+function columnPath(x, y, w, h) {
+  const r = Math.min(4, w / 2, h);
+  return `M${x} ${y + h}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h}Z`;
+}
+
+function drawChart(plot, series, spec) {
+  plot.textContent = "";
+  const width = Math.max(240, plot.clientWidth);
+  const padL = 36, padR = 4, padT = 20, padB = 2;
+  const innerW = width - padL - padR;
+  const innerH = PLOT_H - padT - padB;
+  const top = niceCeil(Math.max(...series.map((d) => d.value)));
+  const band = innerW / series.length;
+  const barW = Math.max(2, Math.min(24, band - 2));
+  const y = (v) => padT + (1 - v / top) * innerH;
+
+  const svg = svgEl("svg", {
+    class: "chart-svg", width, height: PLOT_H, viewBox: `0 0 ${width} ${PLOT_H}`,
+    role: "img", tabindex: "0",
+    "aria-label": `${spec.title}. Use the arrow keys to read each day; the table below has them all.`,
+  });
+
+  // Three recessive gridlines: the baseline, halfway and the round top.
+  [0, top / 2, top].forEach((v) => {
+    const gy = Math.round(y(v)) + 0.5;
+    svg.appendChild(svgEl("line", { class: "grid", x1: padL, x2: width - padR, y1: gy, y2: gy }));
+    const tick = svgEl("text", { class: "tick", x: padL - 8, y: gy + 4, "text-anchor": "end" });
+    tick.textContent = spec.tick(v);
+    svg.appendChild(tick);
+  });
+
+  let peak = 0;
+  series.forEach((d, i) => { if (d.value > series[peak].value) peak = i; });
+
+  const cols = series.map((d, i) => {
+    const g = svgEl("g", { class: "col" });
+    const cx = padL + band * i + band / 2;
+    if (d.value > 0) {
+      const h = Math.max(1, y(0) - y(d.value));
+      g.appendChild(svgEl("path", { class: "bar", d: columnPath(cx - barW / 2, y(0) - h, barW, h) }));
+    }
+    // The hit target is the whole day's slot, far bigger than a thin column.
+    g.appendChild(svgEl("rect", { class: "hit", x: padL + band * i, y: padT, width: band, height: innerH }));
+    svg.appendChild(g);
+    return { g, cx, d };
+  });
+
+  // The one direct label: the peak, on its cap.
+  const best = cols[peak];
+  const label = svgEl("text", { class: "peak", x: best.cx, y: y(best.d.value) - 6, "text-anchor": "middle" });
+  label.textContent = spec.short(best.d.value);
+  svg.appendChild(label);
+
+  plot.appendChild(svg);
+
+  const tip = document.createElement("div");
+  tip.className = "chart-tip";
+  tip.hidden = true;
+  tip.setAttribute("aria-hidden", "true");
+  plot.appendChild(tip);
+  const live = document.createElement("p");
+  live.className = "sr-only";
+  live.setAttribute("aria-live", "polite");
+  plot.appendChild(live);
+
+  let hot = -1;
+  function show(i) {
+    if (hot >= 0) cols[hot].g.classList.remove("is-hot");
+    hot = i;
+    if (i < 0) { tip.hidden = true; return; }
+    const col = cols[i];
+    col.g.classList.add("is-hot");
+    tip.textContent = "";
+    tip.append(textNode("strong", "", spec.long(col.d.value)), textNode("span", "", dayLabel(col.d.date)));
+    tip.hidden = false;
+    const left = Math.min(Math.max(0, col.cx - tip.offsetWidth / 2), width - tip.offsetWidth);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, y(col.d.value) - tip.offsetHeight - 10)}px`;
+    live.textContent = `${dayLabel(col.d.date)}: ${spec.long(col.d.value)}`;
+  }
+  cols.forEach((col, i) => {
+    col.g.addEventListener("pointerenter", () => show(i));
+  });
+  svg.addEventListener("pointerleave", () => show(-1));
+  svg.addEventListener("focus", () => show(hot >= 0 ? hot : series.length - 1));
+  svg.addEventListener("blur", () => show(-1));
+  svg.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); show(Math.max(0, hot - 1)); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); show(Math.min(series.length - 1, hot + 1)); }
+    else if (e.key === "Home") { e.preventDefault(); show(0); }
+    else if (e.key === "End") { e.preventDefault(); show(series.length - 1); }
+  });
+}
+
+function chartFigure(series, spec) {
   const figure = document.createElement("figure");
   figure.className = "chart";
-  const caption = document.createElement("figcaption");
-  caption.textContent = title;
-  figure.appendChild(caption);
+  const head = document.createElement("figcaption");
+  head.className = "chart-head";
+  head.appendChild(textNode("span", "chart-title", spec.title));
+  const total = spec.total(series);
+  if (total) head.appendChild(textNode("span", "chart-total", total));
+  figure.appendChild(head);
 
-  const values = series.map((d) => d.value);
-  const max = values.length ? Math.max(...values) : 0;
-  // A flat run of zeros is "nothing yet", not a chart of a straight line, so keep
-  // the muted empty pattern the rest of the page uses.
-  if (!series.length || max <= 0) {
-    const empty = document.createElement("p");
-    empty.className = "muted chart-empty";
-    empty.textContent = "Nothing yet.";
-    figure.appendChild(empty);
+  if (!series.some((d) => d.value > 0)) {
+    // A row of zeros is "nothing yet", not a chart of a flat line.
+    figure.appendChild(textNode("p", "chart-empty", spec.empty));
     return figure;
   }
 
-  const W = 600, H = 200;
-  const padL = 6, padR = 6, padT = 12, padB = 10;
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const n = series.length;
-  const x = (i) => (n === 1 ? W / 2 : padL + (i / (n - 1)) * innerW);
-  const y = (v) => padT + (1 - v / max) * innerH;
-  const baseY = y(0);
-
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${W} ${H}`, class: "chart-svg", role: "img",
-    "aria-label": title,
-  });
-
-  // Baseline (x axis), muted 1px.
-  svg.appendChild(svgEl("line", {
-    x1: padL, y1: baseY, x2: W - padR, y2: baseY,
-    stroke: "var(--border)", "stroke-width": 1,
-  }));
-
-  // The data line: accent, mitered and butt-capped for the square aesthetic, and
-  // a non-scaling stroke so it stays crisp at any rendered width.
-  const d = series
-    .map((pt, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(pt.value).toFixed(1)}`)
-    .join(" ");
-  svg.appendChild(svgEl("path", {
-    d, fill: "none", stroke: "var(--accent)", "stroke-width": 2,
-    "stroke-linejoin": "miter", "stroke-linecap": "butt",
-    "vector-effect": "non-scaling-stroke",
-  }));
-
-  // Square marks, each carrying a native tooltip.
-  series.forEach((pt, i) => {
-    const s = 4;
-    const rect = svgEl("rect", {
-      x: (x(i) - s / 2).toFixed(1), y: (y(pt.value) - s / 2).toFixed(1),
-      width: s, height: s, fill: "var(--accent)",
-    });
-    const tip = document.createElementNS(SVGNS, "title");
-    tip.textContent = `${pt.date} · ${pt.value === 1 ? `1 ${unit}` : `${pt.value} ${unit}s`}`;
-    rect.appendChild(tip);
-    svg.appendChild(rect);
-  });
-
-  figure.appendChild(svg);
-
-  // First and last dates only, so the axis does not crowd; the rest is on the
-  // per-point tooltips.
+  const plot = document.createElement("div");
+  plot.className = "chart-plot";
+  figure.appendChild(plot);
   const axis = document.createElement("div");
-  axis.className = "chart-axis muted";
-  const first = document.createElement("span");
-  first.textContent = series[0].date;
-  const last = document.createElement("span");
-  last.textContent = series[series.length - 1].date;
-  axis.append(first, last);
+  axis.className = "chart-axis";
+  axis.setAttribute("aria-hidden", "true");
+  axis.append(textNode("span", "", dayLabel(series[0].date)),
+    textNode("span", "", dayLabel(series[series.length - 1].date)));
   figure.appendChild(axis);
+  if (spec.note) figure.appendChild(textNode("p", "chart-note", spec.note));
 
+  // Every value, plainly, for anyone who would rather not hover.
+  const details = document.createElement("details");
+  details.className = "chart-table";
+  details.appendChild(textNode("summary", "", "Show as a table"));
+  const table = document.createElement("table");
+  const headRow = document.createElement("tr");
+  headRow.append(textNode("th", "", "Day"), textNode("th", "", spec.column));
+  const thead = document.createElement("thead");
+  thead.appendChild(headRow);
+  const tbody = document.createElement("tbody");
+  series.forEach((d) => {
+    const tr = document.createElement("tr");
+    tr.append(textNode("td", "", dayLabel(d.date)), textNode("td", "", String(d.value)));
+    tbody.appendChild(tr);
+  });
+  table.append(thead, tbody);
+  details.appendChild(table);
+  figure.appendChild(details);
+
+  // Drawn at the width it actually has, so the text stays crisp and a column
+  // stays a column; drawn again if that width changes.
+  requestAnimationFrame(() => drawChart(plot, series, spec));
+  let lastWidth = 0;
+  new ResizeObserver(() => {
+    if (Math.abs(plot.clientWidth - lastWidth) < 2) return;
+    lastWidth = plot.clientWidth;
+    drawChart(plot, series, spec);
+  }).observe(plot);
   return figure;
 }
 
+function minutesLong(m) {
+  if (m < 60) return `${m} ${m === 1 ? "minute" : "minutes"}`;
+  return formatDuration(m * 60);
+}
+
 function renderCharts(days) {
-  const host = document.getElementById("charts");
-  host.innerHTML = "";
+  const host = $("charts");
+  host.textContent = "";
   if (!days || !days.length) {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "Nothing yet.";
-    host.appendChild(empty);
+    host.appendChild(textNode("p", "chart-empty", "Nothing yet."));
     return;
   }
-  host.appendChild(lineChart(
-    "Watch time per day (minutes)",
-    days.map((d) => ({ date: d.date, value: d.watch_minutes })), "minute"));
-  host.appendChild(lineChart(
-    "Unique viewers per day",
-    days.map((d) => ({ date: d.date, value: d.viewers })), "viewer"));
-  // Chat is purged after the retention window (7 days by default), so older days
-  // legitimately read zero; the title says so rather than implying chat stopped.
-  host.appendChild(lineChart(
-    "Chat messages per day (last 7 days kept)",
-    days.map((d) => ({ date: d.date, value: d.messages })), "message"));
+  const pick = (key) => days.map((d) => ({ date: d.date, value: d[key] || 0 }));
+  // Halfway up a small scale can fall between two whole numbers; say so
+  // rather than round the gridline to a value it is not at.
+  const count = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  host.appendChild(chartFigure(pick("watch_minutes"), {
+    title: "Watch time each day",
+    column: "Minutes",
+    empty: "Nobody has watched in the last 30 days.",
+    total: (s) => `${formatDuration(s.reduce((a, d) => a + d.value, 0) * 60)} in all`,
+    tick: (v) => (v >= 60 ? `${Math.round(v / 60 * 10) / 10}h` : `${Number.isInteger(v) ? v : v.toFixed(1)}m`),
+    short: (v) => (v >= 60 ? formatDuration(v * 60) : `${v}m`),
+    long: minutesLong,
+  }));
+  host.appendChild(chartFigure(pick("viewers"), {
+    title: "People who watched each day",
+    column: "People",
+    empty: "Nobody has watched in the last 30 days.",
+    // Each day counts a person once; adding the days up would count a regular
+    // thirty times, so the headline is the busiest day instead.
+    total: (s) => `busiest day ${Math.max(...s.map((d) => d.value))}`,
+    tick: count,
+    short: count,
+    long: (v) => `${v} ${v === 1 ? "person" : "people"}`,
+  }));
+  host.appendChild(chartFigure(pick("messages"), {
+    title: "Chat messages each day",
+    column: "Messages",
+    empty: "No chat in the days that are kept.",
+    // Chat is purged after the retention window (7 days by default), so the
+    // older days read zero because they are gone, not because it was quiet.
+    note: "Chat is only kept for a few days, so older days read zero.",
+    total: (s) => `${s.reduce((a, d) => a + d.value, 0)} in all`,
+    tick: count,
+    short: count,
+    long: (v) => `${v} ${v === 1 ? "message" : "messages"}`,
+  }));
 }
 
 async function boot() {
   if (!(await requireAdmin())) return;
-  mountNav(me, { current: "analytics" });
+  mountNav(me, { current: "analytics", sections: SECTIONS, section: "stats", pageName: "Stats" });
   const [users, vods, clips, invites, retention, activity] = await Promise.all([
     getJSON("/api/admin/users"),
     getJSON("/api/vods"),

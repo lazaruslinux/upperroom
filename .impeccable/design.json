@@ -1,0 +1,539 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-30T19:50:23+00:00",
+  "title": "Design System: upperroom",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Booth Green",
+        "canonical": "oklch(71.0% 0.097 158)",
+        "tonalRamp": [
+          "#001400",
+          "#003011",
+          "#004e2b",
+          "#206e48",
+          "#458f67",
+          "#67b187",
+          "#91dbaf",
+          "#bcffd8"
+        ]
+      },
+      "accent-amber": {
+        "role": "primary",
+        "displayName": "Amber Preset",
+        "canonical": "oklch(72.2% 0.096 83)",
+        "tonalRamp": [
+          "#1b0400",
+          "#381d00",
+          "#573a00",
+          "#775808",
+          "#987833",
+          "#bb9955",
+          "#e5c27f",
+          "#ffeaaa"
+        ]
+      },
+      "accent-blue": {
+        "role": "primary",
+        "displayName": "Blue Preset",
+        "canonical": "oklch(69.6% 0.062 240)",
+        "tonalRamp": [
+          "#000d1f",
+          "#01273d",
+          "#1d445c",
+          "#3b627d",
+          "#5b839e",
+          "#7ba4c1",
+          "#a4cdeb",
+          "#cdf5ff"
+        ]
+      },
+      "accent-ghost": {
+        "role": "primary",
+        "displayName": "Ghost Preset",
+        "canonical": "oklch(70.6% 0.016 145)",
+        "tonalRamp": [
+          "#080d08",
+          "#1f2620",
+          "#3b423b",
+          "#586058",
+          "#778077",
+          "#98a198",
+          "#c1cac1",
+          "#e8f1e8"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent Ink",
+        "canonical": "oklch(18.6% 0.011 133)",
+        "tonalRamp": [
+          "#0a0c08",
+          "#222520",
+          "#3d413b",
+          "#5b5f59",
+          "#7b7f78",
+          "#9ca099",
+          "#c5c9c2",
+          "#ecf0e9"
+        ]
+      },
+      "lamp": {
+        "role": "secondary",
+        "displayName": "ON AIR Red",
+        "canonical": "oklch(65.4% 0.232 29)",
+        "tonalRamp": [
+          "#400000",
+          "#6a0000",
+          "#950000",
+          "#bf0000",
+          "#e71914",
+          "#ff4e3f",
+          "#ff7f6b",
+          "#ffae98"
+        ]
+      },
+      "glass": {
+        "role": "secondary",
+        "displayName": "Dark Glass",
+        "canonical": "oklch(20.4% 0.005 18)",
+        "tonalRamp": [
+          "#0d0a0a",
+          "#262323",
+          "#423f3f",
+          "#605c5c",
+          "#807c7c",
+          "#a19d9d",
+          "#cac6c6",
+          "#f1eded"
+        ]
+      },
+      "lamp-ink": {
+        "role": "secondary",
+        "displayName": "Lamp Ink",
+        "canonical": "oklch(98.1% 0.011 55)",
+        "tonalRamp": [
+          "#0e0a08",
+          "#28231f",
+          "#443e3a",
+          "#635c58",
+          "#837c77",
+          "#a49d98",
+          "#cdc6c1",
+          "#f4ede8"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Room Charcoal",
+        "canonical": "oklch(18.2% 0.004 264)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3e4042",
+          "#5c5e60",
+          "#7c7d80",
+          "#9d9ea1",
+          "#c6c7ca",
+          "#edeef1"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Set Panel",
+        "canonical": "oklch(22.6% 0.008 264)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#222428",
+          "#3d4044",
+          "#5b5e62",
+          "#7b7d82",
+          "#9c9ea4",
+          "#c5c7cd",
+          "#eceef4"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Key",
+        "canonical": "oklch(26.4% 0.010 261)",
+        "tonalRamp": [
+          "#090b0f",
+          "#212429",
+          "#3d4045",
+          "#5a5e64",
+          "#7a7d84",
+          "#9b9fa5",
+          "#c4c7ce",
+          "#ebeff5"
+        ]
+      },
+      "seam": {
+        "role": "neutral",
+        "displayName": "Seam",
+        "canonical": "oklch(30.5% 0.012 264)",
+        "tonalRamp": [
+          "#090b10",
+          "#212429",
+          "#3d4046",
+          "#5a5e64",
+          "#7a7d84",
+          "#9b9ea6",
+          "#c4c7cf",
+          "#ebeff6"
+        ]
+      },
+      "hardware": {
+        "role": "neutral",
+        "displayName": "Anodized Hardware",
+        "canonical": "oklch(37.4% 0.013 262)",
+        "tonalRamp": [
+          "#090b10",
+          "#21242a",
+          "#3c4047",
+          "#5a5e65",
+          "#797d85",
+          "#9a9fa7",
+          "#c3c8d0",
+          "#eaeff7"
+        ]
+      },
+      "booth": {
+        "role": "neutral",
+        "displayName": "Booth Black",
+        "canonical": "oklch(15.9% 0.005 264)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3e4042",
+          "#5c5e60",
+          "#7c7d80",
+          "#9d9ea1",
+          "#c6c7ca",
+          "#edeef1"
+        ]
+      },
+      "screen": {
+        "role": "neutral",
+        "displayName": "Dead Screen",
+        "canonical": "oklch(11.6% 0.003 286)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242425",
+          "#3f3f41",
+          "#5d5d5f",
+          "#7d7d7f",
+          "#9e9ea0",
+          "#c7c7c9",
+          "#eeeef0"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Warm White Ink",
+        "canonical": "oklch(94.4% 0.009 85)",
+        "tonalRamp": [
+          "#0d0b08",
+          "#262420",
+          "#423f3b",
+          "#605d58",
+          "#807d78",
+          "#a19e98",
+          "#cac7c1",
+          "#f1eee9"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "oklch(75.4% 0.004 271)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232426",
+          "#3f4042",
+          "#5d5d60",
+          "#7c7d80",
+          "#9d9ea1",
+          "#c6c7ca",
+          "#edeef1"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "oklch(64.3% 0.010 264)",
+        "tonalRamp": [
+          "#090b0f",
+          "#222428",
+          "#3d4045",
+          "#5b5e63",
+          "#7a7d83",
+          "#9b9ea5",
+          "#c4c7ce",
+          "#ebeef5"
+        ]
+      },
+      "lamp-face": {
+        "role": "secondary",
+        "displayName": "Lamp Face"
+      },
+      "lamp-edge": {
+        "role": "secondary",
+        "displayName": "Lamp Rim"
+      },
+      "glass-edge": {
+        "role": "secondary",
+        "displayName": "Glass Rim"
+      },
+      "glass-ink": {
+        "role": "secondary",
+        "displayName": "Glass Ink"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Door titles: sign-in, setup, shared clip. Uppercase; 36px from 720px."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles, uppercase; 28px from 720px. The monitor's word uses this voice at 26px / 32px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Step titles, modal headings; slate, media and call-board names at 16px."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Everything read at length. Inputs at 16px."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Every button, sentence case; 15px on touch; primary at 600."
+      },
+      "label": {
+        "displayName": "Engraved Label",
+        "purpose": "Field labels and small section headings, uppercase, Ink 3."
+      },
+      "lamp": {
+        "displayName": "Lamp",
+        "purpose": "ON AIR / OFF AIR only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "lamp-glow",
+        "value": "0 0 18px rgba(255, 59, 47, 0.45), 0 0 2px rgba(255, 59, 47, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
+        "purpose": "The lit ON AIR lamp only; the one glow on the site (text-shadow 0 0 6px rgba(255, 220, 210, 0.6) on its letters)."
+      },
+      {
+        "name": "dark-glass",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 -8px 12px rgba(0, 0, 0, 0.35)",
+        "purpose": "The unlit lamp's recessed face."
+      },
+      {
+        "name": "selection-line",
+        "value": "inset 0 -2px 0 var(--accent)",
+        "purpose": "Underline on a selected tab, pressed chip, current strip section or chosen swatch."
+      },
+      {
+        "name": "quiet-edge",
+        "value": "inset 0 0 0 1px var(--hardware)",
+        "purpose": "The loud word while it waits off air."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-rise",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A chat line rising 3px over 180ms; the switch knob over 180ms."
+      },
+      {
+        "name": "state-change",
+        "value": "150ms ease",
+        "purpose": "Color and border changes on hover and focus."
+      },
+      {
+        "name": "lamp-change",
+        "value": "300ms ease",
+        "purpose": "The lamp lighting or going dark."
+      },
+      {
+        "name": "sheet-fade",
+        "value": "120-140ms ease-out",
+        "purpose": "Menu sheet and modal appearing."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "prefers-reduced-motion stops every animation and transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "559px",
+        "purpose": "max-width; touch sizing applies below it"
+      },
+      {
+        "name": "frame-split",
+        "value": "640px"
+      },
+      {
+        "name": "page",
+        "value": "720px"
+      },
+      {
+        "name": "desktop",
+        "value": "960px"
+      },
+      {
+        "name": "strip-sections",
+        "value": "1080px"
+      },
+      {
+        "name": "strip-centered",
+        "value": "1340px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Ordinary Key",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The default button: a raised key on the panel, sentence case.",
+      "html": "<button class=\"ds-btn\">Copy key</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 16px;border:1px solid var(--seam,#2c2f35);border-radius:var(--radius,2px);background:var(--raised,#22252a);color:var(--ink-2,#aeafb2);font:500 14px/1.1 var(--body,Inter,sans-serif);cursor:pointer;transition:color 150ms ease,border-color 150ms ease}.ds-btn:hover{color:var(--ink,#efece6);border-color:var(--hardware,#3d4148)}.ds-btn:focus-visible{outline:2px solid var(--accent,#6ab48a);outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The accent-filled action; one per screen.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 16px;border:1px solid var(--accent,#6ab48a);border-radius:var(--radius,2px);background:var(--accent,#6ab48a);color:var(--accent-ink,#11140f);font:600 14px/1.1 var(--body,Inter,sans-serif);cursor:pointer}.ds-btn-primary:hover{filter:brightness(1.06)}.ds-btn-primary:focus-visible{outline:2px solid var(--accent,#6ab48a);outline-offset:2px}"
+    },
+    {
+      "name": "Loud Word",
+      "kind": "button",
+      "refersTo": "button-loud",
+      "description": "The thing the screen is for, full width in the accent; quiet variant while off air.",
+      "html": "<div class=\"ds-loud-wrap\"><button class=\"ds-loud\">Copy watch link</button><button class=\"ds-loud ds-loud-quiet\">Copy watch link</button></div>",
+      "css": ".ds-loud-wrap{display:grid;gap:12px;width:320px}.ds-loud{display:flex;align-items:center;justify-content:center;width:100%;min-height:40px;padding:0 16px;border:0;border-radius:var(--radius,2px);background:var(--accent,#6ab48a);color:var(--accent-ink,#11140f);font:600 14px/1.1 var(--body,Inter,sans-serif);cursor:pointer}.ds-loud:hover{filter:brightness(1.06)}.ds-loud:focus-visible{outline:2px solid var(--accent,#6ab48a);outline-offset:2px}.ds-loud-quiet{background:var(--raised,#22252a);color:var(--ink,#efece6);box-shadow:inset 0 0 0 1px var(--hardware,#3d4148)}.ds-loud-quiet:hover{filter:none;box-shadow:inset 0 0 0 1px var(--ink-3,#8a8d93)}"
+    },
+    {
+      "name": "Field with Engraved Label",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A panel-filled 16px field under an engraved label.",
+      "html": "<label class=\"ds-field-label\"><span class=\"ds-engraved\">Username</span><input class=\"ds-field\" type=\"text\" placeholder=\"Name in chat\"></label>",
+      "css": ".ds-field-label{display:grid;gap:8px;width:280px}.ds-engraved{font:600 12px/1.1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3,#8a8d93)}.ds-field{min-height:40px;padding:0 12px;border:1px solid var(--seam,#2c2f35);border-radius:var(--radius,2px);background:var(--panel,#1a1c20);color:var(--ink,#efece6);font:400 16px/1.3 var(--body,Inter,sans-serif);transition:border-color 150ms ease}.ds-field::placeholder{color:var(--ink-3,#8a8d93)}.ds-field:focus{outline:none;border-color:var(--hardware,#3d4148)}.ds-field:focus-visible{border-color:var(--accent,#6ab48a)}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A small raised control on the slate; the accent line when on.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\">Sound</button><button class=\"ds-chip ds-chip-on\" aria-pressed=\"true\">Chat</button></div>",
+      "css": ".ds-chips{display:flex;gap:8px}.ds-chip{display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid var(--seam,#2c2f35);border-radius:var(--radius,2px);background:var(--raised,#22252a);color:var(--ink-2,#aeafb2);font:500 14px/1 var(--body,Inter,sans-serif);cursor:pointer}.ds-chip:hover{color:var(--ink,#efece6);border-color:var(--hardware,#3d4148)}.ds-chip:focus-visible{outline:2px solid var(--accent,#6ab48a);outline-offset:2px}.ds-chip-on{color:var(--ink,#efece6);border-color:var(--accent,#6ab48a);box-shadow:inset 0 -2px 0 var(--accent,#6ab48a)}"
+    },
+    {
+      "name": "Lamp Strip",
+      "kind": "nav",
+      "refersTo": "strip",
+      "description": "The top edge of every page: menu key and site name left, the lamp and clock right.",
+      "html": "<div class=\"ds-strip\"><div class=\"ds-strip-left\"><button class=\"ds-icon-btn\" aria-label=\"Menu\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\"><path d=\"M4 7h16M4 12h16M4 17h16\"/></svg></button><span class=\"ds-strip-name\">Northwind Live</span></div><div class=\"ds-strip-on\"><span class=\"ds-clock\">1:04:22</span><span class=\"ds-lamp ds-lamp-on\">On air</span></div></div>",
+      "css": ".ds-strip{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;height:48px;padding:0 8px 0 4px;background:var(--booth,#0c0d0f);border-bottom:1px solid var(--seam,#2c2f35);width:420px}.ds-strip-left{display:flex;align-items:center;gap:4px}.ds-icon-btn{display:grid;place-items:center;width:40px;height:40px;border:1px solid transparent;border-radius:var(--radius,2px);background:none;color:var(--ink-2,#aeafb2);cursor:pointer}.ds-icon-btn:hover{color:var(--ink,#efece6);border-color:var(--seam,#2c2f35)}.ds-icon-btn:focus-visible{outline:2px solid var(--accent,#6ab48a);outline-offset:2px}.ds-strip-name{padding:0 8px;font:600 16px/1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.04em;color:var(--ink,#efece6)}.ds-strip-on{display:flex;align-items:center;gap:12px}.ds-clock{font:500 16px/1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.06em;color:var(--ink-2,#aeafb2)}.ds-lamp{display:inline-block;padding:7px 12px 6px 14px;border:1px solid var(--glass-edge,#262020);border-radius:var(--radius,2px);background:var(--glass,#191616);color:var(--glass-ink,#948582);font:700 14px/1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.22em;text-transform:uppercase}.ds-lamp-on{border-color:var(--lamp-edge,#ff6d5e);background:linear-gradient(180deg,var(--lamp-face,#ff5a47),var(--lamp,#ff3b2f) 60%,#e0281d);box-shadow:0 0 18px rgba(255,59,47,.45),0 0 2px rgba(255,59,47,.9),inset 0 1px 0 rgba(255,255,255,.35);color:var(--lamp-ink,#fff7f2);text-shadow:0 0 6px rgba(255,220,210,.6)}"
+    },
+    {
+      "name": "ON AIR Lamp (off and on)",
+      "kind": "custom",
+      "refersTo": "lamp-on",
+      "description": "Dark glass reading OFF AIR; lit red with the site's one glow when live.",
+      "html": "<div class=\"ds-lamps\"><span class=\"ds-lamp2\">Off air</span><span class=\"ds-lamp2 ds-lamp2-on\">On air</span></div>",
+      "css": ".ds-lamps{display:flex;gap:16px;padding:16px;background:var(--booth,#0c0d0f)}.ds-lamp2{display:inline-block;padding:7px 12px 6px 14px;border:1px solid var(--glass-edge,#262020);border-radius:var(--radius,2px);background:var(--glass,#191616);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),inset 0 -8px 12px rgba(0,0,0,.35);color:var(--glass-ink,#948582);font:700 14px/1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.22em;text-transform:uppercase;transition:background-color 300ms ease,color 300ms ease,box-shadow 300ms ease}.ds-lamp2-on{border-color:var(--lamp-edge,#ff6d5e);background:linear-gradient(180deg,var(--lamp-face,#ff5a47),var(--lamp,#ff3b2f) 60%,#e0281d);box-shadow:0 0 18px rgba(255,59,47,.45),0 0 2px rgba(255,59,47,.9),inset 0 1px 0 rgba(255,255,255,.35);color:var(--lamp-ink,#fff7f2);text-shadow:0 0 6px rgba(255,220,210,.6)}"
+    },
+    {
+      "name": "Call Board",
+      "kind": "custom",
+      "refersTo": "call-board-line",
+      "description": "Who is in the room: one lit tile each; the host's line in the accent, someone away dimmed.",
+      "html": "<div class=\"ds-board\"><div class=\"ds-board-head\"><span class=\"ds-engraved2\">In the room</span><span class=\"ds-engraved2\">3</span></div><ul class=\"ds-lines\"><li class=\"ds-line ds-line-host\">Ava</li><li class=\"ds-line\">Ben</li><li class=\"ds-line ds-line-away\">Cal</li></ul></div>",
+      "css": ".ds-board{padding:12px;width:320px;background:var(--ground,#111214);border-bottom:1px solid var(--seam,#2c2f35)}.ds-board-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}.ds-engraved2{font:600 12px/1.1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3,#8a8d93)}.ds-lines{display:flex;gap:8px;margin:0;padding:0 0 2px;list-style:none}.ds-line{position:relative;display:grid;place-items:center;min-width:40px;height:40px;padding:0 12px;border:1px solid var(--seam,#2c2f35);border-radius:var(--radius,2px);background:var(--raised,#22252a);color:var(--ink,#efece6);font:600 16px/1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.04em}.ds-line::after{content:'';position:absolute;left:6px;right:6px;bottom:-1px;height:2px;background:var(--ink,#efece6);opacity:.85}.ds-line-host::after{background:var(--accent,#6ab48a);opacity:1}.ds-line-away{color:var(--ink-3,#8a8d93)}.ds-line-away::after{opacity:.15}"
+    },
+    {
+      "name": "Go Live Step",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Steps that tick as they become true: waiting, now (accent edge), done (ink fill).",
+      "html": "<ol class=\"ds-steps\"><li class=\"ds-step\" data-state=\"done\"><span class=\"ds-mark\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><div><p class=\"ds-step-title\">Set up OBS</p><p class=\"ds-step-state\">Server and key are in</p></div></li><li class=\"ds-step\" data-state=\"now\"><span class=\"ds-mark\">2</span><div><p class=\"ds-step-title\">Start streaming</p><p class=\"ds-step-state\">Waiting for the picture</p></div></li><li class=\"ds-step\" data-state=\"wait\"><span class=\"ds-mark\">3</span><div><p class=\"ds-step-title\">Send the link</p></div></li></ol>",
+      "css": ".ds-steps{margin:0;padding:0;list-style:none;width:380px}.ds-step{display:grid;grid-template-columns:32px 1fr;gap:16px;padding:20px 0;border-bottom:1px solid var(--seam,#2c2f35)}.ds-step:last-child{border-bottom:0}.ds-step p{margin:0}.ds-mark{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--seam,#2c2f35);border-radius:var(--radius,2px);background:var(--panel,#1a1c20);color:var(--ink-3,#8a8d93);font:700 16px/1 var(--display,'Barlow Condensed',sans-serif);transition:background-color 200ms ease,border-color 200ms ease,color 200ms ease}.ds-step[data-state=done] .ds-mark{background:var(--ink,#efece6);border-color:var(--ink,#efece6);color:var(--ground,#111214)}.ds-step[data-state=now] .ds-mark{border-color:var(--accent,#6ab48a);color:var(--accent,#6ab48a)}.ds-step-title{margin-top:6px!important;font:600 18px/1.1 var(--display,'Barlow Condensed',sans-serif);letter-spacing:.02em;color:var(--ink,#efece6)}.ds-step[data-state=done] .ds-step-title{color:var(--ink-2,#aeafb2)}.ds-step[data-state=wait] .ds-step-title{color:var(--ink-3,#8a8d93)}.ds-step-state{margin-top:8px!important;font:400 15px/1.45 var(--body,Inter,sans-serif);color:var(--ink-2,#aeafb2)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Studio booth, after hours",
+    "overview": "The site is a broadcast booth after the lights are down. One lamp says whether the room is on air, the stream is the program monitor, and the people in the room are lit lines on a call board. It refuses the platform layout (top bar, rail, badge soup): the stream and the people lead, and controls, settings and stats sit behind a quiet menu until someone reaches for them.\n\nThe material is acoustic charcoal and anodized hardware. Panels are flat and set into one dark ground, divided by 1px seams, with barely-there 2px corners. Labels read like engraving on a console: condensed, small caps, widely tracked, dim. Ink is a warm white, never pure. The one light in the room is the ON AIR lamp; everything else is lit only by contrast. Motion is sparse: a chat line rising 3px as it arrives, quick color changes, a step's tick fading in, and nothing at all under reduced motion.\n\nThe system is dark only. There is no light theme and none is planned; `color-scheme: dark` is declared at the root. Each install sets its own site name and one channel accent; the booth itself does not change.",
+    "keyCharacteristics": [
+      "One charcoal ground, flat panels, 1px seams, 2px corners.",
+      "One red, one glow: the ON AIR lamp.",
+      "One channel accent, operator-chosen, for the primary action and the current selection.",
+      "Barlow Condensed for the lamp, titles and engraved labels; Inter for everything read at length and for every button.",
+      "One spacing unit (4px); every measure is a multiple of it.",
+      "Nothing is ever drawn over a playing stream."
+    ],
+    "rules": [
+      {
+        "name": "The One Red Rule",
+        "body": "The lamp's red is the lamp and nothing else. Errors, deletions and warnings never use a color: an error is plain ink with a small outlined warning mark beside it, and a destructive button is an ordinary key whose confirmation question is the warning.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Accent Rule",
+        "body": "The channel accent marks the one primary action on a screen and the current selection. It never tints a surface, a heading or an illustration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Engraved Voice Rule",
+        "body": "Barlow Condensed is for the lamp, titles and the engraved labels that name a field or a section. It never sets a button, a paragraph or a chat line.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence-Case Button Rule",
+        "body": "Buttons are Inter in sentence case at 14-15px, including the loud word. Uppercase belongs to the lamp, headlines and engraved labels.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Glow Rule",
+        "body": "Nothing glows but the ON AIR lamp. No accent glow, no hover glow, no colored shadows.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Flat Panel Rule",
+        "body": "Panels, modals and the menu sheet are flat: a seam and a lighter fill set them apart. A modal sits on the room dimmed to 72% black, not on a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep the ON AIR lamp the only red and the only glow on any surface.",
+      "**Do** give each screen exactly one loud word in the accent at full width; everything else is an ordinary key.",
+      "**Do** build depth from ground, panel and raised fills with 1px seams and 2px corners.",
+      "**Do** set every padding, gap and margin as a multiple of 4px.",
+      "**Do** keep buttons Inter in sentence case, 14px and 40px tall under a mouse, 15px and at least 44px on touch.",
+      "**Do** name small sections and fields with engraved labels: Barlow Condensed 12px, 0.14em, uppercase, Ink 3.",
+      "**Do** design the empty, offline, full and slow-storage states as deliberately as the live one, and replace the monitor's picture rather than overlaying it.",
+      "**Do** keep text inputs at 16px and honor reduced motion by stopping every animation and transition."
+    ],
+    "donts": [
+      "**Don't** add a light theme or light surfaces; the booth is dark only.",
+      "**Don't** use red, or any hue near the lamp, for errors, deletions, badges or an accent preset.",
+      "**Don't** draw anything over a playing stream: no chat overlay, badges, controls or captions on the picture.",
+      "**Don't** use drop shadows, accent glows or colored shadows for elevation.",
+      "**Don't** set buttons, paragraphs or chat in Barlow Condensed, or buttons in uppercase.",
+      "**Don't** use the accent to decorate; it marks the primary action and the current selection only.",
+      "**Don't** use pixel or dot-matrix fonts, gamer RGB, or religious imagery.",
+      "**Don't** fetch fonts or assets from a third party; every face is self-hosted."
+    ]
+  }
+}

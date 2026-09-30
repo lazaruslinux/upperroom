@@ -22,15 +22,15 @@ While a theater session is open:
   library of it is not what this is for.
 - **Clips are refused**, and say so, for the same reason.
 - **The game label is hidden.** Whatever you set as what you are playing is
-  about a broadcast, not a film night, so a session takes it off the home card
-  and out of the link preview until the session ends.
+  about a broadcast, not a film night, so a session takes it off the room's
+  slate and out of the link preview until the session ends.
 - **Chat is never wiped by a session.** Not between titles, and not when you
   end it. Chat belongs to the night rather than to one broadcast, so an evening
   that runs from a stream into a film reads as one conversation. The room
   clears at the START of a later broadcast, once the channel has been off air
   long enough to count as a different night.
 - **Going live announces once**, at the start of the session, rather than once
-  per title. Nobody wants a Discord ping per film.
+  per title. Nobody wants a notification per film.
 
 Your viewers see an **Intermission** card between titles instead of the offline
 card, a **Now showing** panel over the first couple of seconds of a title, and a
@@ -91,16 +91,16 @@ card plays the real stream rather than a still, so a viewer parked there costs
 the same as one watching and takes the same place in the room. It drops back to
 the still frame when the room is full or the tab is hidden. If that matters on
 your host's plan, lower `PROJECTOR_VIDEO_BITRATE`, or cap the audience under
-**Broadcast -> Room limit** on the dashboard (see
-`docs/06-accounts-and-chat.md`). The stream strip on the dashboard shows what
+the **room limit** on the dashboard's **Go live** screen (see
+`docs/06-accounts-and-chat.md`). The numbers under the room there show what
 the running broadcast has sent so far.
 
 ### Setting it up
 
-1. On your server's dashboard, open the **Connections** tab, find **Projector**
-   and press **Regenerate** to mint a key. Copy it.
-2. Copy your **stream key** and server address out of the **Stream key** panel
-   above it, exactly as you would for OBS.
+1. On your server's dashboard, open the **Connections** section, find
+   **Projector** and press **Regenerate the key** to mint a key. Copy it.
+2. Copy your **stream key** and server address from the first step of the
+   **Go live** screen, exactly as you would for OBS.
 3. On your media machine:
 
    ```
@@ -167,7 +167,7 @@ one modern core can hold at 1080p.
 
 Subtitles are **off by default**, on a channel that has been running for a year
 as well as a fresh one. **Enable subtitles (Unstable, might be out of sync)** in
-the dashboard's Theater panel turns them on: that is the default every play
+the dashboard's Theater panel (under **Connections**) turns them on: that is the default every play
 starts from, and it is remembered. The **Burn in subtitles** box beside the
 search overrides it for one showing, either way.
 
@@ -191,7 +191,7 @@ than leaving you with nothing playing.
 
 Two places, the same controls:
 
-- **The dashboard**, under **Theater** on the **Broadcast** tab. Start the
+- **The dashboard**, under **Theater** in the **Connections** section. Start the
   session, search your library, press play on a row, restart it without
   subtitles, stop the title, end the session.
 - **The watch page**, on a strip above chat, visible to admins only. Same
@@ -229,7 +229,9 @@ A normal evening:
 However a session ends, the room is told once: "Theater mode disabled." when
 you end it, "That was the end of it. Theater mode is off." when a title runs
 out. The "Stream ended." line that follows an ordinary broadcast is not said
-after a theater close, because the close has already said it in its own words.
+after a theater close, because the close has already said it in its own words,
+and "Stream started." is not said when a title goes on: the room is told what
+is showing instead.
 
 One session runs at a time, and starting a second is refused rather than
 quietly ignored.
@@ -245,9 +247,8 @@ server address, and nothing at all when no session is running. `/api/status`,
 which anyone signed in reads, is unchanged and says nothing about theater.
 
 Posters are stored on the gate's own data volume in `art/`, served by the gate
-to anyone signed in to the room (guests included, since the poster is part of
-what they are watching), and re-encoded on the way in so only pixels are
-written. They are deliberately not in the media store, so retention never treats
+to anyone signed in to the room, since the poster is part of what they are
+watching, and re-encoded on the way in so only pixels are written. They are deliberately not in the media store, so retention never treats
 a poster as something to prune and a poster never counts against the size cap.
 
 ## 11.5 Demo mode

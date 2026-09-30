@@ -11,17 +11,25 @@ page). There is nothing to run in a terminal.
 
 ## Letting people in with invites
 
-After setup you add everyone else with single-use invite codes, from **Access
-codes** on the dashboard's **People** tab, with the **Invites** tab selected:
+Everyone watches with an account; there is no way in without one. After setup
+you add everyone else with single-use invite codes, from **Invite codes** in the
+dashboard's **People** section:
 
 - **Generate a code** with the **Generate code** button. You can add an optional
   label ("who it's for") to help you keep track. Each code is a short, readable
   string of three words like `ember-quiet-harbor`.
-- **Share the code** with one person, however you like. There is no email.
-- They **redeem it** from the login page: under the sign-in form is a "have an
-  invite?" link that reveals a short join form (code, username, display name,
-  password). Redeeming makes them a **viewer** account and signs them in. A code
-  can never create an admin or a moderator.
+- **Send it as a link.** The new code shows with a **Copy invite link** button,
+  and every code still good has a **Copy link** on its row. The link looks like
+  `https://watch.example.com/join#ember-quiet-harbor`. Opening it shows the
+  join form with the code already filled in; somebody already signed in is
+  taken home instead. Pasted into a chat app it previews as an invite to your
+  site, and never shows the code.
+- **Or share just the code** with one person, however you like. There is no
+  email. They **redeem it** from the login page: under the sign-in form is a
+  "Have an invite code?" link that reveals a short join form (code, username,
+  display name, password).
+- Redeeming makes them a **viewer** account and signs them in. A code can never
+  create an admin or a moderator.
 - Each code works **once**. After it is redeemed the page shows who used it and
   when. You can **Revoke** a code that has not been redeemed yet, which keeps the
   row for the record but stops it from ever being used.
@@ -31,67 +39,37 @@ codes** on the dashboard's **People** tab, with the **Invites** tab selected:
   code somebody is still holding. Removing a code does not affect the account it
   created; the account keeps its own record of where it came from.
 
-## Letting someone watch without an account: guest passes
+The code in a link sits after the `#`. Browsers never send that part of an
+address to a server, so it does not end up in your server's logs or in a link
+preview, and the page takes it off the address bar as soon as it has read it.
+Treat an invite link like the code it carries: whoever opens it first gets the
+account.
 
-An invite makes somebody a member forever. A **guest pass** is for the other
-case: one person, one broadcast, no account.
-
-- **Generate a batch** on the **Guest passes** tab of **Access codes**, on the
-  dashboard's **People** tab. Set how many you
-  want; each one is single use. They look the same as invite codes.
-- **Copy all unused** puts the whole batch on your clipboard, one per line. The
-  intended shape is one group message with several codes in it: whoever gets
-  there first takes one.
-- **Send people to `/guest`**. They type the code, the name they want in chat,
-  and answer a small question. Then they are watching.
-- **The half hour starts when they redeem it**, not when you generate it, so you
-  can prepare passes days in advance.
-- A pass that has been used, or revoked, can be **removed**, and there is a
-  **Clear used passes** button for the same reason as the invites one.
-
-What a guest can and cannot do:
-
-- **Can**: watch the live stream, and chat.
-- **Cannot**: clip, like, comment, earn points, or see the recordings and clips
-  library. They have no settings page, because there is nothing on it that would
-  outlast them.
-- **Can be moderated exactly like anyone else.** A guest can be timed out,
-  banned, `/del`ed and `/purge`d. This is the reason a redeemed pass creates a
-  real account behind the scenes rather than some separate kind of visitor: a
-  stranger who can talk in your chat and cannot be moderated would be worse than
-  no guests at all.
-
-When the time runs out their video stops, they get a sign-in prompt, and a few
-minutes later the account deletes itself along with anything attached to it.
-
-The question on the guest form is there to keep casual automation out. It is
-generated and checked by your own server, so there is no third party involved
-and nothing is sent anywhere. It will not stop somebody determined; what stops
-them is that redemption is rate limited per address and the codes are drawn from
-a space of about thirty million.
+Once somebody has an account, the watch link is all they need: see **Send the
+link** under the dashboard below.
 
 ## Managing people
 
 If your account has the admin flag, sign in and open the dashboard at `/admin`
-(there is a **dashboard** link in the site nav on every page). On the
-**People** tab, the **Manage users** button opens the list, and **Bans** opens
-the same window on the list of who is barred. With no terminal you can:
+(**Dashboard** in the menu on every page). Its **People** section lists every
+account, then who is banned, then the invite codes. With no terminal you can:
 
-- **Create an account** with the small **+** above the list. Enter a username and a
-  password, optionally a display name, tick admin if you want, and it is made.
-- **Edit any account**: reset its password, set the email for go-live alerts, or
-  grant and remove the admin or moderator role (the two are independent).
-- **Delete an account**, which also clears its watch history and chat log.
+- **Create an account** with **New account**. Enter a username and a password,
+  optionally a display name, tick admin if you want, and it is made.
+- **Edit any account** with **Edit**: reset its password, or grant and remove
+  the admin or moderator role (the two are independent).
+- **Delete an account**, from its **Edit** panel, which also clears its watch
+  history and chat log.
 - See each person's **watch activity** (when they watched and for how long) and
   their **chat history** from the last 7 days, under the **Activity** button.
-- Review and lift **bans**.
-- Generate, copy and revoke **invites**.
+- Review bans and **Lift the ban** on any of them.
+- Generate, copy, revoke and remove **invites**.
 
 Two things you deliberately cannot do here.
 
 You cannot change somebody's **display name**. You choose the starting one when
 you create the account, and after that the name is theirs: they change it in
-**Settings** on their own home page. The server refuses a rename from here, so
+**Options** in the menu. The server refuses a rename from here, so
 nobody's name moves by accident or by habit. It is not a guarantee against a
 determined admin, who can always reset a password and sign in as the account; it
 is a rule about how the software expects you to behave. If a name is a genuine
@@ -108,21 +86,54 @@ yourself out.
 
 ## The admin dashboard
 
-`/admin` opens with your own watch page in a frame, and the controls under it
-are grouped in five tabs:
+`/admin` always opens on **Go live**, the one screen a night is run from. On
+the left, three steps, each ticking as it becomes true:
 
-- **Broadcast**: the **Room limit**, and the theater session when theater is
-  switched on (`docs/11-theater.md`).
-- **Content**: the library of recordings and clips you review, pin and delete,
-  and the **Storage** limits that decide how long they last.
-- **People**: accounts, bans, invite codes and guest passes.
-- **Channel**: your site name, description and accent color, **Chat
-  moderation** (slow mode and banned words), and **Go-live notifications**.
-- **Connections**: the **Stream key**, the projector, and the **Overlay** URL.
+1. **Settings in OBS**: the **Server** and **Stream Key** exactly as OBS names
+   its fields (Settings, Stream, Service: Custom), each with **Copy**, the key
+   hidden until **Show**. It ticks once OBS has gone live with the current key.
+   **Regenerate the key** makes a new one (it asks first); OBS cannot go live
+   again until you paste the new key into it, so the step unticks until it
+   has.
+2. **Start Streaming in OBS**: ticks while you are on air, with the time you
+   went on and whether the broadcast is being recorded (or that the library is
+   not answering, in which case it is saved once it is back).
+3. **Send the link**: **Copy watch link** copies your plain `/watch` address,
+   which opens straight into the room for anyone with an account. It lights
+   once you are on air and ticks once the link is copied. It works off air too,
+   but a chat app builds its preview when the link is pasted, so a link sent
+   before you are on air shows the offline card rather than tonight's title and
+   a live frame. If the browser will not copy, the link is shown under the
+   button, selected, to copy by hand.
 
-The row directly under the frame is what is on tonight: the stream title and
-the game. Both feed the card on the home page and the preview anyone gets when
-they share the watch link.
+On the right is **the room**: your own watch page in a frame (the picture and
+the chat; **Chat only** drops the picture, **Sound** turns its sound on, and the
+arrow opens the room in a tab of its own), then the slate with tonight's title
+and game (**Edit** changes them; **No game** clears the game), the call board
+of who is in the room, and three numbers the server itself counts: how many are
+**watching** the video, the **room limit** (**Change** sets it), and how much
+this broadcast has **sent**. Off air the same screen shows the room dark,
+exactly as a viewer sees it. On a phone it all stacks: the steps and **Copy
+watch link** first, the room under them.
+
+Everything else is a section, along the right of the strip on a wide screen
+and at the top of the menu on anything narrower:
+
+- **People**: accounts, bans and invite codes.
+- **Library**: **Storage** (what the media store is using, and the limits that
+  decide how long things last), then the recordings and clips you review, pin,
+  share and delete.
+- **Channel**: your site name, description and accent color, and **Go-live
+  notifications**: whether going live notifies anyone, how many devices will
+  get it, and a test that goes only to your own devices (`docs/04-run.md`).
+- **Chat rules**: slow mode and the banned words list.
+- **Connections**: the OBS **chat overlay** URL, and, when theater is switched
+  on, the theater session and the projector (`docs/11-theater.md`).
+- **Stats**: the numbers the app keeps, at `/analytics`.
+
+The title and the game feed the card on the home page and the preview anyone
+gets when they share the watch link. A link to `/admin#people` (or any
+section's name) opens that section.
 
 ## Moderators
 
@@ -134,8 +145,9 @@ The change takes effect immediately, and that person's messages then carry a
 `mod` tag. `/unmod <username>` removes it. The host's own messages carry a small
 red camera instead, so it is always clear who is streaming.
 
-A moderator gets a **Mod** link on the home page leading to `/mod`, a trimmed
-dashboard where they can review watch and chat history and lift bans they set.
+A moderator gets **Moderation** in the menu, leading to `/mod`, a trimmed
+dashboard where they can review watch and chat history, read the room's recent
+chat, and lift bans they set.
 They can also rename any clip, on the clip's own page; everyone else can rename
 only the clips they made themselves.
 They cannot add, edit, or delete accounts, and admin accounts are hidden from
@@ -174,8 +186,8 @@ all reach it like any other line.
 
 ### Slow mode and banned words
 
-Two settings under **Chat moderation**, on the dashboard's **Channel** tab,
-apply to everyone at once. Slow mode sets a minimum number of seconds between
+Two settings in the dashboard's **Chat rules** section apply to everyone at
+once. Slow mode sets a minimum number of seconds between
 one viewer's messages; moderators and admins are exempt. A new install starts
 at 2 seconds, which is short enough that a conversation never notices it and
 long enough to take the edge off someone hammering the enter key. Set it to 0
@@ -183,12 +195,12 @@ to turn it off, or raise it when chat gets away from you. An install that was
 already running before this default arrived keeps whatever it had, so nothing
 changes under you on an update.
 
-The banned words list sits behind **Open banned words list**, rather than on the
-dashboard itself, because a new install ships with about a hundred entries and
+The banned words list stays folded behind **Show the list**, rather than open on
+the page, because a new install ships with about a hundred entries and
 most of them are not things you want on screen every time you open the page. It
 is one entry per line, or separated by commas, and a message containing any of
 them is refused, with only the sender told why. The list is admin-only and never
-leaves the dashboard. It has its own Save inside the modal, so closing without
+leaves the dashboard. It has its own **Save list**, so folding it away without
 saving changes nothing, and unlike slow mode it applies to everybody, moderators
 and you included. It also covers a paid highlight, so spending points is not a
 way around it.
@@ -213,47 +225,52 @@ starts refusing ordinary messages, and a viewer who cannot say "class" has no
 idea why and will not tell you, whereas a message that slips through is one your
 moderators remove in seconds.
 
-## The top bar
+## The lamp strip and the menu
 
-Every signed in page except the watch page carries the same bar, in the same
-order. Left to right:
+Every page carries the same strip across its top edge. On the left, the
+**menu** key and the **site name**; on the right (in the middle, on a wide
+screen), the **lamp**. The lamp reads **ON AIR**, lit red, while you are live,
+with a clock counting how long you have been on, and dark **OFF AIR** glass
+when you are not. That red is the lamp's alone: nothing else on the site uses
+it.
 
-- **The site name**, with the little u glyph beside it. Together they are the
-  way back to the home page.
-- **Home**, **Browse** and **Options**. Home is the live card, which plays the
-  broadcast muted while you are on the page: click it to join with sound and
-  chat. Browse is the archive of past broadcasts and clips, and Options is your
-  own account. The
-  page you are on is marked rather than dropped from the bar, so the bar never
-  changes shape as you move around.
-- **Search**, in the middle. It matches the titles of past broadcasts and clips
-  as you type and opens the one you pick. It searches the archive, not chat.
-- **Your points**, as a `pts N` chip, with a note on how they are earned.
-  Anyone with no balance to show does not get the chip at all. Spending points
-  is still done from the chat bar on the watch page.
-- **Your account**, a pill holding your avatar and a menu icon. It opens the
-  account menu, which names you and then offers Options, **Dashboard** and
-  **Analytics** for an admin, **Mod** for a moderator who is not one, and
-  **Sign out**.
+The site name goes home. The menu holds:
 
-On a phone the bar stays one row. The three page links move to the top of the
-account menu, the search field folds down to its magnifier and expands over the
-bar when tapped, and on the narrowest screens the glyph carries the site name on
-its own.
+- **The room**, `/watch`.
+- **Past broadcasts**, `/browse`: the recordings and clips, with a search that
+  matches their titles as you type.
+- **Options**, your own account.
+- **Dashboard** and **Stats** for an admin, **Moderation** for a moderator who
+  is not one. On the dashboard itself the menu carries its sections instead.
+- **Sign out**.
+
+It names you at the top, with your points. It opens with a tap or a click,
+works from the keyboard (arrow keys move, Escape closes), and closes when you
+tap anywhere else.
+
+Signing in takes you to the room if you are live and to **home** if you are
+not. Home is the place between broadcasts: when you were last on air, a
+**Notify me when it goes live** chip for a device that is not signed up yet,
+the last broadcast, and the latest clips. While you are
+live it shows a current frame and one button into the room.
 
 ## Options, your own account
 
-`/options` is where anyone signed in changes their own things: the **theme**,
-the **go-live email** and whether they want one, their **display name**,
-**avatar** and **bio**, and their **password**. This used to be a panel that
-dropped out of the top bar; it is a page now, and the bar carries a link to it.
+`/options` is where anyone signed in changes their own things: their **chat
+style**, whether **this device** is notified when the stream goes live, their
+**display name**, **picture** and **bio**, and their **password**.
 
-The gear on the watch page is a different thing and stays where it is: it is for
-what only affects how chat looks to that person, the theme, their chat font, and
-their name and message colors. The font choices are Default (Inter), JetBrains
-Mono, Space Grotesk, IBM Plex Sans and Sora, each chip rendered in its own face,
-and under them a mock of your own chat line shows the font and both colors
-together before you send anything.
+Notifications are per device, not per account: turn them on on each phone or
+computer that should get them. The browser asks for permission only once the
+switch is tapped, and the line under it says when it cannot work there (an
+iPhone or iPad needs the site added to the Home Screen first; a browser that
+was told no has to be allowed in its site settings). Nobody is asked for an
+email address, anywhere.
+
+Chat style is the font and the colors your lines carry for everyone. The font
+choices are Default (Inter), JetBrains Mono, Space Grotesk, IBM Plex Sans and
+Sora, each drawn in its own face, and under them a mock of your own chat line
+shows the font and both colors together before you send anything.
 
 ## Changing your own password
 
@@ -309,12 +326,13 @@ docker compose exec gate python manage.py unmod alice
 Notes:
 
 - Usernames are stored in lower case. The display name is what others see in
-  chat and in the watching list. If you do not pass `--name`, the username is
+  chat and on the call board. If you do not pass `--name`, the username is
   used as the display name.
 - If you do not pass `--password`, you are prompted for it without it showing on
   screen, which is the safer way.
 - The admin flag marks that account as the host, whose messages carry a small
-  red camera in chat, and unlocks the admin dashboard at `/admin` described
+  camera in the channel's accent color and whose line on the call board is
+  marked the same way, and unlocks the admin dashboard at `/admin` described
   above. The moderator role adds a `mod` tag and the `/mod` dashboard instead.
 
 ## Chat
@@ -333,12 +351,14 @@ restart safe: OBS crashing and coming back keeps the room, while tomorrow
 evening starts clean. A night that never gets a sequel is swept after
 `SELFSTREAM_CHAT_IDLE_WIPE`, a day by default. When a wipe does happen the room
 does not just fall silent: a short line says why, so a viewer mid-conversation
-is not left assuming something broke.
+is not left assuming something broke. A broadcast starting and ending is said
+in chat too ("Stream started.", "Stream ended."), the start after any clear, so
+the newest line in a live room never describes the last broadcast. The OBS
+overlay shows neither.
 
-Everyone can pick their own name and message colors from the gear on the watch
-page. The server checks the choice rather than trusting it: a color too dark to
-read against the panel is refused, and so is the red kept for the LIVE tag and
-the host's camera mark.
+Everyone can pick their own name and message colors on the options page. The
+server checks the choice rather than trusting it: a color too dark to read
+against the panel is refused, and so is the red kept for the ON AIR lamp.
 
 Separately, the gate keeps an admin-only copy of chat in its database for the
 last 7 days, so you can review history from the dashboard. It is purged
@@ -348,31 +368,40 @@ automatically after that window. Change the retention by setting
 Messages are limited to 500 characters, and there is a small flood guard that
 drops anything past five messages in three seconds.
 
-## The chat bar
+## The room
 
-The bar across the top of the chat panel holds five things:
+Top to bottom on a phone: the lamp strip, the stream, the **slate** under it
+(the stream title, what you are playing, and the **Sound** and full screen
+keys), the **call board** of who is here, then chat, with the message box at
+the bottom. On a wider screen chat moves into a column beside the stream, and a
+key on the slate hides it when you want the picture to have the width; the
+choice is remembered in that browser.
 
-- **the house icon**, at the far left, which goes back to the home page
-- **the collapse arrow**, which folds the whole panel down to a
-  thin rail so the picture gets the width. On a phone held upright it folds down
-  to its own bar instead, since there the chat costs height rather than width.
-  The choice is remembered in that browser.
-- **Stream Chat**, which is a label and nothing else
-- **the people icon**, which opens the list of everyone watching
-- **the gear**, which opens the settings panel
+Nothing is ever drawn over the picture. Browsers start a stream muted, so
+**Sound** is on the slate rather than floating on the video, and full screen
+hands you the player's own controls.
 
-The house icon is for members only. A guest has no home page to go to, and the
-dashboard shows this page in a frame, so in both cases the button is dropped
-from the bar rather than left as a link to nowhere. Collapsing the panel is
-still the way to give the picture the width without leaving the stream.
+Off air the stream's place says so, with when you were last on, and under it a
+quiet **Notify me when it goes live** chip (only on a device that can take
+notifications and has not turned them on) and a link to the last broadcast.
+Tapping the chip is what lets the browser ask; nothing pops up on its own.
 
-## Presence, who is watching
+Beside the message box: the **scissors** clip the last stretch of the stream
+(`docs/04-run.md`), and the **star** opens your points balance and the
+highlight (`docs/09-points.md`).
 
-The watching list is the safety and fun feature. Everyone signed in can see:
+Host and moderators can delete a single message: point at it with a mouse, or
+press and hold it on a phone, and a small delete key appears.
 
-- the names of everyone currently watching, with "(you)" next to their own
-- the count, on the people icon's tooltip: "3 watching" while live, "3 in chat"
-  between streams, because people hang around in the room either way
+## Presence, who is in the room
+
+The call board is the safety and fun feature. Everyone signed in can see:
+
+- a lit square for each person in the room, the host's marked in the channel
+  accent. Tap one for that person's card. On a
+  wide screen the squares carry names.
+- somebody who has just left, dimmed, for a few minutes after they go
+- the count, at the right of the board
 - a short line in chat when someone joins or leaves
 
 Those lines are one per person, not one per tab, and a brief disappearance never
@@ -384,12 +413,11 @@ glance at another app is silent and only a real leaving is announced.
 
 **The channel owner is never announced, arriving or leaving.** They are in and
 out of their own room all evening, often only to read it, and a running
-commentary on the host coming and going is noise. They still appear in the
-watching list and still count towards it: silent is not invisible. Everyone
-else, moderators included, is announced as before.
+commentary on the host coming and going is noise. They still appear on the
+board and still count towards it: silent is not invisible. Everyone else,
+moderators included, is announced as before.
 
-Click the people icon at the top of the chat panel to show or hide the full list
-of names. It updates the moment someone opens or closes the page. Because every
+The board updates the moment someone opens or closes the page. Because every
 viewer has a named account, you always know exactly who is on the other side of
 the stream.
 
@@ -400,25 +428,23 @@ number of viewers is what your bandwidth bill is made of. At the 1080p and
 6000 Kbps the theater projector publishes, that is roughly **2.9 GB per person
 per hour**; at 8000 Kbps from OBS, roughly 3.9 GB.
 
-**Broadcast -> Room limit** on the dashboard sets how many people may watch at
-once. `0`, the default, means no limit. Past the limit, the video is refused and
+The **room limit**, in the numbers under the room on the dashboard's **Go live**
+screen (press **Change**), sets how many people may watch at once. `0`, the default, means no limit. Past the limit, the video is refused and
 the page says the room is full; the person is not signed out and **chat still
 works for them**, so they can wait in the room and the video starts on its own
 when a place opens up. A place opens up about thirty seconds after somebody
 stops watching.
 
-The preview playing in the home card is the real stream, so somebody sitting on
-the home page counts exactly like somebody watching: same bandwidth, same place
-in the room. When the room is full the preview is refused like any other viewer
-and the card quietly falls back to the still frame, which is also what happens
-when the tab is hidden. Nothing keeps playing in a tab nobody is looking at.
+The home page shows a still frame of the stream rather than playing it, so
+nobody sitting on home takes a place in the room or costs you a viewer's
+bandwidth.
 
 Two things the limit deliberately does not do. It never counts or refuses an
 admin, so you cannot lock yourself out of your own broadcast. And it does not
 touch saved broadcasts or clips, which are files served off the disk and cost
 nothing per viewer.
 
-The stream strip at the top of the dashboard shows what the current broadcast
-has sent while it runs, so the limit can be set against a real number rather
+The same numbers show what the current broadcast has **sent** while it runs,
+so the limit can be set against a real number rather
 than a guess. That figure is for this broadcast, not for the month; your host's
 control panel is where the monthly total lives.

@@ -15,9 +15,7 @@ from fastapi.responses import JSONResponse
 
 import db
 import wordfilter
-from auth import (
-    GUEST_REFUSED, client_ip, member_user, session_user, too_many_redeems,
-)
+from auth import client_ip, session_user, too_many_redeems
 from config import HIGHLIGHT_COST, MAX_MESSAGE_LENGTH
 from hub import hub
 
@@ -30,24 +28,17 @@ router = APIRouter()
 def points(request: Request):
     # Any signed-in viewer: their own balance and the fixed highlight cost, so the
     # watch page can show the points chip and drive the highlight composer.
-    # Guests never accrue points, so they have no balance to show and no
-    # highlight to buy. Refused rather than shown as zero, which would read as a
-    # thing they could earn.
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     return {"points": db.get_points(user["username"]), "cost": HIGHLIGHT_COST}
 
 
 @router.post("/api/redeem")
 async def redeem(request: Request):
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     username = user["username"]
     # A highlight spends points and posts to chat, so it is a write path and gets
     # its own per-address rate limit, checked before any work so a flood cannot

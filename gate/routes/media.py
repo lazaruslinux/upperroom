@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 import db
 from auth import (
-    GUEST_REFUSED, admin_user, may_act_on, member_user, session_user,
+    admin_user, client_ip, may_act_on, session_user, too_many_comments,
 )
 from config import (
     CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
@@ -230,6 +230,53 @@ def og_image():
     return Response(status_code=404)
 
 
+def _join_og_block(request):
+    """The preview tags for an invite link, /join#<code>. The code rides after
+    the #, which no fetcher sends, so the card can only say whose room it is.
+    Operator-entered text, so every value is escaped."""
+    info = db.get_stream_info()
+    site = info["site_name"] or "upperroom"
+    title = f"You're invited to {site}"
+    description = info["stream_description"] or "Make an account to watch."
+    image = _absolute(request, "/assets/icons/og-default.png?v=1")
+    page = _absolute(request, "/join")
+
+    def esc(value):
+        return html.escape(str(value), quote=True)
+
+    return "\n  ".join([
+        '<meta property="og:type" content="website">',
+        f'<meta property="og:site_name" content="{esc(site)}">',
+        f'<meta property="og:title" content="{esc(title)}">',
+        f'<meta property="og:description" content="{esc(description)}">',
+        f'<meta property="og:url" content="{esc(page)}">',
+        f'<meta property="og:image" content="{esc(image)}">',
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:title" content="{esc(title)}">',
+        f'<meta name="twitter:description" content="{esc(description)}">',
+        f'<meta name="twitter:image" content="{esc(image)}">',
+        # An invite is meant for one person, not for a search index.
+        '<meta name="robots" content="noindex, nofollow">',
+    ])
+
+
+@router.api_route("/join", methods=["GET", "HEAD"])
+def join_page(request: Request):
+    """The sign-in page as an invite link, rendered so its preview can say whose
+    room it is. Public the same way /watch is: a fetcher has no session. The
+    page opens the sign-up form and reads the code from the fragment itself."""
+    try:
+        head, _, tail = _template("index.html")
+    except OSError:
+        logger.warning("sign-in page unreadable under %s", WEB_DIR, exc_info=True)
+        return Response(status_code=404)
+    body = head if tail is None else head + _join_og_block(request) + tail
+    # No cache header here, for the same reason the watch page sets none.
+    return HTMLResponse(body)
+
+
 def _clip_og_block(request, clip, token):
     """The preview tags for one published clip: what it is called, whose channel
     it came off, what was being played, and a frame of the clip itself.
@@ -321,12 +368,8 @@ _STORE_AWAY_UNSHARE = (
 
 
 def _signed_in(request):
-    """Whether this request may see the library.
-
-    Members only: the recordings and clips, and the chat replay attached to
-    them, are not part of what a guest pass buys. A guest is watching a
-    broadcast, not browsing an archive of the ones they missed."""
-    return member_user(request) is not None
+    """Whether this request may see the library: any signed-in account."""
+    return session_user(request) is not None
 
 
 def _media_summary(row, kind):
@@ -400,7 +443,7 @@ def get_clip(clip_id: int, request: Request):
 
 @router.post("/api/vods/{vod_id}/view")
 def view_vod(vod_id: int, request: Request):
-    user = member_user(request)
+    user = session_user(request)
     if not user:
         return Response(status_code=401)
     if not db.get_vod(vod_id):
@@ -410,7 +453,7 @@ def view_vod(vod_id: int, request: Request):
 
 @router.post("/api/clips/{clip_id}/view")
 def view_clip(clip_id: int, request: Request):
-    user = member_user(request)
+    user = session_user(request)
     if not user:
         return Response(status_code=401)
     if not db.get_clip(clip_id):
@@ -434,13 +477,9 @@ def clip_chat(clip_id: int, request: Request):
 
 @router.post("/api/clip")
 async def create_clip_endpoint(request: Request):
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    # A clip outlives the broadcast and carries its maker's name, so it needs an
-    # account that will still be there tomorrow.
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     body = await request.json()
     # The instant the viewer pressed Clip, as epoch seconds, taken from what the
     # player was actually showing. Optional: a browser that cannot work it out
@@ -474,11 +513,9 @@ async def rename_clip(clip_id: int, request: Request):
     """Name a clip after it exists. The watch page saves first and asks for a
     name second, so the clip is never lost to a slow typist; the clip's own page
     offers the same edit later."""
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     clip = db.get_clip(clip_id)
     if not clip:
         return JSONResponse({"error": "No such clip."}, status_code=404)
@@ -571,10 +608,9 @@ def shared_clip(token: str):
 
 
 # ---- Likes and comments ---------------------------------------------------
-# Accounts only. Guests may watch and chat, and both of these outlive a guest's
-# half hour, so they are refused the same way clipping is. Deliberately separate
-# from the chat replay, which is untouched: the replay is what was said live,
-# this is what people say afterwards.
+# Accounts only, like everything else. Deliberately separate from the chat
+# replay, which is untouched: the replay is what was said live, this is what
+# people say afterwards.
 
 _KINDS = {"vods": "vod", "clips": "clip"}
 
@@ -589,7 +625,7 @@ def get_reactions(plural: str, ref_id: int, request: Request):
     kind = _KINDS.get(plural)
     if not kind:
         return Response(status_code=404)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
         return Response(status_code=401)
     if not _media_exists(kind, ref_id):
@@ -609,11 +645,9 @@ async def set_like(plural: str, ref_id: int, request: Request):
     kind = _KINDS.get(plural)
     if not kind:
         return Response(status_code=404)
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     if not _media_exists(kind, ref_id):
         return JSONResponse({"error": "No such item."}, status_code=404)
     try:
@@ -630,11 +664,9 @@ async def post_comment(plural: str, ref_id: int, request: Request):
     kind = _KINDS.get(plural)
     if not kind:
         return Response(status_code=404)
-    if not session_user(request):
-        return JSONResponse({"error": "Sign in first."}, status_code=401)
-    user = member_user(request)
+    user = session_user(request)
     if not user:
-        return JSONResponse({"error": GUEST_REFUSED}, status_code=403)
+        return JSONResponse({"error": "Sign in first."}, status_code=401)
     if not _media_exists(kind, ref_id):
         return JSONResponse({"error": "No such item."}, status_code=404)
     # A comment is a chat message by another name, so it obeys the same
@@ -647,6 +679,13 @@ async def post_comment(plural: str, ref_id: int, request: Request):
     if hub.is_timed_out(user["username"]):
         return JSONResponse(
             {"error": "You are timed out."}, status_code=403
+        )
+    # Per address, like every other public write, so it holds however many
+    # sessions one caller has.
+    if too_many_comments(client_ip(request)):
+        return JSONResponse(
+            {"error": "Too many comments. Wait a minute and try again."},
+            status_code=429,
         )
     body = await request.json()
     text = str(body.get("text") or "").strip()[:MAX_COMMENT_LENGTH]
@@ -661,7 +700,7 @@ def delete_comment(comment_id: int, request: Request):
     """An author may remove their own; a moderator or admin may remove any.
     Soft delete, so the thread shows that something was removed rather than
     silently closing the gap."""
-    user = member_user(request)
+    user = session_user(request)
     if not user:
         return JSONResponse({"error": "Sign in first."}, status_code=401)
     comment = db.get_comment(comment_id)

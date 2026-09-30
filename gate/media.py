@@ -101,15 +101,15 @@ async def stream_watcher():
                 _watch.update(last_size=-1, no_growth=0, attempts=0,
                               next_retry_at=0.0)
                 plan = theater.stream_transition(True, theater.is_active())
-                await wipe_if_new_night()
+                await open_the_broadcast(plan)
                 if plan["record"]:
                     await start_recording()
                 else:
                     logger.info(
                         "theater session running: not recording this stream"
                     )
-                # Announce in the background so a slow webhook or mail relay never
-                # delays the status poll. notify_live enforces its own cooldown.
+                # Announce in the background so a slow push service never delays
+                # the status poll. notify_live enforces its own cooldown.
                 if plan["notify"]:
                     asyncio.create_task(notify_live())
                 if plan["state"]:
@@ -783,6 +783,15 @@ async def wipe_if_new_night():
     if not last or int(time.time()) - last < NIGHT_GAP_SECONDS:
         return
     await hub.wipe(reason="new_night")
+
+
+async def open_the_broadcast(plan):
+    """Chat's side of going live: clear it if this is a new night, then say
+    the stream started. In that order, so the newest line in the room is never
+    the last broadcast's "Stream ended." line."""
+    await wipe_if_new_night()
+    if plan["announce_start"]:
+        await hub.narrate("Stream started.")
 
 
 async def sweep_idle_chat():

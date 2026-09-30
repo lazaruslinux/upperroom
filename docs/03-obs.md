@@ -11,14 +11,16 @@ In OBS, open Settings, then Stream.
 - Server: `rtmp://watch.example.com:1935`
 - Stream Key: copy it from the admin dashboard
 
-Sign in as an admin, open the dashboard, and find the Stream key panel under
-**Connections**. It shows
-the exact server and stream key to paste here; the key looks like
-`live?pass=...`. Use the Copy key button to grab it, and Show to reveal it. The
-stream key carries the publish credentials, which is how the server knows the
-stream is allowed. Treat it like a password, and regenerate it there
-if it ever leaks (a live broadcast keeps running; the next connection needs the
-new key). The word `live` at the start is the stream path and must stay as is,
+Sign in as an admin and open the dashboard. It opens on **Go live**, and its
+first step, **Settings in OBS**, has a **Server** and a **Stream Key** field
+named exactly as OBS names them, each with a **Copy** button: copy each one
+into the box of the same name here. The key looks like `live?pass=...` and
+stays hidden until you press **Show**. The step ticks the first time OBS goes
+live with that key, so you can see at a glance that OBS has it. The stream key
+carries the publish credentials, which is how the server knows the stream is
+allowed. Treat it like a password, and use **Regenerate the key** under it if
+it ever leaks (a live broadcast keeps running; the next connection needs the
+new key, and the step stays unticked until OBS has used it). The word `live` at the start is the stream path and must stay as is,
 because the rest of the app expects a path called `live`. It is not the site
 name you set in the dashboard: that one is your branding and you can change it
 whenever you like, whereas this one is a fixed part of the publish URL.
@@ -49,8 +51,8 @@ every viewer the stream exactly as you send it, so whatever you set here is what
 each of them downloads. At 8000 Kbps that is about 3.9 GB per person per hour,
 at 6000 Kbps about 2.9 GB. Multiply by however many people watch and by how long
 you are on, and that is your bandwidth for the night. If that number is
-uncomfortable, the two levers are this setting and the room limit under
-Broadcast on the dashboard (see `docs/06-accounts-and-chat.md`).
+uncomfortable, the two levers are this setting and the room limit on the
+dashboard's Go live screen (see `docs/06-accounts-and-chat.md`).
 
 Your own upload is one copy of the stream and nothing more, however many people
 are watching: viewers pull from the server, never from you.
@@ -70,17 +72,25 @@ the same thing Twitch and YouTube do.
 ## 3.4 Go live
 
 Click Start Streaming in OBS. Within a few seconds the watch page will switch
-from the offline card to your video. If it does not, see the troubleshooting
-section in `docs/04-run.md`.
+from the offline card to your video, and on the dashboard the second step,
+**Start Streaming in OBS**, ticks and says since when and whether it is being
+recorded. If it does not, see the troubleshooting section in `docs/04-run.md`.
+The third step, **Send the link**, lights once you are on air: **Copy watch
+link** copies your plain `/watch` address, and anyone with an account opens it
+straight into the room. It works off air too, but send it once you are on air:
+a chat app builds its preview the moment the link is pasted, so a link sent
+early shows the offline card instead of tonight's title and a live frame. The
+step ticks once the link is copied. Someone without an account needs an invite
+link first (`docs/06-accounts-and-chat.md`).
 
-Then open the dashboard. The top of it is your own watch page: the video, the
-chat and the watching list, so you can keep an eye on the room without a second
-tab. **Video + chat** and **Chat only** switch between the two; the choice is
-remembered on that browser. Everything below the frame is the controls.
+Beside the steps is the room: your own watch page, with the picture and the
+chat, so you can keep an eye on it without a second tab. **Chat only** drops
+the picture (the choice is remembered on that browser), and **Sound** turns
+its sound on. Under it, the call board shows who is here.
 
-The row under the frame is what is on tonight: **Title** is what this broadcast
-is called, **Playing** is the game. Type a game, or pick one you have used
-before, and press Set; **No game** clears the game on its own. The two are what
+The slate under the picture is what is on tonight: the title this broadcast is
+called and the game. Press **Edit**, type a game or pick one you have used
+before, and **Save**; **No game** clears the game on its own. The two are what
 a chat app shows when someone pastes your watch link:
 
 ```

@@ -117,7 +117,7 @@ class Hub:
             self._watchers.discard(socket)
 
     def add_watcher(self, socket):
-        """Seat a read-only overlay socket. It receives future broadcasts but is
+        """Add a read-only overlay socket. It receives future broadcasts but is
         absent from presence, the watching count, and every viewer list."""
         self._watchers.add(socket)
 
@@ -376,11 +376,9 @@ class Hub:
     async def disconnect_user(self, username, code=4401):
         """Close every socket belonging to one user.
 
-        Needed because a chat socket is long lived: checking a guest's expiry
-        when they connect only covers guests who arrive already expired, and the
-        interesting case is the guest who is sitting in chat when their pass
-        runs out. Their video stops on its own (the next segment fails
-        /api/verify) but the socket would happily stay open for hours.
+        Needed because a chat socket is long lived: a deleted account's video
+        stops on its own (the next segment fails /api/verify) but the socket
+        would happily stay open for hours.
 
         Closing is enough on its own; leave() runs from the socket's own
         disconnect handler, so presence and the watch session are tidied up

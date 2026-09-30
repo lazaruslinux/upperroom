@@ -1,20 +1,36 @@
-// Moderator dashboard. A moderator can review watch and chat history and lift
-// bans they set, but cannot add or edit accounts and never sees admin accounts.
-// Admins may open this page too, but their own dashboard at /admin is fuller.
-// Every action is gated server side as well; this page just drives the
+// The moderation page. A moderator can read watch and chat history and lift
+// the bans they set, but cannot add or change accounts and never sees admin
+// accounts. Admins may open it too, though the dashboard is a superset.
+// Every action is gated server side as well; this page only drives the
 // /api/mod/* endpoints.
-let me = null;               // this browser's identity, for the shared nav
 
-
+let me = null;               // this browser's identity, for the strip
 let users = [];
 let bans = [];
 
-// ---- shared helpers -------------------------------------------------------
+// ---- small helpers (private copies, as every page keeps its own) ----------
+
+function $(id) { return document.getElementById(id); }
 
 function avatarColor(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return `hsl(${hash}, 55%, 45%)`;
+  return `hsl(${hash}, 34%, 66%)`;
+}
+
+function avatarNode(username, name, version) {
+  if (version) {
+    const img = document.createElement("img");
+    img.className = "avatar";
+    img.alt = "";
+    img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
+    return img;
+  }
+  const span = document.createElement("span");
+  span.className = "avatar";
+  span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
+  span.style.background = avatarColor(username || "?");
+  return span;
 }
 
 function relativeTime(epoch) {
@@ -44,45 +60,30 @@ function formatStamp(epoch) {
   });
 }
 
-function avatarNode(username, name, version, cls) {
-  if (version) {
-    const img = document.createElement("img");
-    img.className = cls;
-    img.alt = "";
-    img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
-    return img;
-  }
-  const span = document.createElement("span");
-  span.className = cls;
-  span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
-  span.style.background = avatarColor(username || "?");
-  return span;
+function textNode(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  el.textContent = text;
+  return el;
 }
 
-// The channel-wide accent flavor (the brand color) is server-driven. The head
-// bootstrap paints the last-seen value from localStorage; this syncs it with the
-// server on load and remembers it for the next no-flash paint.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
+function rowNode(cls) {
+  const row = document.createElement("li");
+  row.className = `row${cls ? ` ${cls}` : ""}`;
+  const main = document.createElement("div");
+  main.className = "row-main";
+  const tools = document.createElement("div");
+  tools.className = "row-tools";
+  row.append(main, tools);
+  return { row, main, tools };
 }
-(async () => {
-  try { applyAccent((await (await fetch("/api/status")).json()).accent); } catch (e) {}
-})();
 
-function openModal(m) { m.hidden = false; }
-function closeModal(m) { m.hidden = true; }
-document.querySelectorAll(".modal").forEach((m) => {
-  m.addEventListener("click", (e) => {
-    if (e.target === m || e.target.hasAttribute("data-close")) closeModal(m);
-  });
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
-});
+function activityRow(when, text, cls) {
+  const row = document.createElement("li");
+  row.className = "row activity-row";
+  row.append(textNode("span", "act-when", when), textNode("span", cls || "act-text", text));
+  return row;
+}
 
 // ---- load + render --------------------------------------------------------
 
@@ -90,10 +91,6 @@ async function requireMod() {
   let data;
   try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
   if (!data.authed) { window.location.href = "/"; return false; }
-  // A guest pass buys the stream and chat, nothing else on the site.
-  // Send them where their pass actually works rather than rendering a
-  // page whose every request will 401.
-  if (data.guest) { window.location.href = "/watch"; return false; }
   if (!data.admin && !data.mod) { window.location.href = "/home"; return false; }
   me = data;
   return true;
@@ -107,106 +104,62 @@ async function loadAll() {
   if (!uReply.ok) { window.location.href = "/home"; return; }
   users = (await uReply.json()).users || [];
   bans = bReply.ok ? ((await bReply.json()).bans || []) : [];
-  renderStats();
+  renderMeters();
   renderUsers();
   renderBans();
 }
 
-function renderStats() {
-  const messages = users.reduce((sum, u) => sum + (u.messages || 0), 0);
-  const strip = document.getElementById("stat-strip");
-  const cards = [
-    ["Viewers", users.length, null],
-    ["Active bans", bans.length, null],
-    ["Messages (7d)", messages, "chat"],
-  ];
-  strip.innerHTML = "";
-  cards.forEach(([label, value, kind]) => {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "stat-card";
-    card.innerHTML = `<span class="stat-value"></span><span class="stat-label"></span>`;
-    card.querySelector(".stat-value").textContent = value;
-    card.querySelector(".stat-label").textContent = label;
-    if (kind === "chat") card.addEventListener("click", openChat);
-    else card.style.cursor = "default";
-    strip.appendChild(card);
-  });
+function renderMeters() {
+  $("m-viewers").textContent = String(users.length);
+  $("m-bans").textContent = String(bans.length);
+  $("m-messages").textContent = String(users.reduce((sum, u) => sum + (u.messages || 0), 0));
 }
 
 function renderUsers() {
-  const list = document.getElementById("user-grid");
-  document.getElementById("empty").hidden = users.length > 0;
-  list.innerHTML = "";
+  const list = $("user-grid");
+  $("empty").hidden = users.length > 0;
+  list.textContent = "";
   users.forEach((u) => {
-    // The same .user-row list the admin account list uses, so the Viewers
-    // section is styled instead of emitting classes that carry no CSS. A
-    // moderator never sees admin accounts, and cannot edit, so the only action
-    // here is Activity.
-    const row = document.createElement("div");
-    row.className = "user-row";
-    row.appendChild(avatarNode(u.username, u.display_name, u.avatar_version, "avatar"));
-
-    const ident = document.createElement("div");
-    ident.className = "user-ident";
-    const nameRow = document.createElement("div");
-    nameRow.className = "user-name";
-    nameRow.textContent = u.display_name;
-    if (u.is_moderator) {
-      const badge = document.createElement("span");
-      badge.className = "role-badge mod";
-      badge.textContent = "mod";
-      nameRow.appendChild(badge);
-    }
-    const handle = document.createElement("div");
-    handle.className = "user-handle muted";
-    handle.textContent = "@" + u.username;
-    const seen = document.createElement("div");
-    seen.className = "user-seen";
-    seen.textContent =
-      `${relativeTime(u.last_seen)} · ${formatDuration(u.watch_seconds)} · ${u.messages} msg`;
-    ident.append(nameRow, handle, seen);
-    row.appendChild(ident);
-
-    const actions = document.createElement("span");
-    actions.className = "row-actions";
-    const actBtn = document.createElement("button");
-    actBtn.type = "button";
-    actBtn.className = "chip-btn";
-    actBtn.textContent = "Activity";
-    actBtn.addEventListener("click", () => openActivity(u));
-    actions.appendChild(actBtn);
-    row.appendChild(actions);
-
+    // A moderator never sees admin accounts and cannot edit, so the one
+    // action here is reading what somebody has been doing.
+    const { row, main, tools } = rowNode("person-row");
+    row.insertBefore(avatarNode(u.username, u.display_name, u.avatar_version), main);
+    const name = textNode("span", "row-title", u.display_name);
+    if (u.is_moderator) name.appendChild(textNode("span", "role-badge", "mod"));
+    main.append(name, textNode("span", "row-meta",
+      `@${u.username} · seen ${relativeTime(u.last_seen)} · ${formatDuration(u.watch_seconds)} watched · ${u.messages} msg`));
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip";
+    btn.textContent = "Activity";
+    btn.addEventListener("click", () => openActivity(u));
+    tools.appendChild(btn);
     list.appendChild(row);
   });
 }
 
 function renderBans() {
-  const list = document.getElementById("ban-list");
-  document.getElementById("ban-empty").hidden = bans.length > 0;
-  list.innerHTML = "";
+  const list = $("ban-list");
+  $("ban-empty").hidden = bans.length > 0;
+  list.textContent = "";
   bans.forEach((b) => {
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-    const left = document.createElement("span");
-    const name = b.display_name || b.username;
+    const { row, main, tools } = rowNode();
     const by = b.banned_by_name || b.banned_by;
-    left.innerHTML = `<b></b> <span class="muted"></span>`;
-    left.querySelector("b").textContent = `${name} @${b.username}`;
-    left.querySelector(".muted").textContent =
-      `banned by ${by}${b.reason ? ` · ${b.reason}` : ""}`;
+    main.append(
+      textNode("span", "row-title", `${b.display_name || b.username} @${b.username}`),
+      textNode("span", "row-meta", `banned by ${by}${b.reason ? ` · ${b.reason}` : ""}`),
+    );
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "chip-btn";
-    btn.textContent = "Un-ban";
+    btn.className = "chip";
+    btn.textContent = "Lift the ban";
     if (!b.can_lift) {
       btn.disabled = true;
       btn.title = "Only the moderator who set this ban, or an admin, can lift it.";
     } else {
       btn.addEventListener("click", () => unban(b.username, btn));
     }
-    row.append(left, btn);
+    tools.appendChild(btn);
     list.appendChild(row);
   });
 }
@@ -228,58 +181,17 @@ async function unban(username, btn) {
   btn.disabled = false;
 }
 
-// ---- activity drawer ------------------------------------------------------
+// ---- one viewer's activity ------------------------------------------------
 
-const activityModal = document.getElementById("activity-modal");
-const aWatch = document.getElementById("a-watch");
-const aChat = document.getElementById("a-chat");
-
-async function openActivity(user) {
-  document.getElementById("a-title").textContent = `Activity · @${user.username}`;
-  aWatch.innerHTML = `<p class="muted">Loading…</p>`;
-  aChat.innerHTML = "";
-  switchTab("watch");
-  openModal(activityModal);
-
-  let data = { watch_sessions: [], chat: [] };
-  try {
-    data = await (await fetch(`/api/mod/users/${encodeURIComponent(user.username)}/activity`)).json();
-  } catch { /* show empties */ }
-
-  aWatch.innerHTML = "";
-  if (!data.watch_sessions || !data.watch_sessions.length) {
-    aWatch.innerHTML = `<p class="muted">No watch sessions recorded yet.</p>`;
-  } else {
-    data.watch_sessions.forEach((s) => {
-      const row = document.createElement("div");
-      row.className = "activity-row";
-      const dur = s.left_at ? formatDuration(s.left_at - s.joined_at) : "still watching";
-      row.innerHTML = `<span class="act-when"></span><span class="act-dur"></span>`;
-      row.querySelector(".act-when").textContent = formatStamp(s.joined_at);
-      row.querySelector(".act-dur").textContent = dur;
-      aWatch.appendChild(row);
-    });
-  }
-
-  aChat.innerHTML = "";
-  if (!data.chat || !data.chat.length) {
-    aChat.innerHTML = `<p class="muted">No chat messages in the last 7 days.</p>`;
-  } else {
-    data.chat.forEach((m) => {
-      const row = document.createElement("div");
-      row.className = "activity-row chat-row";
-      row.innerHTML = `<span class="act-when"></span><span class="act-text"></span>`;
-      row.querySelector(".act-when").textContent = formatStamp(m.ts);
-      row.querySelector(".act-text").textContent =
-        m.text + (m.deleted_by ? "  (deleted)" : "");
-      aChat.appendChild(row);
-    });
-  }
-}
+const activityModal = $("activity-modal");
+const aWatch = $("a-watch");
+const aChat = $("a-chat");
 
 function switchTab(which) {
   document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
-    t.classList.toggle("selected", t.dataset.tab === which);
+    const on = t.dataset.tab === which;
+    t.classList.toggle("selected", on);
+    t.setAttribute("aria-pressed", on ? "true" : "false");
   });
   aWatch.hidden = which !== "watch";
   aChat.hidden = which !== "chat";
@@ -288,32 +200,66 @@ document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
   t.addEventListener("click", () => switchTab(t.dataset.tab));
 });
 
-// ---- global recent chat ---------------------------------------------------
+async function openActivity(user) {
+  $("a-title").textContent = `Activity · @${user.username}`;
+  aWatch.textContent = "";
+  aWatch.appendChild(textNode("li", "empty", "Loading…"));
+  aChat.textContent = "";
+  switchTab("watch");
+  activityModal.hidden = false;
 
-const chatModal = document.getElementById("chat-modal");
-const chatBody = document.getElementById("chat-body");
+  let data = { watch_sessions: [], chat: [] };
+  try {
+    data = await (await fetch(`/api/mod/users/${encodeURIComponent(user.username)}/activity`)).json();
+  } catch { /* show the empties */ }
+
+  aWatch.textContent = "";
+  if (!data.watch_sessions || !data.watch_sessions.length) {
+    aWatch.appendChild(textNode("li", "empty", "No watch sessions recorded yet."));
+  } else {
+    data.watch_sessions.forEach((s) => {
+      const dur = s.left_at ? formatDuration(s.left_at - s.joined_at) : "still watching";
+      aWatch.appendChild(activityRow(formatStamp(s.joined_at), dur, "act-dur"));
+    });
+  }
+  aChat.textContent = "";
+  if (!data.chat || !data.chat.length) {
+    aChat.appendChild(textNode("li", "empty", "No chat messages in the last 7 days."));
+  } else {
+    data.chat.forEach((m) => {
+      aChat.appendChild(activityRow(formatStamp(m.ts), m.text + (m.deleted_by ? "  (deleted)" : "")));
+    });
+  }
+}
+
+// ---- the whole room's recent chat -----------------------------------------
+
+const chatModal = $("chat-modal");
+const chatBody = $("chat-body");
 
 async function openChat() {
-  chatBody.innerHTML = `<p class="muted">Loading…</p>`;
-  openModal(chatModal);
+  chatBody.textContent = "";
+  chatBody.appendChild(textNode("li", "empty", "Loading…"));
+  chatModal.hidden = false;
   let msgs = [];
   try { msgs = (await (await fetch("/api/mod/chat")).json()).messages || []; } catch { /* empty */ }
-  chatBody.innerHTML = "";
-  if (!msgs.length) { chatBody.innerHTML = `<p class="muted">No messages in the last 7 days.</p>`; return; }
+  chatBody.textContent = "";
+  if (!msgs.length) {
+    chatBody.appendChild(textNode("li", "empty", "No messages in the last 7 days."));
+    return;
+  }
   msgs.forEach((m) => {
-    const row = document.createElement("div");
-    row.className = "activity-row chat-row";
-    row.innerHTML = `<span class="act-when"></span><span class="act-text"></span>`;
-    row.querySelector(".act-when").textContent = formatStamp(m.ts);
-    row.querySelector(".act-text").textContent =
-      `${m.display_name}: ${m.text}` + (m.deleted_by ? "  (deleted)" : "");
-    chatBody.appendChild(row);
+    chatBody.appendChild(activityRow(formatStamp(m.ts),
+      `${m.display_name}: ${m.text}` + (m.deleted_by ? "  (deleted)" : "")));
   });
 }
 
+$("m-chat").addEventListener("click", openChat);
+$("chat-open").addEventListener("click", openChat);
+
 async function boot() {
   if (!(await requireMod())) return;
-  mountNav(me, { current: "mod" });
+  mountNav(me, { current: "mod", pageName: "Moderation" });
   loadAll();
 }
 

@@ -15,7 +15,7 @@ every sensitive value is read from the environment.
 
 The service is split into a small package: config (env parsing), auth
 (sessions, rate limit, geo), hub (chat and presence), media (recording, clips,
-thumbnails, stream watcher), notify (go-live announcements), and routes/*
+thumbnails, stream watcher), notify and webpush (go-live push), and routes/*
 (APIRouters grouped by area). This module just assembles them into `app`.
 """
 
@@ -32,6 +32,7 @@ import auth
 import config
 import db
 import store
+import webpush
 from hub import chat_purge_worker, hub
 from media import (
     backfill_media_facts, cleanup_record_scratch, retention_worker,
@@ -40,10 +41,10 @@ from media import (
 )
 from routes import admin as admin_routes
 from routes import auth as auth_routes
-from routes import guest as guest_routes
 from routes import media as media_routes
 from routes import mod as mod_routes
 from routes import points as points_routes
+from routes import push as push_routes
 from routes import theater as theater_routes
 from routes import ws as ws_routes
 
@@ -52,7 +53,7 @@ logger = logging.getLogger("upperroom.gate")
 
 def _log_startup_summary():
     """A one-line-ish summary of how the gate is configured, at startup. Never
-    logs secrets (no JWT secret, no SMTP password)."""
+    logs secrets (no JWT secret, no push key)."""
     logger.info("upperroom gate starting; log level %s", config.LOG_LEVEL)
     logger.info(
         "stream path=%s, allowed countries=%s, geo gate=%s",
@@ -69,11 +70,24 @@ def _log_startup_summary():
         ", ".join(f"{k}={v}" for k, v in limits.items() if v) or "off",
     )
     logger.info(
-        "notifications: smtp=%s, site url=%s, cooldown=%ss",
-        "configured" if (config.SMTP_HOST and config.SMTP_FROM) else "off",
+        "notifications: push=%s, site url=%s, cooldown=%ss",
+        "on" if webpush.ready() else "off (set SELFSTREAM_SITE_URL)",
         config.SITE_URL or "(unset)",
         config.NOTIFY_COOLDOWN,
     )
+
+
+def _startup_notify_pass():
+    """Empty the contact details the old go-live email and Discord post left
+    in the database, and make the push key pair if there is none. Both are
+    idempotent; only counts are logged, never values."""
+    emails, hooks = db.clear_legacy_contacts()
+    if emails or hooks:
+        logger.info(
+            "cleared %d stored email address(es) and %d webhook URL(s)", emails, hooks
+        )
+    if webpush.ensure_vapid_keys():
+        logger.info("generated the push (VAPID) key pair")
 
 
 # How long the startup pass gives a store that is still starting: ten tries, two
@@ -135,13 +149,16 @@ async def lifespan(_app):
     # the recording scratch dir of anything not tied to an active recording. A
     # recording parked by a failed archive is spared by the sweep itself.
     cleanup_record_scratch()
+    try:
+        _startup_notify_pass()
+    except Exception:
+        logger.warning("notification startup pass failed", exc_info=True)
     tasks = [
         asyncio.create_task(_startup_store_pass()),
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
         asyncio.create_task(chat_purge_worker()),
         asyncio.create_task(retention_worker()),
-        asyncio.create_task(auth.guest_reaper()),
     ]
     try:
         yield
@@ -184,10 +201,10 @@ for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.ART_DIR):
     os.makedirs(_dir, exist_ok=True)
 
 app.include_router(auth_routes.router)
-app.include_router(guest_routes.router)
 app.include_router(media_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(mod_routes.router)
 app.include_router(points_routes.router)
+app.include_router(push_routes.router)
 app.include_router(theater_routes.router)
 app.include_router(ws_routes.router)

@@ -1,52 +1,27 @@
-// Home page. The card-style landing shown right after sign in. It confirms the
-// viewer is logged in, plays the live stream muted inside the card, and sends
-// them into the player, where the sound is, when they tap it.
+// Home: the off-air place.
 //
-// The header belongs to nav.js, which every signed-in page shares. The archive
-// of past broadcasts and clips is its own page now, /browse.
-
-const STREAM_URL = "/live/index.m3u8";
-
-const greeting = document.getElementById("greeting");
-const card = document.getElementById("stream-card");
-const cardChannel = document.getElementById("card-channel");
-const cardTitle = document.getElementById("card-title");
-const cardPlaying = document.getElementById("card-playing");
-const cardDesc = document.getElementById("card-desc");
-const thumb = document.getElementById("thumb");
-const thumbFallback = document.getElementById("thumb-fallback");
-const cardVideo = document.getElementById("card-video");
-const streamBadge = document.getElementById("stream-badge");
-const badgeLabel = document.getElementById("badge-label");
-const statusPill = document.getElementById("status-pill");
-const offlineBlock = document.getElementById("offline-block");
+// Nobody on air: when the last broadcast was, a way to hear of the next one,
+// the last broadcast itself, and the latest clips. Somebody on air: a current
+// frame on the monitor and one loud way into the room. Members who sign in
+// while the stream is live go straight to the room (gate.js), so this is
+// mostly what people see between broadcasts.
+//
+// It no longer plays the stream itself. A muted preview here cost a full
+// viewer's bandwidth and a place in the room for a picture nobody was
+// listening to; a still frame says the same thing for the price of a JPEG.
 
 let me = null;
-let channel = null;          // the streamer shown on the card
+let channel = null;
 let online = false;
-let hls = null;
-let previewOn = false;       // a player is built (it may not have picture yet)
+let thumbTimer = null;
 
-function avatarColor(seed) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return `hsl(${hash}, 55%, 45%)`;
-}
-
-function avatarNode(username, name, version, cls) {
-  if (version) {
-    const img = document.createElement("img");
-    img.className = cls;
-    img.alt = "";
-    img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
-    return img;
-  }
-  const span = document.createElement("span");
-  span.className = cls;
-  span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
-  span.style.background = avatarColor(username || "?");
-  return span;
-}
+const monitor = document.getElementById("monitor");
+const offline = document.getElementById("offline");
+const lastAir = document.getElementById("last-air");
+const liveBlock = document.getElementById("live-block");
+const offair = document.getElementById("offair");
+const slateTitle = document.getElementById("slate-title");
+const slateSub = document.getElementById("slate-sub");
 
 async function requireAuth() {
   let data;
@@ -59,283 +34,237 @@ async function requireAuth() {
     window.location.href = "/";
     return false;
   }
-  // A guest pass buys the stream and chat, nothing else on the site. Send them
-  // where their pass actually works rather than rendering a page whose every
-  // request will 401.
-  if (data.guest) {
-    window.location.href = "/watch";
-    return false;
-  }
   me = data;
   return true;
 }
 
-function renderGreeting() {
-  const name = (me.name || me.username || "there").split(" ")[0];
-  // "signed in as name", with the name in the accent color.
-  greeting.textContent = "signed in as ";
-  const who = document.createElement("b");
-  who.textContent = name;
-  greeting.appendChild(who);
+// ---- words for when ----
+
+function dayWord(epoch) {
+  const then = new Date(epoch * 1000);
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (then.getTime() >= midnight) return "today";
+  const diffDays = Math.floor((midnight - then.getTime()) / 86400000) + 1;
+  if (diffDays === 1) return "yesterday";
+  if (diffDays < 7) return then.toLocaleDateString(undefined, { weekday: "long" });
+  return then.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
-// The card represents the streamer (the channel owner), not the viewer, so it
-// shows their name, @username, and avatar.
-function renderChannel() {
-  if (!channel) return;
-  // The operator's site name leads the top bar and names the browser tab.
-  // Distinct from the stream title on the card below.
-  if (channel.site_name) {
-    const siteTitle = document.getElementById("site-title");
-    if (siteTitle) siteTitle.textContent = channel.site_name;
-    document.title = channel.site_name;
+function lastBroadcastTitle(epoch) {
+  if (Date.now() / 1000 - epoch > 6 * 86400) {
+    const when = new Date(epoch * 1000).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+    return `Watch the ${when} broadcast`;
   }
-  const fresh = avatarNode(channel.username, channel.name, channel.avatar || 0, "card-avatar");
-  document.querySelector(".card-avatar").replaceWith(fresh);
-  if (channel.title) cardTitle.textContent = channel.title;
-  cardDesc.textContent = channel.description || "Tap to join stream and start chatting";
-  cardChannel.innerHTML = "";
-  const nm = document.createElement("span");
-  nm.className = "channel-name";
-  nm.textContent = channel.name;
-  cardChannel.appendChild(nm);
-  if (channel.username) {
-    const handle = document.createElement("span");
-    handle.className = "channel-handle";
-    handle.textContent = "@" + channel.username;
-    cardChannel.appendChild(handle);
+  return `Watch ${dayWord(epoch)}’s broadcast`;
+}
+
+function lengthWords(seconds) {
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
+
+function durationClock(secs) {
+  secs = Math.max(0, Math.round(secs || 0));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function relDate(epoch) {
+  if (!epoch) return "";
+  const secs = Math.floor(Date.now() / 1000) - epoch;
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))} min ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)} h ago`;
+  return dayWord(epoch);
+}
+
+// ---- the monitor: a still frame while live, the off-air card while not ----
+
+function refreshThumb() {
+  if (!online || document.hidden) return;
+  const next = new Image();
+  next.alt = "The stream right now";
+  next.className = "still";
+  next.addEventListener("load", () => {
+    const old = monitor.querySelector("img.still");
+    if (old) old.replaceWith(next);
+    else monitor.prepend(next);
+  });
+  // No frame yet (the stream just came up) keeps whatever was there.
+  next.src = `/api/thumbnail?t=${Date.now()}`;
+}
+
+function applyStatus(data) {
+  const was = online;
+  online = !!data.online;
+  offline.hidden = online;
+  liveBlock.hidden = !online;
+  offair.hidden = online;
+  const game = online ? data.game || "" : "";
+  slateSub.textContent = game ? `Playing ${game}` : "";
+  slateSub.hidden = !game;
+  if (online && !was) {
+    loadChannel();
+    refreshThumb();
+    thumbTimer = setInterval(refreshThumb, 15000);
+  } else if (!online && was) {
+    clearInterval(thumbTimer);
+    thumbTimer = null;
+    const still = monitor.querySelector("img.still");
+    if (still) still.remove();
+    loadChannel();
+    loadLibrary();
   }
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshThumb();
+});
+
+// ---- the channel, and when it was last on ----
+
+let lastVod = null;
 
 async function loadChannel() {
   try {
     channel = await (await fetch("/api/channel")).json();
   } catch {
-    channel = { username: null, name: "upperroom", avatar: 0 };
+    return;
   }
-  renderChannel();
+  if (channel.title) slateTitle.textContent = channel.title;
+  renderLastAir();
 }
 
-// ---- live status + thumbnail ----
-
-function showLive(isLive, watching) {
-  online = isLive;
-  card.classList.toggle("is-live", isLive);
-
-  // While live the stream card is shown; while offline it is hidden entirely and
-  // a compact "broadcaster is offline" block takes its place, pointing at chat
-  // and the browse page. The status poll runs on an interval, so this flips
-  // on its own the moment a stream starts or ends, without a reload.
-  card.hidden = !isLive;
-  offlineBlock.hidden = isLive;
-
-  // One badge that toggles state: red LIVE with a blinking dot when live, muted
-  // Offline otherwise.
-  streamBadge.classList.toggle("is-live", isLive);
-  streamBadge.classList.toggle("is-offline", !isLive);
-  badgeLabel.textContent = isLive ? "LIVE" : "Offline";
-
-  // A separate count pill: "N watching" while live, "N in chat" while offline
-  // (people can hang out in chat between streams). Hidden when offline and
-  // nobody is around, so an empty offline card stays clean.
-  const count = typeof watching === "number" ? watching : 0;
-  if (isLive) {
-    statusPill.hidden = false;
-    statusPill.textContent = count === 1 ? "1 watching" : `${count} watching`;
-  } else if (count > 0) {
-    statusPill.hidden = false;
-    statusPill.textContent = count === 1 ? "1 in chat" : `${count} in chat`;
-  } else {
-    statusPill.hidden = true;
+function renderLastAir() {
+  const ended = channel && channel.last_air_ended_at;
+  if (!ended) return;
+  let line = `Last on air ${dayWord(ended)}`;
+  if (lastVod && lastVod.duration && Math.abs(lastVod.started_at + lastVod.duration - ended) < 3600) {
+    line += `, for ${lengthWords(lastVod.duration)}`;
   }
-
-  if (!isLive) {
-    thumb.hidden = true;
-    thumbFallback.hidden = false;
-  }
+  lastAir.textContent = `${line}.`;
 }
 
-function refreshThumb() {
-  // The preview covers the still frame, so there is no point paying for one,
-  // and neither costs anything worth paying in a tab nobody is looking at.
-  if (!online || previewOn || document.hidden) return;
-  // Cache-bust so each refresh pulls the freshest captured frame.
-  const next = new Image();
-  next.onload = () => {
-    thumb.src = next.src;
-    thumb.hidden = false;
-    thumbFallback.hidden = true;
-  };
-  next.onerror = () => {
-    // No frame yet (stream just came up); keep showing the branded fallback.
-    thumb.hidden = true;
-    thumbFallback.hidden = false;
-  };
-  next.src = `/api/thumbnail?t=${Date.now()}`;
+// ---- the go-live push ----
+
+const pushRow = document.getElementById("push-row");
+const pushChip = document.getElementById("push-chip");
+const pushMsg = document.getElementById("push-msg");
+
+// One quiet chip, offered only where a tap can actually sign this device up.
+// Never a pop-up: the browser asks for permission only after the tap.
+function showPush(chip, line) {
+  pushChip.hidden = !chip;
+  pushMsg.textContent = line || "";
+  pushMsg.hidden = !line;
+  pushRow.hidden = !chip && !line;
 }
 
-// ---- live preview ----
-// The card plays the real stream, muted, the way a front page does. It is the
-// same HLS the watch page plays, so it costs the same bandwidth and takes a
-// place in the room: a full room refuses it with a 403, and that is correct.
-// Every failure path here is silent and ends at the still frame the card showed
-// before, and every one of them tears the player all the way down.
-
-function showPreview() {
-  if (!previewOn) return;
-  cardVideo.hidden = false;
-  thumb.hidden = true;
-  thumbFallback.hidden = true;
-  card.classList.add("is-previewing");
+async function renderPush() {
+  showPush((await pushNotify.state()) === "off");
 }
 
-function stopPreview() {
-  previewOn = false;
-  if (hls) { hls.destroy(); hls = null; }
-  cardVideo.pause();
-  // Dropping the source is what actually stops the download; pausing alone
-  // leaves the player filling its buffer.
-  cardVideo.removeAttribute("src");
-  cardVideo.load();
-  cardVideo.hidden = true;
-  card.classList.remove("is-previewing");
-  if (online) {
-    refreshThumb();
-  } else {
-    thumb.hidden = true;
-    thumbFallback.hidden = false;
-  }
-}
-
-function startPreview() {
-  // A hidden tab must never start one, and a fatal is not retried on the poll:
-  // the next try comes when the tab is looked at again, or on a reload.
-  if (previewOn || !online || document.hidden) return;
-  if (window.Hls && Hls.isSupported()) {
-    previewOn = true;
-    hls = new Hls({ lowLatencyMode: true, backBufferLength: 10 });
-    hls.loadSource(STREAM_URL);
-    hls.attachMedia(cardVideo);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      // A refused autoplay is a fallback, not an error: show the still frame.
-      cardVideo.play().catch(() => stopPreview());
-    });
-    hls.on(Hls.Events.ERROR, (event, data) => {
-      // Any fatal, a full room's 403 included, drops back to the thumbnail.
-      if (data.fatal) stopPreview();
-    });
-  } else if (cardVideo.canPlayType("application/vnd.apple.mpegurl")) {
-    // Safari plays HLS natively and needs no hls.js.
-    previewOn = true;
-    cardVideo.src = STREAM_URL;
-    cardVideo.play().catch(() => stopPreview());
-  }
-}
-
-// Picture has arrived: swap the still frame out. Bound once, so it serves both
-// the hls.js and the native path.
-cardVideo.addEventListener("playing", showPreview);
-// A native-path failure (a 403 among them) arrives here. Guarded by previewOn
-// so the empty-source error that teardown itself raises is not a second pass.
-cardVideo.addEventListener("error", () => { if (previewOn) stopPreview(); });
-
-// Bandwidth guards. A backgrounded tab keeps a muted video running otherwise,
-// which is a full viewer's bandwidth and a room slot for a card nobody is
-// looking at.
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopPreview();
-  else if (online) startPreview();
+pushChip.addEventListener("click", () => {
+  pushChip.disabled = true;
+  pushNotify.turnOn().then((state) => {
+    if (state === "on") showPush(false, "This device will be notified when it goes live.");
+    else if (state === "blocked") showPush(false, pushNotify.explain("blocked"));
+    else showPush(state === "off");
+  }).catch(() => {
+    showPush(true, "Could not turn it on here. Try again from Options.");
+  }).finally(() => { pushChip.disabled = false; });
 });
-window.addEventListener("pagehide", () => stopPreview());
 
-async function refreshStatus() {
-  let data = { online: false };
+// ---- the last broadcast and the latest clips ----
+
+function clipCard(clip) {
+  const a = document.createElement("a");
+  a.className = "media-card";
+  a.href = `/media?type=clip&id=${clip.id}`;
+  const thumb = document.createElement("div");
+  thumb.className = "media-thumb";
+  if (clip.poster) {
+    const img = document.createElement("img");
+    img.src = `/media/clips/${clip.id}.jpg`;
+    img.alt = "";
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.remove());
+    thumb.appendChild(img);
+  }
+  if (clip.duration) {
+    const dur = document.createElement("span");
+    dur.className = "media-dur";
+    dur.textContent = durationClock(clip.duration);
+    thumb.appendChild(dur);
+  }
+  const title = document.createElement("div");
+  title.className = "media-title";
+  title.textContent = clip.name;
+  const sub = document.createElement("div");
+  sub.className = "media-sub";
+  sub.textContent = [relDate(clip.created_at), clip.creator ? `by @${clip.creator}` : ""]
+    .filter(Boolean).join(" · ");
+  a.append(thumb, title, sub);
+  return a;
+}
+
+async function loadLibrary() {
+  let vods = [];
+  let clips = [];
   try {
-    data = await (await fetch("/api/status")).json();
+    const [v, c] = await Promise.all([
+      fetch("/api/vods").then((r) => (r.ok ? r.json() : { vods: [] })),
+      fetch("/api/clips").then((r) => (r.ok ? r.json() : { clips: [] })),
+    ]);
+    vods = v.vods || [];
+    clips = c.clips || [];
   } catch {
-    /* treat a failed poll as offline */
+    /* a library that cannot be read shows nothing rather than an error */
   }
-  applyAccent(data.accent);
-  // What the streamer is playing rides this poll, so the card follows a change
-  // made mid-broadcast rather than waiting for a reload. Absent when offline.
-  if (cardPlaying) {
-    const game = data.game || "";
-    cardPlaying.textContent = game ? `Playing: ${game}` : "";
-    cardPlaying.hidden = !game;
+  lastVod = vods[0] || null;
+  renderLastAir();
+  const link = document.getElementById("last-vod");
+  if (lastVod) {
+    link.href = `/media?type=vod&id=${lastVod.id}`;
+    document.getElementById("last-vod-title").textContent = lastBroadcastTitle(lastVod.started_at);
+    document.getElementById("last-vod-meta").textContent =
+      [lastVod.title, durationClock(lastVod.duration)].filter(Boolean).join(" · ");
+    const thumb = document.getElementById("last-vod-thumb");
+    thumb.textContent = "";
+    if (lastVod.poster) {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = `/media/vods/${lastVod.id}.jpg`;
+      img.addEventListener("error", () => img.remove());
+      thumb.appendChild(img);
+    }
   }
-  const wasOnline = online;
-  showLive(!!data.online, data.watching);
-  if (data.online && !wasOnline) {
-    refreshThumb();
-    startPreview();
-  } else if (!data.online && wasOnline) {
-    // The stream ended: tear the player down and go back to the offline state.
-    stopPreview();
-  }
-  // Going live retires the schedule server-side; hide it here at the same time.
-}
-
-card.addEventListener("click", () => {
-  window.location.href = "/watch";
-});
-
-// ---- accent flavor (channel-wide brand color) ----
-// Unlike the theme, the accent is the channel's brand and is server-driven. The
-// head bootstrap paints the last-seen value from localStorage; the status poll
-// syncs it with the server and remembers it for the next no-flash paint.
-function applyAccent(value) {
-  if (!["green", "amber", "blue", "ghost"].includes(value)) return;
-  if (document.documentElement.dataset.accent !== value) {
-    document.documentElement.dataset.accent = value;
-    try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-  }
-}
-
-// ---- what changed in this release ----
-// Shown once, on the page people land on after signing in, and only for the
-// release actually running. Acknowledging it is what marks it read, so closing
-// the tab instead means it is still waiting next time rather than lost.
-
-function showWhatsNew(info) {
-  if (!info || !info.notes || !info.notes.length) return;
-  const modal = document.getElementById("whats-new");
-  if (!modal) return;
-  document.getElementById("whats-new-title").textContent =
-    `upperroom has been updated to v${info.version}`;
-  const list = document.getElementById("whats-new-list");
-  list.innerHTML = "";
-  info.notes.forEach((note) => {
-    const item = document.createElement("li");
-    item.textContent = note;
-    list.appendChild(item);
-  });
-  const ok = document.getElementById("whats-new-ok");
-  ok.addEventListener("click", async () => {
-    modal.hidden = true;
-    // Best effort: a failed acknowledgement just means it is offered again,
-    // which is the harmless direction to fail in.
-    try { await fetch("/api/whats-new/seen", { method: "POST" }); } catch (e) {}
-  });
-  modal.hidden = false;
-  ok.focus();
+  link.hidden = !lastVod;
+  const grid = document.getElementById("clip-grid");
+  grid.textContent = "";
+  clips.slice(0, 6).forEach((clip) => grid.appendChild(clipCard(clip)));
+  document.getElementById("clips-section").hidden = clips.length === 0;
 }
 
 async function boot() {
   if (!(await requireAuth())) return;
-  mountNav(me, { current: "home", promptEmail: true });
-  showWhatsNew(me.whats_new);
-  renderGreeting();
+  // Home is where members land while nobody is on air, so the one-time
+  // notices can show here.
+  mountNav(me, { current: "home", landing: true, onStatus: applyStatus });
+  renderPush();
   loadChannel();
-  await refreshStatus();
-  refreshThumb();
-  setInterval(refreshStatus, 10000);
-  setInterval(refreshThumb, 15000);
+  loadLibrary();
 }
 
 boot();
 
-// Register the pass-through service worker. It caches nothing; it exists so
-// Chrome will offer to install the site to a phone's home screen.
+// Register the service worker. It caches nothing; it shows the go-live push,
+// and it is why Chrome will offer to install the site to a phone's home screen.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

@@ -1,11 +1,78 @@
-// The dashboard: everything an operator runs. People (accounts, bans, invites),
-// branding, chat rules, the stream key, the overlay,
-// notifications, storage and the recorded library.
-// Every action is gated server side too; this page just drives those endpoints.
-let me = null;               // this browser's identity, for the shared nav
+// The dashboard: everything an operator runs.
+//
+// It opens on Go live: the three things that have to be true for a night to
+// happen (OBS has the settings, OBS is streaming, the link has gone out), each
+// ticking as it becomes true, beside the room itself. Everything else is a
+// section behind the menu in the strip: People, Library, Channel, Chat rules
+// and Connections here, Stats on its own page.
+//
+// Every action is gated server side too; this page only drives the endpoints.
 
+let me = null;               // this browser's identity, for the strip
+let strip = null;            // nav.js's strip controller
 
-// ---- small helpers ----
+// ---- small helpers ---------------------------------------------------------
+
+function $(id) { return document.getElementById(id); }
+
+// A status line under a control: good or bad, and gone when there is nothing
+// to say.
+function say(el, text, ok) {
+  el.textContent = text || "";
+  el.classList.toggle("good", !!ok);
+  el.classList.toggle("bad", !ok);
+  el.hidden = !text;
+}
+
+async function getJSON(url) {
+  const reply = await fetch(url);
+  if (!reply.ok) throw new Error(String(reply.status));
+  return reply.json();
+}
+
+// POST a JSON body. Resolves to { ok, status, data } and never throws on an
+// HTTP error, so each caller decides what a refusal means for its own control.
+async function postJSON(url, body) {
+  const reply = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await reply.json().catch(() => ({}));
+  return { ok: reply.ok, status: reply.status, data };
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Copy, then say so on the button itself for a moment. True if it copied.
+async function copyWithButton(text, btn, onFail) {
+  if (!text) return false;
+  if (await copyText(text)) {
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+    return true;
+  }
+  if (onFail) onFail();
+  return false;
+}
+
+// A secret field: password-masked until asked, and masked again on request.
+function wireShow(button, input) {
+  button.addEventListener("click", () => {
+    const reveal = input.type === "password";
+    input.type = reveal ? "text" : "password";
+    button.textContent = reveal ? "Hide" : "Show";
+    button.setAttribute("aria-pressed", reveal ? "true" : "false");
+  });
+}
 
 function relativeTime(epoch) {
   if (!epoch) return "never";
@@ -20,24 +87,13 @@ function relativeTime(epoch) {
   return new Date(epoch * 1000).toLocaleDateString();
 }
 
-// ---- load + render ----
-
-async function requireAdmin() {
-  let data;
-  try { data = await (await fetch("/api/me")).json(); } catch { data = { authed: false }; }
-  if (!data.authed) { window.location.href = "/"; return false; }
-  // A guest pass buys the stream and chat, nothing else on the site.
-  // Send them where their pass actually works rather than rendering a
-  // page whose every request will 401.
-  if (data.guest) { window.location.href = "/watch"; return false; }
-  if (!data.admin) { window.location.href = "/home"; return false; }
-  me = data;
-  return true;
+function formatDuration(secs) {
+  if (!secs || secs < 60) return `${secs || 0}s`;
+  const hours = Math.floor(secs / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
 }
-
-// ---- content (VODs + clips: review and delete) ----
-
-let contentTab = "vods";
 
 function durationClock(secs) {
   secs = Math.max(0, Math.round(secs || 0));
@@ -48,123 +104,553 @@ function durationClock(secs) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+function formatStamp(epoch) {
+  return new Date(epoch * 1000).toLocaleString([], {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+// A clock time, with the day in front when it is not today.
+function clockTime(epoch) {
+  const when = new Date(epoch * 1000);
+  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (when.toDateString() === new Date().toDateString()) return time;
+  return `${when.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}
+
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Math.max(0, bytes || 0);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+function plural(n, word, many) {
+  return `${n} ${n === 1 ? word : (many || `${word}s`)}`;
+}
+
+function avatarColor(seed) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
+  return `hsl(${hash}, 34%, 66%)`;
+}
+
+function avatarNode(username, name, version) {
+  if (version) {
+    const img = document.createElement("img");
+    img.className = "avatar";
+    img.alt = "";
+    img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
+    return img;
+  }
+  const span = document.createElement("span");
+  span.className = "avatar";
+  span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
+  span.style.background = avatarColor(username || "?");
+  return span;
+}
+
+// One row of a list: the words on the left, the buttons on the right.
+function rowNode(cls) {
+  const row = document.createElement("li");
+  row.className = `row${cls ? ` ${cls}` : ""}`;
+  const main = document.createElement("div");
+  main.className = "row-main";
+  const tools = document.createElement("div");
+  tools.className = "row-tools";
+  row.append(main, tools);
+  return { row, main, tools };
+}
+
+function textNode(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  el.textContent = text;
+  return el;
+}
+
+function button(label, cls, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = cls || "chip";
+  btn.textContent = label;
+  if (onClick) btn.addEventListener("click", () => onClick(btn));
+  return btn;
+}
+
+async function requireAdmin() {
+  let data;
+  try { data = await getJSON("/api/me"); } catch { data = { authed: false }; }
+  if (!data.authed) { window.location.href = "/"; return false; }
+  if (!data.admin) { window.location.href = "/home"; return false; }
+  me = data;
+  return true;
+}
+
+// =============================================================================
+// Go live
+// =============================================================================
+
+let stream = {};              // the last /api/admin/stream answer
+let storageAway = false;      // the media store did not answer the last ask
+let storagePending = 0;       // recordings waiting to be saved to it
+let linkSent = false;         // the watch link was copied on this page load
+
+// ---- step 1: the settings OBS needs ----
+
+const streamServer = $("stream-server");
+const streamKey = $("stream-key");
+const streamKeyMsg = $("stream-key-msg");
+
+function setStreamKey(key) {
+  // RTMP is its own scheme and port on the same host as this page.
+  streamServer.value = `rtmp://${window.location.hostname}:1935`;
+  // Exactly what goes in OBS's Stream Key box. `live` is the path the rest of
+  // the app expects; the gate reads only the key after it.
+  streamKey.value = `live?pass=${key}`;
+}
+
+async function loadStreamKey() {
+  try {
+    const data = await getJSON("/api/admin/stream-key");
+    if (data.key) setStreamKey(data.key);
+  } catch { /* leave the fields blank */ }
+}
+
+wireShow($("stream-key-show"), streamKey);
+$("server-copy").addEventListener("click", (e) => copyWithButton(
+  streamServer.value, e.currentTarget, () => {
+    streamServer.select();
+    say(streamKeyMsg, "Copy failed; the server is selected so you can copy it.", false);
+  }));
+$("stream-key-copy").addEventListener("click", (e) => copyWithButton(
+  streamKey.value, e.currentTarget, () => {
+    streamKey.type = "text";
+    streamKey.select();
+    say(streamKeyMsg, "Copy failed; the key is selected so you can copy it.", false);
+  }));
+
+$("stream-key-regen").addEventListener("click", async (e) => {
+  if (!confirm(
+    "Regenerate the stream key? OBS cannot go live again until you paste the " +
+    "new one into it. A broadcast already on air keeps running."
+  )) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  say(streamKeyMsg, "", true);
+  try {
+    const { ok, data } = await postJSON("/api/admin/stream-key/regenerate");
+    if (ok && data.key) {
+      setStreamKey(data.key);
+      say(streamKeyMsg, "New key made. Paste it into OBS before you next go live.", true);
+      loadStream();
+    } else {
+      say(streamKeyMsg, "Could not regenerate the key.", false);
+    }
+  } catch { say(streamKeyMsg, "Could not reach the server.", false); }
+  btn.disabled = false;
+});
+
+// ---- the steps themselves ----
+
+const stepObs = $("step-obs");
+const stepAir = $("step-air");
+const stepLink = $("step-link");
+
+// done: true now. now: the thing to do next. wait: not yet.
+function setStep(step, state) {
+  step.dataset.state = state;
+  const sr = step.querySelector(".step-sr");
+  if (sr) sr.textContent = state === "done" ? "(done)" : state === "now" ? "(to do)" : "";
+}
+
+// The recorder, in the words step 2 uses.
+function recordingWords() {
+  if (stream.recording === "restarting") return ". The recorder is restarting.";
+  if (stream.recording !== "ok") return ", not recording.";
+  if (storageAway) {
+    return ". Recording here; the library is not answering, so it is saved once it is back.";
+  }
+  return ", recording to the library.";
+}
+
+function renderSteps() {
+  const live = !!stream.live;
+  const published = !!stream.last_publish_at;
+  setStep(stepObs, published ? "done" : "now");
+  // On air with no publish on record means the key changed mid-broadcast: the
+  // broadcast is fine, OBS just does not hold the key it will need next time.
+  $("obs-note").hidden = published || !live;
+
+  setStep(stepAir, live ? "done" : published ? "now" : "wait");
+  const air = $("air-state");
+  air.textContent = "";
+  if (!live) {
+    air.textContent = "Press Start Streaming in OBS.";
+  } else {
+    air.append("On air since ");
+    air.appendChild(textNode("b", "", stream.since ? clockTime(stream.since) : "just now"));
+    let rest = recordingWords();
+    if (storagePending) {
+      rest += ` ${plural(storagePending, "earlier recording")} ${storagePending === 1 ? "is" : "are"} waiting to be saved.`;
+    }
+    air.append(rest);
+  }
+
+  // Step 3 is true once the link has been copied on this page load.
+  setStep(stepLink, linkSent ? "done" : live ? "now" : "wait");
+  $("copy-link").classList.toggle("is-quiet", !live);
+  $("link-note").hidden = live;
+}
+
+// ---- step 3: the watch link ----
+// The plain /watch address. Anyone with an account opens it straight into the
+// room, and a link preview gets the gate's live card for it.
+
+const copyLinkBtn = $("copy-link");
+const linkMsg = $("link-msg");
+const linkFallback = $("link-fallback");
+const linkFallbackUrl = $("link-fallback-url");
+
+// A link the clipboard refused, in its field, selected to copy by hand.
+function showFallback(box, url) {
+  const input = box.querySelector("input");
+  input.value = url;
+  box.hidden = false;
+  input.focus();
+  input.select();
+}
+
+function markLinkSent() {
+  linkSent = true;
+  renderSteps();
+}
+
+copyLinkBtn.addEventListener("click", async () => {
+  const url = `${location.origin}/watch`;
+  say(linkMsg, "", true);
+  linkFallback.hidden = true;
+  if (await copyText(url)) {
+    say(linkMsg, "Copied. Paste it into your group text.", true);
+    markLinkSent();
+  } else {
+    say(linkMsg, "This browser would not copy it. Here it is to copy by hand.", false);
+    showFallback(linkFallback, url);
+  }
+});
+// Copied by hand from the fallback counts the same.
+linkFallbackUrl.addEventListener("copy", markLinkSent);
+
+// ---- the room: the program monitor ----
+// The watch page itself, framed. Spoken to with postMessage rather than by
+// changing its src, because a reload would drop its chat socket and its place
+// in the stream every time the view changed.
+
+const liveView = $("live-view");
+const program = $("program");
+const viewChat = $("view-chat");
+const dashSound = $("dash-sound");
+const VIEW_KEY = "selfstream_dash_video";
+let showVideo = true;
+let soundOn = false;
+
+function tellFrame() {
+  if (!liveView.contentWindow) return;
+  liveView.contentWindow.postMessage({ type: "video", show: showVideo }, location.origin);
+  liveView.contentWindow.postMessage({ type: "sound", on: soundOn && showVideo }, location.origin);
+}
+
+function renderSound() {
+  dashSound.hidden = !stream.live || !showVideo;
+  dashSound.setAttribute("aria-pressed", soundOn ? "true" : "false");
+  dashSound.setAttribute("aria-label", soundOn ? "Sound is on. Mute" : "Turn the sound on");
+  $("dash-sound-off").toggleAttribute("hidden", soundOn);
+  $("dash-sound-on").toggleAttribute("hidden", !soundOn);
+}
+
+function setView(show, remember) {
+  showVideo = show;
+  program.classList.toggle("is-chat-only", !show);
+  viewChat.setAttribute("aria-pressed", show ? "false" : "true");
+  if (remember) {
+    try { localStorage.setItem(VIEW_KEY, show ? "full" : "chat"); } catch (e) {}
+  }
+  renderSound();
+  tellFrame();
+}
+
+function setUpProgram() {
+  let saved = "full";
+  try { saved = localStorage.getItem(VIEW_KEY) || "full"; } catch (e) {}
+  setView(saved !== "chat", false);
+  viewChat.addEventListener("click", () => setView(!showVideo, true));
+  dashSound.addEventListener("click", () => {
+    soundOn = !soundOn;
+    renderSound();
+    tellFrame();
+  });
+  // The frame starts on its own defaults, so tell it again once it has loaded
+  // and after any reload of its own.
+  liveView.addEventListener("load", () => {
+    tellFrame();
+    // The frame's own chat socket puts the operator in the room; ask again
+    // once it has had a moment, so they show on the board without waiting a
+    // poll.
+    setTimeout(loadStream, 2500);
+  });
+}
+
+// ---- the room: the slate (tonight's title, and the game) ----
+
+const slateTitle = $("slate-title");
+const slateSub = $("slate-sub");
+const slateForm = $("slate-form");
+const slateEdit = $("slate-edit");
+const titleInput = $("onair-title");
+const gameInput = $("game-input");
+const onairMsg = $("onair-msg");
+let savedTitle = "";
+let savedGame = "";
+
+function renderSlate() {
+  slateTitle.textContent = savedTitle || "Live Stream";
+  slateSub.textContent = savedGame ? `Playing ${savedGame}` : "No game";
+}
+
+function openSlateForm(open) {
+  slateForm.hidden = !open;
+  slateEdit.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    titleInput.value = savedTitle;
+    gameInput.value = savedGame;
+    titleInput.focus();
+  }
+}
+
+// One request for both lines. An empty game is a real value (it clears the
+// label); an empty title is refused, so only a title with words goes up.
+async function saveOnAir(body) {
+  say(onairMsg, "", true);
+  try {
+    const { ok, data } = await postJSON("/api/stream-info", body);
+    if (!ok) { say(onairMsg, data.error || "Could not save that.", false); return; }
+    if (body.title !== undefined) savedTitle = body.title;
+    if (body.game !== undefined) savedGame = body.game;
+    renderSlate();
+    openSlateForm(false);
+    say(onairMsg, body.game === "" ? "Saved. No game showing." : "Saved.", true);
+    loadStream();                     // refreshes the remembered games
+  } catch { say(onairMsg, "Could not reach the server.", false); }
+}
+
+slateEdit.addEventListener("click", () => openSlateForm(slateForm.hidden));
+$("slate-cancel").addEventListener("click", () => { openSlateForm(false); say(onairMsg, "", true); });
+slateForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  saveOnAir({ title: titleInput.value.trim(), game: gameInput.value.trim() });
+});
+// Clears the game on its own, so it cannot trip over an empty title box.
+$("game-none").addEventListener("click", () => {
+  gameInput.value = "";
+  saveOnAir({ game: "" });
+});
+
+function renderGameOptions(names) {
+  const options = $("game-options");
+  options.textContent = "";
+  (names || []).forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    options.appendChild(option);
+  });
+}
+
+// ---- the room: the call board ----
+// The same presence list the watch page draws its board from, read off the
+// stream poll: the host first, then everybody in the order they arrived.
+
+function renderBoard() {
+  const viewers = (stream.viewers || []).slice()
+    .sort((a, b) => (b.admin ? 1 : 0) - (a.admin ? 1 : 0));
+  const lines = $("dash-lines");
+  lines.textContent = "";
+  viewers.forEach((v) => {
+    const item = document.createElement("li");
+    const line = document.createElement("span");
+    line.className = "line";
+    if (v.admin) line.classList.add("host");
+    const you = me && v.username === me.username;
+    line.textContent = you ? "You" : v.name;
+    const label = `${v.name}${you ? " (you)" : ""}${v.admin ? ", host" : ""}`;
+    line.title = label;
+    line.setAttribute("aria-label", label);
+    item.appendChild(line);
+    lines.appendChild(item);
+  });
+  $("board-count").textContent = String(viewers.length);
+  $("board-empty").hidden = viewers.length > 0;
+}
+
+// ---- the room: the readout ----
+
+const roomLimit = $("room-limit");
+const limitForm = $("limit-form");
+const limitEdit = $("limit-edit");
+const roomLimitMsg = $("room-limit-msg");
+
+function sentLabel(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+function renderReadout() {
+  const watching = typeof stream.video_watchers === "number" ? stream.video_watchers : 0;
+  const limit = typeof stream.max_viewers === "number" ? stream.max_viewers : 0;
+  $("ro-watching").textContent = String(watching);
+  $("ro-limit").textContent = limit > 0 ? String(limit) : "None";
+  $("ro-sent").textContent = sentLabel(stream.sent_bytes || 0);
+}
+
+function openLimitForm(open) {
+  limitForm.hidden = !open;
+  limitEdit.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    roomLimit.value = String(stream.max_viewers || 0);
+    roomLimit.focus();
+    roomLimit.select();
+  }
+}
+
+limitEdit.addEventListener("click", () => openLimitForm(limitForm.hidden));
+$("limit-cancel").addEventListener("click", () => openLimitForm(false));
+limitForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  say(roomLimitMsg, "", true);
+  const raw = Number.parseInt(roomLimit.value, 10);
+  if (!Number.isFinite(raw) || raw < 0) {
+    say(roomLimitMsg, "That has to be a whole number, 0 or more.", false);
+    return;
+  }
+  try {
+    const { ok, data } = await postJSON("/api/stream-info", { max_viewers: raw });
+    if (!ok) { say(roomLimitMsg, data.error || "Could not save that.", false); return; }
+    stream.max_viewers = raw;
+    renderReadout();
+    openLimitForm(false);
+    say(roomLimitMsg, raw === 0 ? "Saved. No limit." : `Saved. ${raw} at a time.`, true);
+    loadStream();
+  } catch { say(roomLimitMsg, "Could not reach the server.", false); }
+});
+
+// ---- the poll ----
+// The lamp in the strip and the steps read the same moment: the page asks for
+// the public status (the lamp, the channel's name and accent) and the admin
+// stream payload (everything else) together, every ten seconds.
+
+async function loadStream() {
+  let status = null;
+  try {
+    const [statusReply, streamReply] = await Promise.all([
+      fetch("/api/status"), fetch("/api/admin/stream"),
+    ]);
+    if (statusReply.ok) status = await statusReply.json();
+    if (streamReply.ok) stream = await streamReply.json();
+  } catch { return; }        // keep the last state rather than flash off air
+  if (status && strip) strip.setStatus(status);
+  renderGameOptions(stream.recent_games);
+  // Not written into the slate while it is being edited.
+  if (slateForm.hidden) {
+    savedGame = stream.game || "";
+    renderSlate();
+  }
+  renderSteps();
+  renderBoard();
+  renderReadout();
+  renderSound();
+  renderTheaterSubs(stream);
+}
+
+// Whether the media store is answering, for step 2's recording line. It asks
+// the store itself, so it runs far less often than the stream poll.
+async function loadStorageState() {
+  try {
+    const data = await getJSON("/api/admin/retention");
+    storageAway = !!(data.usage && data.usage.available === false);
+    storagePending = data.pending || 0;
+  } catch { return; }
+  renderSteps();
+}
+
+// =============================================================================
+// Library: broadcasts and clips, and storage
+// =============================================================================
+
+let contentTab = "vods";
+
 async function loadContent() {
   const kind = contentTab === "vods" ? "vod" : "clip";
   let items = [];
-  try { items = (await (await fetch(`/api/${contentTab}`)).json())[contentTab] || []; }
+  try { items = (await getJSON(`/api/${contentTab}`))[contentTab] || []; }
   catch { items = []; }
-  const list = document.getElementById("content-list");
-  document.getElementById("content-empty").hidden = items.length > 0;
-  list.innerHTML = "";
+  const list = $("content-list");
+  $("content-empty").hidden = items.length > 0;
+  $("content-empty").textContent = kind === "vod" ? "No broadcasts saved yet." : "No clips yet.";
+  list.textContent = "";
   items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-    const left = document.createElement("span");
+    const { row, main, tools } = rowNode();
     const title = kind === "vod" ? item.title : item.name;
     const when = new Date((kind === "vod" ? item.started_at : item.created_at) * 1000)
       .toLocaleDateString();
-    left.innerHTML = `<a></a> <span class="muted"></span>`;
-    const link = left.querySelector("a");
+    const link = document.createElement("a");
+    link.className = "row-title";
     link.href = `/media?type=${kind}&id=${item.id}`;
     link.textContent = title;
-    left.querySelector(".muted").textContent =
-      `${durationClock(item.duration)} · ${item.views} views · ${when}` +
-      (kind === "clip" && item.creator ? ` · @${item.creator}` : "");
-    // Sharing is per clip and admin only. VODs are deliberately not shareable:
-    // a whole broadcast is a much bigger mistake to make public than a minute
-    // of it, and a clip's short life bounds the mistake anyway.
-    // Shared clips get two buttons rather than one toggle: the link has to stay
-    // re-copyable, and unsharing kills it for good, so it cannot be a stray click.
-    const shareBtns = [];
+    main.append(link, textNode("span", "row-meta",
+      `${durationClock(item.duration)} · ${plural(item.views, "view")} · ${when}` +
+      (kind === "clip" && item.creator ? ` · @${item.creator}` : "")));
+    // Sharing is per clip and admin only. A whole broadcast is a much bigger
+    // mistake to make public than a minute of it, so broadcasts are never
+    // shared. A shared clip gets two buttons rather than a toggle: the link has
+    // to stay re-copyable, and unsharing kills it for good.
     if (kind === "clip" && item.shared) {
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.className = "chip-btn pinned-chip";
-      copy.textContent = "Copy link";
-      copy.title = "Anyone with this link can watch. Click to copy it again.";
-      copy.addEventListener("click", () => copyShareLink(item, copy));
-      const stop = document.createElement("button");
-      stop.type = "button";
-      stop.className = "chip-btn danger-chip";
-      stop.textContent = "Unshare";
+      const copy = button("Copy link", "chip is-on", (btn) => copyShareLink(item, btn));
+      copy.title = "Anyone with this link can watch. Copy it again.";
+      const stop = button("Unshare", "chip danger", (btn) => shareClip(item, false, btn));
       stop.title = "Kill the public link. Sharing again makes a new one.";
-      stop.addEventListener("click", () => unshareClip(item, stop));
-      shareBtns.push(copy, stop);
+      tools.append(copy, stop);
     } else if (kind === "clip") {
-      const share = document.createElement("button");
-      share.type = "button";
-      share.className = "chip-btn";
-      share.textContent = "Share";
+      const share = button("Share", "chip", (btn) => shareClip(item, true, btn));
       share.title = "Make a link anyone can watch, without an account.";
-      share.addEventListener("click", () => shareClip(item, share));
-      shareBtns.push(share);
+      tools.appendChild(share);
     }
-    const pin = document.createElement("button");
-    pin.type = "button";
-    pin.className = "chip-btn" + (item.keep ? " pinned-chip" : "");
-    pin.textContent = item.keep ? "Pinned" : "Pin";
+    const pin = button(item.keep ? "Pinned" : "Pin", item.keep ? "chip is-on" : "chip",
+      (btn) => togglePin(kind, item.id, !item.keep, btn));
+    pin.setAttribute("aria-pressed", item.keep ? "true" : "false");
     pin.title = item.keep
-      ? "Retention never removes this. Click to unpin."
+      ? "Retention never removes this. Press to unpin."
       : "Keep this no matter what retention says.";
-    pin.addEventListener("click", () => togglePin(kind, item.id, !item.keep, pin));
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "chip-btn danger-chip";
-    btn.textContent = "Delete";
-    btn.addEventListener("click", () => deleteContent(kind, item.id, title, btn));
-    const actions = document.createElement("span");
-    actions.className = "row-actions";
-    shareBtns.forEach((b) => actions.appendChild(b));
-    actions.append(pin, btn);
-    row.append(left, actions);
+    tools.append(pin, button("Delete", "chip danger", (btn) => deleteContent(kind, item.id, title, btn)));
     list.appendChild(row);
   });
 }
 
-async function shareClip(item, btn) {
-  if (!confirm(
-    `Share "${item.name}" publicly?\n\n` +
-    "Anyone with the link can watch it without an account. " +
-    "The chat replay is not included. You can stop sharing at any time.")) return;
+async function shareClip(item, share, btn) {
+  const question = share
+    ? `Share "${item.name}" publicly?\n\nAnyone with the link can watch it without an account. ` +
+      "The chat replay is not included. You can stop sharing at any time."
+    : `Stop sharing "${item.name}"?\n\nThe public link stops working immediately and permanently. ` +
+      "Sharing again later makes a new link.";
+  if (!confirm(question)) return;
   btn.disabled = true;
   try {
-    const reply = await fetch(`/api/clips/${item.id}/share`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ share: true }),
-    });
-    const data = await reply.json().catch(() => ({}));
-    if (!reply.ok) {
+    const { ok, data } = await postJSON(`/api/clips/${item.id}/share`, { share });
+    if (!ok) {
       alert(data.error || "Could not change sharing.");
-    } else if (data.url) {
+    } else if (share && data.url) {
       const link = window.location.origin + data.url;
-      try {
-        await navigator.clipboard.writeText(link);
-        alert("Link copied:\n\n" + link);
-      } catch {
-        prompt("Share this link:", link);
-      }
-    }
-  } catch { alert("Could not change sharing."); }
-  btn.disabled = false;
-  loadContent();
-}
-
-async function unshareClip(item, btn) {
-  if (!confirm(
-    `Stop sharing "${item.name}"?\n\n` +
-    "The public link stops working immediately and permanently. " +
-    "Sharing again later makes a new link.")) return;
-  btn.disabled = true;
-  try {
-    const reply = await fetch(`/api/clips/${item.id}/share`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ share: false }),
-    });
-    if (!reply.ok) {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not change sharing.");
+      if (await copyText(link)) alert(`Link copied:\n\n${link}`);
+      else prompt("Share this link:", link);
     }
   } catch { alert("Could not change sharing."); }
   btn.disabled = false;
@@ -174,26 +660,14 @@ async function unshareClip(item, btn) {
 async function copyShareLink(item, btn) {
   if (!item.share_url) return;
   const link = window.location.origin + item.share_url;
-  try {
-    await navigator.clipboard.writeText(link);
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    prompt("Share this link:", link);
-  }
+  copyWithButton(link, btn, () => prompt("Share this link:", link));
 }
 
 async function togglePin(kind, id, keep, btn) {
   btn.disabled = true;
   try {
-    const reply = await fetch(`/api/${kind}s/${id}/keep`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keep }),
-    });
-    if (reply.ok) { loadContent(); loadRetention(); return; }
-    const data = await reply.json().catch(() => ({}));
+    const { ok, data } = await postJSON(`/api/${kind}s/${id}/keep`, { keep });
+    if (ok) { loadContent(); loadRetention(); return; }
     alert(data.error || "Could not change the pin.");
   } catch { alert("Could not change the pin."); }
   btn.disabled = false;
@@ -204,7 +678,7 @@ async function deleteContent(kind, id, title, btn) {
   btn.disabled = true;
   try {
     const reply = await fetch(`/api/${kind}s/${id}`, { method: "DELETE" });
-    if (reply.ok) { loadContent(); return; }
+    if (reply.ok) { loadContent(); loadRetention(); return; }
     const data = await reply.json().catch(() => ({}));
     alert(data.error || "Could not delete.");
   } catch { alert("Could not delete."); }
@@ -214,245 +688,13 @@ async function deleteContent(kind, id, title, btn) {
 document.querySelectorAll(".lib-tab[data-content]").forEach((tab) => {
   tab.addEventListener("click", () => {
     contentTab = tab.dataset.content;
-    document.querySelectorAll(".lib-tab[data-content]").forEach((t) => t.classList.toggle("selected", t === tab));
+    document.querySelectorAll(".lib-tab[data-content]").forEach((t) => {
+      t.classList.toggle("selected", t === tab);
+      t.setAttribute("aria-pressed", t === tab ? "true" : "false");
+    });
     loadContent();
   });
 });
-
-// ---- channel settings (the identity: name, description, accent) ----
-// The stream title is NOT here any more. It changes every broadcast and it is
-// the headline of the link preview, so it lives on the console with the game;
-// loadChannel still fills it, because /api/channel is where it comes from.
-
-const chSite = document.getElementById("ch-site");
-const chDesc = document.getElementById("ch-desc");
-const chMsg = document.getElementById("ch-msg");
-
-// ---- accent flavor (channel-wide brand color) ----
-// Picking a swatch is not the same as changing the channel: clicking one only
-// marks it selected, and the accent is applied to the document (and remembered
-// in localStorage for the next no-flash paint) only once Save actually
-// succeeds. That keeps a browsed-but-abandoned pick from restyling the page and
-// leaking into the saved localStorage value.
-const ACCENTS = ["green", "amber", "blue", "ghost"];
-const swatches = document.querySelectorAll("#accent-swatches .accent-swatch");
-let accent = "green";
-
-// Mark a swatch as the current pick. No side effects on the document or storage:
-// this is only the in-form selection, which Save commits.
-function selectAccent(value) {
-  if (!ACCENTS.includes(value)) return;
-  accent = value;
-  swatches.forEach((s) => s.classList.toggle("selected", s.dataset.accent === value));
-}
-
-// Commit an accent to the whole document and remember it. Called on load (to
-// reflect the saved value) and on a successful save, never on a bare click.
-function applyAccentToDocument(value) {
-  if (!ACCENTS.includes(value)) return;
-  document.documentElement.dataset.accent = value;
-  try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
-}
-
-swatches.forEach((s) => {
-  s.addEventListener("click", () => selectAccent(s.dataset.accent));
-});
-
-function showChMsg(text, ok) {
-  chMsg.textContent = text;
-  chMsg.classList.toggle("good", !!ok);
-  chMsg.classList.toggle("bad", !ok);
-  chMsg.hidden = false;
-}
-
-async function loadChannel() {
-  let data = {};
-  try { data = await (await fetch("/api/channel")).json(); } catch { return; }
-  chSite.value = data.site_name || "";
-  chDesc.value = data.description || "";
-  setTitleField(data.title || "");
-  // On load the saved value is the real one, so both mark it and apply it.
-  selectAccent(data.accent || "green");
-  applyAccentToDocument(data.accent || "green");
-}
-
-document.getElementById("ch-save").addEventListener("click", async () => {
-  const siteName = chSite.value.trim();
-  if (!siteName) { showChMsg("Site name cannot be empty.", false); return; }
-  chMsg.hidden = true;
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        site_name: siteName, description: chDesc.value.trim(), accent,
-      }),
-    });
-    if (!reply.ok) {
-      const d = await reply.json().catch(() => ({}));
-      showChMsg(d.error || "Could not save.", false);
-      return;
-    }
-  } catch { showChMsg("Could not reach the server.", false); return; }
-  // Only now that the save landed does the accent take effect on the document
-  // and in localStorage.
-  applyAccentToDocument(accent);
-  showChMsg("Saved.", true);
-});
-
-// ---- chat moderation (slow mode + banned words) ----
-
-const modSlow = document.getElementById("mod-slow");
-const modBanned = document.getElementById("mod-banned");
-const modMsg = document.getElementById("mod-msg");
-const modBannedLabel = document.getElementById("mod-banned-label");
-const bannedModal = document.getElementById("banned-modal");
-const bannedMsg = document.getElementById("mod-banned-msg");
-
-function showModMsg(text, ok) {
-  modMsg.textContent = text;
-  modMsg.classList.toggle("good", !!ok);
-  modMsg.classList.toggle("bad", !ok);
-  modMsg.hidden = false;
-}
-
-function showBannedMsg(text, ok) {
-  bannedMsg.textContent = text;
-  bannedMsg.classList.toggle("good", !!ok);
-  bannedMsg.classList.toggle("bad", !ok);
-  bannedMsg.hidden = false;
-}
-
-// Entries are separated by newlines or commas, the same split the server does.
-// Counting here is only for the summary line, so it never has to be exact about
-// anything the filter itself decides.
-function countBannedWords(raw) {
-  return new Set(
-    String(raw || "").replace(/,/g, "\n").split("\n").map((w) => w.trim().toLowerCase()).filter(Boolean)
-  ).size;
-}
-
-function showBannedCount(raw) {
-  const n = countBannedWords(raw);
-  modBannedLabel.textContent = n === 1 ? "Banned words (1)" : `Banned words (${n})`;
-}
-
-async function loadModeration() {
-  let data = {};
-  try { data = await (await fetch("/api/admin/moderation")).json(); } catch { return; }
-  modSlow.value = data.slow_mode_seconds != null ? data.slow_mode_seconds : 0;
-  modBanned.value = data.banned_words || "";
-  showBannedCount(modBanned.value);
-}
-
-document.getElementById("mod-banned-open").addEventListener("click", () => {
-  // Reopen always shows what is actually saved, so abandoning an edit and
-  // coming back does not resurrect the abandoned text.
-  bannedMsg.hidden = true;
-  loadModeration().then(() => { bannedModal.hidden = false; });
-});
-
-document.getElementById("mod-banned-save").addEventListener("click", async () => {
-  bannedMsg.hidden = true;
-  // Only banned_words goes up: the endpoint updates just the fields it is given,
-  // so this cannot quietly save an unsaved slow-mode value sitting behind it.
-  try {
-    const reply = await fetch("/api/admin/moderation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ banned_words: modBanned.value }),
-    });
-    if (!reply.ok) {
-      const d = await reply.json().catch(() => ({}));
-      showBannedMsg(d.error || "Could not save.", false);
-      return;
-    }
-  } catch { showBannedMsg("Could not reach the server.", false); return; }
-  showBannedCount(modBanned.value);
-  showBannedMsg("Saved.", true);
-});
-
-document.getElementById("mod-save").addEventListener("click", async () => {
-  const slow = parseInt(modSlow.value, 10);
-  if (Number.isNaN(slow) || slow < 0) { showModMsg("Slow mode must be a whole number of seconds.", false); return; }
-  modMsg.hidden = true;
-  try {
-    const reply = await fetch("/api/admin/moderation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Slow mode only. The word list has its own save inside its modal, and
-      // sending it from here too would let an abandoned edit ride along.
-      body: JSON.stringify({ slow_mode_seconds: slow }),
-    });
-    if (!reply.ok) {
-      const d = await reply.json().catch(() => ({}));
-      showModMsg(d.error || "Could not save.", false);
-      return;
-    }
-  } catch { showModMsg("Could not reach the server.", false); return; }
-  showModMsg("Saved.", true);
-});
-
-// ---- go-live notifications ----
-
-const notifyWebhook = document.getElementById("notify-webhook");
-const notifyEmailOn = document.getElementById("notify-email-on");
-const notifyStatus = document.getElementById("notify-status");
-const notifyMsg = document.getElementById("notify-msg");
-
-function showNotifyMsg(text, ok) {
-  notifyMsg.textContent = text;
-  notifyMsg.classList.toggle("good", !!ok);
-  notifyMsg.classList.toggle("bad", !ok);
-  notifyMsg.hidden = false;
-}
-
-async function loadNotify() {
-  let data = {};
-  try { data = await (await fetch("/api/admin/notify")).json(); } catch { return; }
-  notifyWebhook.value = data.discord_webhook || "";
-  notifyEmailOn.checked = data.email_on_live !== false;
-  const bits = [];
-  // Three states, not two: the relay can be missing, or present but switched
-  // off here. Saying "email is set up" while nothing sends would be a lie.
-  if (!data.smtp_configured) {
-    bits.push("Email is not configured on the server (set the SMTP variables to enable it).");
-  } else if (data.email_on_live === false) {
-    bits.push("Email is set up but switched off, so nobody is emailed when you go live.");
-  } else {
-    bits.push(`Email is set up. ${data.recipients} ${data.recipients === 1 ? "person" : "people"} will be emailed.`);
-  }
-  if (!data.site_url) bits.push("Set SELFSTREAM_SITE_URL so messages include a watch link.");
-  if (data.last_notified_at) bits.push(`Last announced ${relativeTime(data.last_notified_at)}.`);
-  notifyStatus.textContent = bits.join(" ");
-}
-
-async function saveNotify(test) {
-  notifyMsg.hidden = true;
-  const body = {
-    discord_webhook: notifyWebhook.value,
-    email_on_live: notifyEmailOn.checked,
-  };
-  if (test) body.test = true;
-  let reply;
-  try {
-    reply = await fetch("/api/admin/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch { showNotifyMsg("Could not reach the server.", false); return; }
-  if (reply.ok) {
-    showNotifyMsg(test ? "Test announcement sent." : "Saved.", true);
-    loadNotify();
-  } else {
-    const data = await reply.json().catch(() => ({}));
-    showNotifyMsg(data.error || "Could not save.", false);
-  }
-}
-
-document.getElementById("notify-save").addEventListener("click", () => saveNotify(false));
-document.getElementById("notify-test").addEventListener("click", () => saveNotify(true));
 
 // ---- storage and retention ----
 
@@ -463,286 +705,339 @@ const RETENTION_FIELDS = {
   "ret-clip-days": "clip_keep_days",
   "ret-cap-gb": "media_cap_gb",
 };
-const retMsg = document.getElementById("ret-msg");
-
-function formatBytes(bytes) {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = Math.max(0, bytes || 0);
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
-  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
-}
-
-function showRetMsg(text, ok) {
-  retMsg.textContent = text;
-  retMsg.classList.toggle("good", !!ok);
-  retMsg.classList.toggle("bad", !ok);
-  retMsg.hidden = false;
-}
+const retMsg = $("ret-msg");
 
 function renderRetention(data) {
   Object.entries(RETENTION_FIELDS).forEach(([id, field]) => {
-    document.getElementById(id).value = data[field] ?? 0;
+    $(id).value = data[field] ?? 0;
   });
   const usage = data.usage || {};
   const counts = data.counts || {};
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   // The media store may be on another machine and may be away. Say that in
-  // place of the byte counts rather than showing zeros that read as "empty";
-  // the counts and limits come from the database and are still true.
+  // place of the byte counts rather than show zeros that read as "empty"; the
+  // counts and limits come from the database and are still true.
   const away = usage.available === false;
+  storageAway = away;
+  storagePending = data.pending || 0;
+  const usageLine = $("storage-usage");
+  usageLine.classList.toggle("is-away", away);
   const parts = [
-    away ? "Usage unknown: the media store is not answering" : `${formatBytes(usage.total_bytes)} used`,
+    away ? "The media store is not answering, so its usage is unknown" : `${formatBytes(usage.total_bytes)} used`,
     `${plural(counts.vods || 0, "broadcast")}, ${plural(counts.clips || 0, "clip")}`,
   ];
   if (counts.pinned) parts.push(`${counts.pinned} pinned`);
   if (!away && usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);
-  document.getElementById("storage-usage").textContent = parts.join(" · ");
-  // The bar is the media store against the whole filesystem it sits on, so it
-  // answers "how close am I to trouble" rather than "how close to my own cap".
-  const fill = document.getElementById("usage-fill");
+  usageLine.textContent = parts.join(" · ");
+  // The bar is the store against the whole disk it sits on, so it answers
+  // "how close am I to trouble" rather than "how close to my own cap".
+  const fill = $("usage-fill");
   const capacity = usage.fs_total_bytes || 0;
-  const usedShare = capacity
+  const usedShare = capacity && !away
     ? Math.min(100, ((capacity - (usage.free_bytes || 0)) / capacity) * 100)
     : 0;
-  fill.style.width = `${usedShare}%`;
+  fill.style.transform = `scaleX(${usedShare / 100})`;
   fill.classList.toggle("is-tight", usedShare >= 90);
   const off = Object.values(RETENTION_FIELDS).every((field) => !data[field]);
-  const state = document.getElementById("retention-state");
+  const state = $("retention-state");
   state.textContent = off
     ? "Retention is off. Nothing is ever deleted automatically."
     : "Retention is on. Unpinned items past these limits are deleted.";
-  state.classList.toggle("good", off);
-  state.classList.toggle("bad", !off);
   state.hidden = false;
-  // Recordings held back because the media store could not be written. Shown
-  // only when there are any: the rest of the time it is not a thing to think
-  // about, and the bytes are still on the server's own scratch disk.
-  const pending = document.getElementById("storage-pending");
-  const waiting = data.pending || 0;
+  // Recordings held back because the store could not be written. Shown only
+  // when there are any; the bytes are still safe on the server's own disk.
+  const pending = $("storage-pending");
+  const waiting = storagePending;
   pending.textContent = waiting
-    ? `${waiting} recording${waiting === 1 ? " is" : "s are"} waiting to be saved. `
-      + "This retries on its own."
+    ? `${plural(waiting, "recording")} ${waiting === 1 ? "is" : "are"} waiting to be saved. This retries on its own.`
     : "";
   pending.hidden = !waiting;
+  renderSteps();
 }
 
 async function loadRetention() {
-  try { renderRetention(await (await fetch("/api/admin/retention")).json()); }
+  try { renderRetention(await getJSON("/api/admin/retention")); }
   catch { /* leave the panel as it was */ }
 }
 
-async function saveRetention() {
-  retMsg.hidden = true;
+$("ret-save").addEventListener("click", async () => {
+  say(retMsg, "", true);
   const body = {};
   Object.entries(RETENTION_FIELDS).forEach(([id, field]) => {
-    body[field] = Number(document.getElementById(id).value || 0);
+    body[field] = Number($(id).value || 0);
   });
-  let reply;
-  try {
-    reply = await fetch("/api/admin/retention", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch { showRetMsg("Could not reach the server.", false); return; }
-  const data = await reply.json().catch(() => ({}));
-  if (!reply.ok) { showRetMsg(data.error || "Could not save.", false); return; }
-  const removed = data.removed || 0;
-  showRetMsg(
-    removed
-      ? `Saved. Removed ${removed} ${removed === 1 ? "item" : "items"}.`
-      : "Saved. Nothing needed removing.",
-    true,
-  );
-  renderRetention(data);
+  let result;
+  try { result = await postJSON("/api/admin/retention", body); }
+  catch { say(retMsg, "Could not reach the server.", false); return; }
+  if (!result.ok) { say(retMsg, result.data.error || "Could not save.", false); return; }
+  const removed = result.data.removed || 0;
+  say(retMsg, removed ? `Saved. Removed ${plural(removed, "item")}.` : "Saved. Nothing needed removing.", true);
+  renderRetention(result.data);
   loadContent();
+});
+
+// =============================================================================
+// Channel: the name, the description, the accent, and go-live notifications
+// =============================================================================
+
+const chSite = $("ch-site");
+const chDesc = $("ch-desc");
+const chMsg = $("ch-msg");
+
+// Picking a swatch is not the same as changing the channel: a press only marks
+// it, and the accent reaches the document (and localStorage, for the next
+// first paint) once Save has actually landed. A browsed-but-abandoned pick
+// never restyles the page.
+const ACCENTS = ["green", "amber", "blue", "ghost"];
+const swatches = document.querySelectorAll("#accent-swatches .accent-swatch");
+let accent = "green";
+
+function selectAccent(value) {
+  if (!ACCENTS.includes(value)) return;
+  accent = value;
+  swatches.forEach((s) => {
+    const on = s.dataset.accent === value;
+    s.classList.toggle("selected", on);
+    s.setAttribute("aria-pressed", on ? "true" : "false");
+  });
 }
 
-document.getElementById("ret-save").addEventListener("click", saveRetention);
-
-// ---- overlay (OBS chat browser source) ----
-
-const overlayUrlInput = document.getElementById("overlay-url");
-const overlayMsg = document.getElementById("overlay-msg");
-
-function showOverlayMsg(text, ok) {
-  overlayMsg.textContent = text;
-  overlayMsg.classList.toggle("good", !!ok);
-  overlayMsg.classList.toggle("bad", !ok);
-  overlayMsg.hidden = false;
+function applyAccentToDocument(value) {
+  if (!ACCENTS.includes(value)) return;
+  document.documentElement.dataset.accent = value;
+  try { localStorage.setItem("selfstream_accent", value); } catch (e) {}
 }
+
+swatches.forEach((s) => s.addEventListener("click", () => selectAccent(s.dataset.accent)));
+
+// Eager, whatever section is showing: it owns the accent, and it is where the
+// slate's title comes from.
+async function loadChannel() {
+  let data = {};
+  try { data = await getJSON("/api/channel"); } catch { return; }
+  chSite.value = data.site_name || "";
+  chDesc.value = data.description || "";
+  if (slateForm.hidden) {
+    savedTitle = data.title || "";
+    renderSlate();
+  }
+  selectAccent(data.accent || "green");
+  applyAccentToDocument(data.accent || "green");
+}
+
+$("ch-save").addEventListener("click", async () => {
+  const siteName = chSite.value.trim();
+  if (!siteName) { say(chMsg, "Site name cannot be empty.", false); return; }
+  say(chMsg, "", true);
+  try {
+    const { ok, data } = await postJSON("/api/stream-info", {
+      site_name: siteName, description: chDesc.value.trim(), accent,
+    });
+    if (!ok) { say(chMsg, data.error || "Could not save.", false); return; }
+  } catch { say(chMsg, "Could not reach the server.", false); return; }
+  applyAccentToDocument(accent);
+  say(chMsg, "Saved.", true);
+  loadStream();                      // the strip carries the site name
+});
+
+// ---- go-live notifications ----
+// A Web Push to every device people turned on in Options. The switch saves on
+// its own; the test goes only to this admin's own devices.
+
+const notifyOn = $("notify-on");
+const notifyTest = $("notify-test");
+const notifyMsg = $("notify-msg");
+
+function renderNotify(data) {
+  notifyOn.setAttribute("aria-checked", data.on ? "true" : "false");
+  notifyOn.disabled = !data.ready;
+  notifyTest.disabled = !data.ready;
+  const devices = `${plural(data.devices, "device")} on ${plural(data.accounts, "account")}`;
+  let line;
+  if (!data.ready) line = "Set SELFSTREAM_SITE_URL on the server to turn notifications on.";
+  else if (!data.on) line = `Off, so nobody is notified. ${devices} would get it.`;
+  else line = `${devices} will get it.`;
+  $("notify-status").textContent = line;
+}
+
+async function loadNotify() {
+  try { renderNotify(await getJSON("/api/admin/notify")); } catch { /* keep what shows */ }
+}
+
+notifyOn.addEventListener("click", async () => {
+  const on = notifyOn.getAttribute("aria-checked") !== "true";
+  say(notifyMsg, "", true);
+  let result;
+  try { result = await postJSON("/api/admin/notify", { on }); }
+  catch { say(notifyMsg, "Could not reach the server.", false); return; }
+  if (!result.ok) say(notifyMsg, result.data.error || "Could not save.", false);
+  loadNotify();
+});
+
+notifyTest.addEventListener("click", async () => {
+  say(notifyMsg, "", true);
+  notifyTest.disabled = true;
+  let result;
+  try { result = await postJSON("/api/admin/notify/test"); }
+  catch { result = null; }
+  notifyTest.disabled = false;
+  if (!result) { say(notifyMsg, "Could not reach the server.", false); return; }
+  const data = result.data;
+  if (!result.ok) say(notifyMsg, data.error || "Could not send a test.", false);
+  else if (!data.devices) say(notifyMsg, "None of your devices are signed up. Turn it on in Options on your phone first.", false);
+  else if (!data.failed) say(notifyMsg, `Sent to ${plural(data.sent, "device")}.`, true);
+  else say(notifyMsg, `Sent to ${data.sent} of ${plural(data.devices, "device")}. The rest did not accept it.`, false);
+});
+
+// =============================================================================
+// Chat rules: slow mode and the word filter
+// =============================================================================
+
+const modSlow = $("mod-slow");
+const modBanned = $("mod-banned");
+const modMsg = $("mod-msg");
+const bannedEditor = $("banned-editor");
+const bannedOpen = $("mod-banned-open");
+const bannedMsg = $("mod-banned-msg");
+
+// Entries split on newlines or commas, the way the server splits them. The
+// count is only for the summary line, so it never has to agree with the
+// filter about anything the filter decides.
+function countBannedWords(raw) {
+  return new Set(
+    String(raw || "").replace(/,/g, "\n").split("\n").map((w) => w.trim().toLowerCase()).filter(Boolean)
+  ).size;
+}
+
+function showBannedCount(raw) {
+  $("mod-banned-label").textContent = `${plural(countBannedWords(raw), "banned word")}`;
+}
+
+async function loadModeration() {
+  let data = {};
+  try { data = await getJSON("/api/admin/moderation"); } catch { return; }
+  modSlow.value = data.slow_mode_seconds != null ? data.slow_mode_seconds : 0;
+  modBanned.value = data.banned_words || "";
+  showBannedCount(modBanned.value);
+}
+
+bannedOpen.addEventListener("click", async () => {
+  const open = bannedEditor.hidden;
+  if (open) {
+    // Opening always shows what is saved, so an abandoned edit does not come
+    // back from the dead.
+    say(bannedMsg, "", true);
+    await loadModeration();
+  }
+  bannedEditor.hidden = !open;
+  bannedOpen.textContent = open ? "Hide the list" : "Show the list";
+  bannedOpen.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) modBanned.focus();
+});
+
+$("mod-banned-save").addEventListener("click", async () => {
+  say(bannedMsg, "", true);
+  // Only the list goes up: the endpoint changes just the fields it is given,
+  // so this cannot quietly save an unsaved slow mode value too.
+  try {
+    const { ok, data } = await postJSON("/api/admin/moderation", { banned_words: modBanned.value });
+    if (!ok) { say(bannedMsg, data.error || "Could not save.", false); return; }
+  } catch { say(bannedMsg, "Could not reach the server.", false); return; }
+  showBannedCount(modBanned.value);
+  say(bannedMsg, "Saved.", true);
+});
+
+$("mod-save").addEventListener("click", async () => {
+  const slow = parseInt(modSlow.value, 10);
+  if (Number.isNaN(slow) || slow < 0) {
+    say(modMsg, "Slow mode must be a whole number of seconds.", false);
+    return;
+  }
+  say(modMsg, "", true);
+  try {
+    // Slow mode only, for the same reason the list saves alone.
+    const { ok, data } = await postJSON("/api/admin/moderation", { slow_mode_seconds: slow });
+    if (!ok) { say(modMsg, data.error || "Could not save.", false); return; }
+  } catch { say(modMsg, "Could not reach the server.", false); return; }
+  say(modMsg, slow ? `Saved. ${plural(slow, "second")} between messages.` : "Saved. Slow mode is off.", true);
+});
+
+// =============================================================================
+// Connections: the overlay, and theater with its projector
+// =============================================================================
+
+const overlayUrl = $("overlay-url");
+const overlayMsg = $("overlay-msg");
 
 function setOverlayUrl(key) {
-  // Origin so the URL is copy-paste ready into OBS on the same network as here.
-  overlayUrlInput.value = `${window.location.origin}/overlay?key=${key}`;
+  // The origin, so the URL is ready to paste into OBS.
+  overlayUrl.value = `${window.location.origin}/overlay?key=${key}`;
 }
 
 async function loadOverlay() {
   try {
-    const data = await (await fetch("/api/admin/overlay")).json();
+    const data = await getJSON("/api/admin/overlay");
     if (data.key) setOverlayUrl(data.key);
   } catch { /* leave the field blank */ }
 }
 
-// Test-fire buttons: send one synthetic event to any connected overlay so the
-// operator can confirm their OBS browser source is wired up. The event goes to
-// overlay sockets only; it never touches real chat or the chat log.
+wireShow($("overlay-show"), overlayUrl);
+$("overlay-copy").addEventListener("click", (e) => copyWithButton(
+  overlayUrl.value, e.currentTarget, () => {
+    overlayUrl.type = "text";
+    overlayUrl.select();
+    say(overlayMsg, "Copy failed; the URL is selected so you can copy it.", false);
+  }));
+
+// One synthetic event to any connected overlay, so the operator can see the
+// OBS browser source is wired up. It goes to overlay sockets only, never to
+// real chat or the chat log.
 document.querySelectorAll("[data-overlay-test]").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const kind = btn.dataset.overlayTest;
-    overlayMsg.hidden = true;
+    say(overlayMsg, "", true);
     try {
-      const reply = await fetch("/api/admin/overlay/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind }),
-      });
-      if (reply.ok) {
-        showOverlayMsg(`Sent a test ${kind} to the overlay.`, true);
-      } else {
-        showOverlayMsg("Could not send the test.", false);
-      }
-    } catch { showOverlayMsg("Could not reach the server.", false); }
+      const { ok } = await postJSON("/api/admin/overlay/test", { kind });
+      say(overlayMsg, ok ? `Sent a test ${kind} to the overlay.` : "Could not send the test.", ok);
+    } catch { say(overlayMsg, "Could not reach the server.", false); }
   });
 });
 
-document.getElementById("overlay-copy").addEventListener("click", async (e) => {
-  try {
-    await navigator.clipboard.writeText(overlayUrlInput.value);
-    const btn = e.currentTarget;
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    overlayUrlInput.select();
-    showOverlayMsg("Copy failed; the URL is selected so you can copy it.", false);
-  }
-});
-
-document.getElementById("overlay-regen").addEventListener("click", async (e) => {
-  if (!confirm("Regenerate the overlay URL? The current one will stop working.")) return;
+$("overlay-regen").addEventListener("click", async (e) => {
+  if (!confirm("Regenerate the overlay URL? The current one stops working, in OBS too, until you paste the new one.")) return;
   const btn = e.currentTarget;
   btn.disabled = true;
-  overlayMsg.hidden = true;
+  say(overlayMsg, "", true);
   try {
-    const reply = await fetch("/api/admin/overlay/regenerate", { method: "POST" });
-    if (reply.ok) {
-      const data = await reply.json();
+    const { ok, data } = await postJSON("/api/admin/overlay/regenerate");
+    if (ok && data.key) {
       setOverlayUrl(data.key);
-      showOverlayMsg("New URL generated. Update your OBS browser source.", true);
+      say(overlayMsg, "New URL made. Update your OBS browser source.", true);
     } else {
-      showOverlayMsg("Could not regenerate the URL.", false);
+      say(overlayMsg, "Could not regenerate the URL.", false);
     }
-  } catch { showOverlayMsg("Could not reach the server.", false); }
+  } catch { say(overlayMsg, "Could not reach the server.", false); }
   btn.disabled = false;
 });
 
-// ---- stream key (OBS publish) ----
+// ---- theater and the projector ----
+// The session controls, and the key the projector signs in with. The key is
+// handled like the stream key because it is the same kind of secret.
 
-const streamServerInput = document.getElementById("stream-server");
-const streamKeyInput = document.getElementById("stream-key");
-const streamKeyMsg = document.getElementById("stream-key-msg");
-
-function showStreamKeyMsg(text, ok) {
-  streamKeyMsg.textContent = text;
-  streamKeyMsg.classList.toggle("good", !!ok);
-  streamKeyMsg.classList.toggle("bad", !ok);
-  streamKeyMsg.hidden = false;
-}
-
-function setStreamKey(key) {
-  // The RTMP endpoint OBS publishes to. hostname (not origin) since RTMP is its
-  // own scheme and port, served on the same host as this dashboard.
-  streamServerInput.value = `rtmp://${window.location.hostname}:1935`;
-  // The exact string to paste into the OBS "Stream Key" box. user is omitted;
-  // the gate ignores it and checks only the key.
-  streamKeyInput.value = `live?pass=${key}`;
-}
-
-async function loadStreamKey() {
-  try {
-    const data = await (await fetch("/api/admin/stream-key")).json();
-    if (data.key) setStreamKey(data.key);
-  } catch { /* leave the fields blank */ }
-}
-
-document.getElementById("stream-key-show").addEventListener("click", (e) => {
-  const btn = e.currentTarget;
-  const hidden = streamKeyInput.type === "password";
-  streamKeyInput.type = hidden ? "text" : "password";
-  btn.textContent = hidden ? "Hide" : "Show";
-});
-
-document.getElementById("stream-key-copy").addEventListener("click", async (e) => {
-  try {
-    await navigator.clipboard.writeText(streamKeyInput.value);
-    const btn = e.currentTarget;
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    streamKeyInput.select();
-    showStreamKeyMsg("Copy failed; the key is selected so you can copy it.", false);
-  }
-});
-
-document.getElementById("stream-key-regen").addEventListener("click", async (e) => {
-  if (!confirm(
-    "Regenerate the stream key? A broadcast already live keeps running, but the " +
-    "next connection needs the new key. Update OBS before you next go live."
-  )) return;
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  streamKeyMsg.hidden = true;
-  try {
-    const reply = await fetch("/api/admin/stream-key/regenerate", { method: "POST" });
-    if (reply.ok) {
-      const data = await reply.json();
-      setStreamKey(data.key);
-      showStreamKeyMsg("New key generated. Update your OBS stream key.", true);
-    } else {
-      showStreamKeyMsg("Could not regenerate the key.", false);
-    }
-  } catch { showStreamKeyMsg("Could not reach the server.", false); }
-  btn.disabled = false;
-});
-
-
-// ---- theater and the projector --------------------------------------------
-// The session controls, and the key the projector authenticates with. The key
-// panel is the stream key panel's shape on purpose: it is the same kind of
-// secret, so it should be handled with the same three buttons.
-
-const theaterStatus = document.getElementById("theater-status");
-const theaterStart = document.getElementById("theater-start");
-const theaterEnd = document.getElementById("theater-end");
-const theaterStop = document.getElementById("theater-stop");
-const theaterNoSubs = document.getElementById("theater-nosubs");
-const theaterQuery = document.getElementById("theater-query");
-const theaterSubs = document.getElementById("theater-subs");
-const theaterSubsDefault = document.getElementById("theater-subs-default");
-const theaterResults = document.getElementById("theater-results");
-const theaterMsg = document.getElementById("theater-msg");
-const projectorStatus = document.getElementById("projector-status");
-const projectorKeyInput = document.getElementById("projector-key");
-const projectorMsg = document.getElementById("projector-msg");
+const theaterStatus = $("theater-status");
+const theaterStart = $("theater-start");
+const theaterEnd = $("theater-end");
+const theaterStop = $("theater-stop");
+const theaterNoSubs = $("theater-nosubs");
+const theaterQuery = $("theater-query");
+const theaterSubs = $("theater-subs");
+const theaterSubsDefault = $("theater-subs-default");
+const theaterResults = $("theater-results");
+const theaterMsg = $("theater-msg");
+const projectorStatus = $("projector-status");
+const projectorKey = $("projector-key");
+const projectorMsg = $("projector-msg");
 
 let theaterActive = false;
-
-function showTheaterMsg(text, ok) {
-  theaterMsg.textContent = text;
-  theaterMsg.classList.toggle("good", !!ok);
-  theaterMsg.classList.toggle("bad", !ok);
-  theaterMsg.hidden = false;
-}
-
-function showProjectorMsg(text, ok) {
-  projectorMsg.textContent = text;
-  projectorMsg.classList.toggle("good", !!ok);
-  projectorMsg.classList.toggle("bad", !ok);
-  projectorMsg.hidden = false;
-}
 
 function renderTheater(data) {
   theaterActive = !!data.active;
@@ -764,14 +1059,13 @@ function renderTheater(data) {
   theaterNoSubs.hidden = !theaterActive || !now;
 }
 
-// The channel's subtitle default, applied to the boxes ONCE from the first poll
+// The channel's subtitle default, put in the boxes ONCE, from the first poll
 // that carries it. The stream poll runs every ten seconds, and putting the
 // default back each time would undo a per-play override mid-session.
 let subsDefaultApplied = false;
 
 function renderTheaterSubs(data) {
-  if (!theaterSubsDefault || subsDefaultApplied) return;
-  if (typeof data.theater_subtitles !== "boolean") return;
+  if (subsDefaultApplied || typeof data.theater_subtitles !== "boolean") return;
   subsDefaultApplied = true;
   theaterSubsDefault.checked = data.theater_subtitles;
   theaterSubs.checked = data.theater_subtitles;
@@ -779,8 +1073,7 @@ function renderTheaterSubs(data) {
 
 function renderProjector(data) {
   if (!data.has_key) {
-    projectorStatus.textContent =
-      "No key yet. Regenerate to make one, then give it to the projector.";
+    projectorStatus.textContent = "No key yet. Regenerate to make one, then give it to the projector.";
   } else if (data.connected) {
     projectorStatus.textContent = "Connected.";
   } else if (data.last_seen) {
@@ -788,25 +1081,30 @@ function renderProjector(data) {
   } else {
     projectorStatus.textContent = "Not connected.";
   }
-  if (data.key !== undefined) projectorKeyInput.value = data.key || "";
+  if (data.key !== undefined) projectorKey.value = data.key || "";
 }
 
+// The server says in /api/me whether theater is on. Off, its routes answer
+// 404, so the panels are not asked for at all.
+const theaterEnabled = () => !me || me.theater !== false;
+
 async function loadProjector() {
+  if (!theaterEnabled()) return;
   try {
     const reply = await fetch("/api/admin/theater/projector");
-    // Hidden until the gate answers: with theater off this route is a 404.
     if (reply.ok) {
-      document.getElementById("projector-panel").hidden = false;
+      $("projector-panel").hidden = false;
       renderProjector(await reply.json());
     }
-  } catch { /* leave the last state rather than flashing disconnected */ }
+  } catch { /* keep the last state rather than flash disconnected */ }
 }
 
 async function loadTheater() {
+  if (!theaterEnabled()) return;
   try {
     const reply = await fetch("/api/theater");
     if (reply.ok) {
-      document.getElementById("theater-panel").hidden = false;
+      $("theater-panel").hidden = false;
       renderTheater(await reply.json());
     }
   } catch { /* same */ }
@@ -814,35 +1112,25 @@ async function loadTheater() {
 
 // Every control answers with the same state payload, so one path applies it.
 async function theaterAction(path, body) {
-  theaterMsg.hidden = true;
+  say(theaterMsg, "", true);
   try {
-    const reply = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await reply.json().catch(() => ({}));
-    if (!reply.ok) {
-      showTheaterMsg(
-        reply.status === 502
-          ? "The projector is not connected."
-          : (data.error || "Could not do that."),
-        false,
-      );
+    const { ok, status, data } = await postJSON(path, body);
+    if (!ok) {
+      say(theaterMsg, status === 502 ? "The projector is not connected." : (data.error || "Could not do that."), false);
       return null;
     }
     renderTheater(data);
     loadProjector();
     return data;
   } catch {
-    showTheaterMsg("Could not reach the server.", false);
+    say(theaterMsg, "Could not reach the server.", false);
     return null;
   }
 }
 
-// The rows themselves live in theater-picker.js, shared with the watch page's
-// host modal so the two cannot drift. What stays here is where a play comes
-// from and where a message goes.
+// The rows live in theater-picker.js, shared with the watch page's host modal
+// so the two cannot drift. What stays here is where a play comes from and
+// where a message goes.
 let lastResults = [];
 
 function pickerOptions() {
@@ -851,15 +1139,11 @@ function pickerOptions() {
       const done = await theaterAction("/api/admin/theater/play", {
         jf_id: item.jf_id, subtitles: theaterSubs.checked,
       });
-      if (done) showTheaterMsg(`Playing "${item.title}".`, true);
+      if (done) say(theaterMsg, `Playing "${item.title}".`, true);
       return !!done;
     },
-    // Back out of a show's episodes to whatever the search found.
     onBack: () => renderTheaterResults(lastResults),
-    message: (text, ok) => {
-      if (!text) { theaterMsg.hidden = true; return; }
-      showTheaterMsg(text, ok);
-    },
+    message: (text, ok) => say(theaterMsg, text, ok),
   };
 }
 
@@ -868,70 +1152,56 @@ function renderTheaterResults(results) {
   theaterPicker.render(theaterResults, results, pickerOptions());
 }
 
-document.getElementById("theater-search").addEventListener("click", async () => {
+$("theater-search").addEventListener("click", async () => {
   const query = theaterQuery.value.trim();
-  if (query.length < 2) {
-    showTheaterMsg("Search for at least two characters.", false);
-    return;
-  }
-  theaterMsg.hidden = true;
+  if (query.length < 2) { say(theaterMsg, "Search for at least two characters.", false); return; }
+  say(theaterMsg, "", true);
   try {
-    const reply = await fetch(
-      `/api/admin/theater/search?q=${encodeURIComponent(query)}`
-    );
+    const reply = await fetch(`/api/admin/theater/search?q=${encodeURIComponent(query)}`);
     const data = await reply.json().catch(() => ({}));
     if (!reply.ok) {
-      showTheaterMsg(
-        reply.status === 502
-          ? "The projector is not connected."
-          : (data.error || "Could not search."),
-        false,
-      );
+      say(theaterMsg, reply.status === 502 ? "The projector is not connected." : (data.error || "Could not search."), false);
       return;
     }
     renderTheaterResults(data.results || []);
-    if (!(data.results || []).length) showTheaterMsg("Nothing matched.", false);
-  } catch { showTheaterMsg("Could not reach the server.", false); }
+    if (!(data.results || []).length) say(theaterMsg, "Nothing matched.", false);
+  } catch { say(theaterMsg, "Could not reach the server.", false); }
 });
 
 theaterQuery.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") document.getElementById("theater-search").click();
+  if (e.key === "Enter") $("theater-search").click();
 });
 
 theaterStart.addEventListener("click", async () => {
   if (await theaterAction("/api/admin/theater/session")) {
-    showTheaterMsg("Session started. Viewers see the intermission card.", true);
+    say(theaterMsg, "Session started. Viewers see the intermission card.", true);
   }
 });
 
 theaterStop.addEventListener("click", () => theaterAction("/api/admin/theater/stop"));
 
-// One click, no confirmation: the room is watching subtitles run out of sync
+// One press, no confirmation: the room is watching subtitles run out of sync
 // while it takes, and the worst case is the same film from the start.
 theaterNoSubs.addEventListener("click", async () => {
   if (await theaterAction("/api/admin/theater/restart")) {
-    showTheaterMsg("Restarted without subtitles.", true);
+    say(theaterMsg, "Restarted without subtitles.", true);
   }
 });
 
 theaterSubsDefault.addEventListener("change", async () => {
   const on = theaterSubsDefault.checked;
   try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ theater_subtitles: on }),
-    });
-    if (!reply.ok) {
+    const { ok } = await postJSON("/api/stream-info", { theater_subtitles: on });
+    if (!ok) {
       theaterSubsDefault.checked = !on;
-      showTheaterMsg("Could not save that.", false);
+      say(theaterMsg, "Could not save that.", false);
       return;
     }
     theaterSubs.checked = on;
-    showTheaterMsg(on ? "Subtitles on by default." : "Subtitles off by default.", true);
+    say(theaterMsg, on ? "Subtitles on by default." : "Subtitles off by default.", true);
   } catch {
     theaterSubsDefault.checked = !on;
-    showTheaterMsg("Could not reach the server.", false);
+    say(theaterMsg, "Could not reach the server.", false);
   }
 });
 
@@ -940,297 +1210,186 @@ theaterEnd.addEventListener("click", async () => {
     "End the theater session? Whatever is playing stops and the room goes back " +
     "to the ordinary broadcast. Chat is kept."
   )) return;
-  if (await theaterAction("/api/admin/theater/end")) {
-    showTheaterMsg("Session ended.", true);
-  }
+  if (await theaterAction("/api/admin/theater/end")) say(theaterMsg, "Session ended.", true);
 });
 
-document.getElementById("projector-show").addEventListener("click", (e) => {
-  const btn = e.currentTarget;
-  const hidden = projectorKeyInput.type === "password";
-  projectorKeyInput.type = hidden ? "text" : "password";
-  btn.textContent = hidden ? "Hide" : "Show";
-});
+wireShow($("projector-show"), projectorKey);
+$("projector-copy").addEventListener("click", (e) => copyWithButton(
+  projectorKey.value, e.currentTarget, () => {
+    projectorKey.type = "text";
+    projectorKey.select();
+    say(projectorMsg, "Copy failed; the key is selected so you can copy it.", false);
+  }));
 
-document.getElementById("projector-copy").addEventListener("click", async (e) => {
-  try {
-    await navigator.clipboard.writeText(projectorKeyInput.value);
-    const btn = e.currentTarget;
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    projectorKeyInput.select();
-    showProjectorMsg("Copy failed; the key is selected so you can copy it.", false);
-  }
-});
-
-document.getElementById("projector-regen").addEventListener("click", async (e) => {
+$("projector-regen").addEventListener("click", async (e) => {
   if (!confirm(
     "Regenerate the projector key? The projector disconnects at once and will " +
     "not come back until it has the new key."
   )) return;
   const btn = e.currentTarget;
   btn.disabled = true;
-  projectorMsg.hidden = true;
+  say(projectorMsg, "", true);
   try {
-    const reply = await fetch("/api/admin/theater/projector/key", { method: "POST" });
-    if (reply.ok) {
-      renderProjector(await reply.json());
-      showProjectorMsg("New key generated. Update the projector's settings.", true);
+    const { ok, data } = await postJSON("/api/admin/theater/projector/key");
+    if (ok) {
+      renderProjector(data);
+      say(projectorMsg, "New key made. Update the projector's settings.", true);
     } else {
-      showProjectorMsg("Could not regenerate the key.", false);
+      say(projectorMsg, "Could not regenerate the key.", false);
     }
-  } catch { showProjectorMsg("Could not reach the server.", false); }
+  } catch { say(projectorMsg, "Could not reach the server.", false); }
   btn.disabled = false;
 });
 
-
-// ---- people: accounts, bans and invites -----------------------------------
-// Ported from the old /accounts page. The endpoints are unchanged; only where
-// the UI lives has moved. The list, the forms and the activity view share one
-// modal and swap its body, so nothing ever stacks.
+// =============================================================================
+// People: accounts, bans and invite codes
+// =============================================================================
 
 let users = [];
-let editing = null;   // username open in the edit view
+let editing = null;           // the username open in the edit view
 
-function formatDuration(secs) {
-  if (!secs || secs < 60) return `${secs || 0}s`;
-  const hours = Math.floor(secs / 3600);
-  const mins = Math.floor((secs % 3600) / 60);
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
+const usersModal = $("users-modal");
+const usersTitle = $("users-modal-title");
 
-function formatStamp(epoch) {
-  return new Date(epoch * 1000).toLocaleString([], {
-    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  });
-}
-
-function avatarColor(seed) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-  return `hsl(${hash}, 55%, 45%)`;
-}
-
-function avatarNode(username, name, version, cls) {
-  if (version) {
-    const img = document.createElement("img");
-    img.className = cls;
-    img.alt = "";
-    img.src = `/api/avatar/${encodeURIComponent(username)}?v=${version}`;
-    return img;
-  }
-  const span = document.createElement("span");
-  span.className = cls;
-  span.textContent = (name || username || "?").trim().charAt(0).toUpperCase();
-  span.style.background = avatarColor(username || "?");
-  return span;
-}
-
-const usersModal = document.getElementById("users-modal");
-
-function showUsersView(which) {
+function openUsers(view, title) {
   usersModal.querySelectorAll(".users-view").forEach((v) => {
-    v.hidden = v.dataset.view !== which;
+    v.hidden = v.dataset.view !== view;
   });
-}
-
-function openUsers(view) {
-  showUsersView(view || "list");
+  usersTitle.textContent = title;
   usersModal.hidden = false;
-  loadUsers();
 }
 
-document.getElementById("manage-users").addEventListener("click", () => openUsers());
-document.getElementById("manage-bans")
-  .addEventListener("click", () => openUsers("bans"));
-usersModal.querySelectorAll("[data-back]").forEach((b) => {
-  b.addEventListener("click", () => showUsersView("list"));
-});
+function closeUsers() { usersModal.hidden = true; }
 
 async function loadUsers() {
-  const reply = await fetch("/api/admin/users");
-  if (!reply.ok) return;
-  users = (await reply.json()).users || [];
+  try { users = (await getJSON("/api/admin/users")).users || []; }
+  catch { return; }
   renderUsers();
-  loadBans();
 }
 
+function roleBadge(text) { return textNode("span", "role-badge", text); }
+
 function renderUsers() {
-  const list = document.getElementById("user-list");
-  document.getElementById("user-empty").hidden = users.length > 0;
-  list.innerHTML = "";
+  const list = $("user-list");
+  $("user-empty").hidden = users.length > 0;
+  $("acct-count").textContent = users.length ? `(${users.length})` : "";
+  list.textContent = "";
   users.forEach((u) => {
-    const row = document.createElement("div");
-    row.className = "user-row" + (u.is_admin ? " is-admin" : "");
-    row.appendChild(avatarNode(u.username, u.display_name, u.avatar_version, "avatar"));
-
-    const ident = document.createElement("div");
-    ident.className = "user-ident";
-    const nameRow = document.createElement("div");
-    nameRow.className = "user-name";
-    nameRow.textContent = u.display_name;
-    if (u.is_admin) {
-      const badge = document.createElement("span");
-      badge.className = "role-badge";
-      badge.textContent = "admin";
-      nameRow.appendChild(badge);
-    }
-    if (u.is_moderator) {
-      const badge = document.createElement("span");
-      badge.className = "role-badge mod";
-      badge.textContent = "mod";
-      nameRow.appendChild(badge);
-    }
-    const handle = document.createElement("div");
-    handle.className = "user-handle muted";
-    handle.textContent = "@" + u.username;
-    const seen = document.createElement("div");
-    seen.className = "user-seen";
-    seen.textContent =
-      `${relativeTime(u.last_seen)} · ${formatDuration(u.watch_seconds)} · ${u.messages} msg`;
-    ident.append(nameRow, handle, seen);
-    row.appendChild(ident);
-
-    const actions = document.createElement("span");
-    actions.className = "row-actions";
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "chip-btn";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", () => openEdit(u));
-    const actBtn = document.createElement("button");
-    actBtn.type = "button";
-    actBtn.className = "chip-btn";
-    actBtn.textContent = "Activity";
-    actBtn.addEventListener("click", () => openActivity(u));
-    actions.append(editBtn, actBtn);
-    row.appendChild(actions);
-
+    const { row, main, tools } = rowNode("person-row");
+    row.insertBefore(avatarNode(u.username, u.display_name, u.avatar_version), main);
+    const name = document.createElement("span");
+    name.className = "row-title";
+    name.textContent = u.display_name;
+    if (u.is_admin) name.appendChild(roleBadge("admin"));
+    if (u.is_moderator) name.appendChild(roleBadge("mod"));
+    main.append(name, textNode("span", "row-meta",
+      `@${u.username} · seen ${relativeTime(u.last_seen)} · ${formatDuration(u.watch_seconds)} watched · ${u.messages} msg`));
+    tools.append(
+      button("Edit", "chip", () => openEdit(u)),
+      button("Activity", "chip", () => openActivity(u)),
+    );
     list.appendChild(row);
   });
 }
 
 // ---- create ----
 
-const createForm = document.getElementById("create-form");
-const cError = document.getElementById("c-error");
+const createForm = $("create-form");
+const cError = $("c-error");
 
-document.getElementById("user-new").addEventListener("click", () => {
+$("user-new").addEventListener("click", () => {
   createForm.reset();
   cError.hidden = true;
-  showUsersView("create");
-  document.getElementById("c-username").focus();
+  openUsers("create", "New account");
+  $("c-username").focus();
 });
 
 createForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   cError.hidden = true;
   const body = {
-    username: document.getElementById("c-username").value,
-    display_name: document.getElementById("c-name").value,
-    email: document.getElementById("c-email").value,
-    password: document.getElementById("c-password").value,
-    is_admin: document.getElementById("c-admin").checked,
-    is_moderator: document.getElementById("c-mod").checked,
-    notify_live: document.getElementById("c-notify").checked,
+    username: $("c-username").value,
+    display_name: $("c-name").value,
+    password: $("c-password").value,
+    is_admin: $("c-admin").checked,
+    is_moderator: $("c-mod").checked,
   };
-  const reply = await fetch("/api/admin/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (reply.ok) {
-    showUsersView("list");
-    loadUsers();
-  } else {
-    const data = await reply.json().catch(() => ({}));
+  try {
+    const { ok, data } = await postJSON("/api/admin/users", body);
+    if (ok) { closeUsers(); loadUsers(); return; }
     cError.textContent = data.error || "Could not create the account.";
-    cError.hidden = false;
-  }
+  } catch { cError.textContent = "Could not reach the server."; }
+  cError.hidden = false;
 });
 
 // ---- edit ----
-// The display name is deliberately absent. An admin picks the starting name
-// when creating the account; after that it belongs to the account holder, who
-// changes it from their own settings. The server refuses it either way.
+// No display name: an admin picks the starting name when making the account,
+// and after that it belongs to the account holder. The server refuses it too.
 
-const editForm = document.getElementById("edit-form");
-const eError = document.getElementById("e-error");
-const eAdmin = document.getElementById("e-admin");
-const eAdminNote = document.getElementById("e-admin-note");
-
-// The address stays editable for an admin account, because hiding it would mean
-// a forgotten address silently starts receiving mail the day they are demoted.
-// Say plainly that it is dormant instead.
-function syncAdminNote() { eAdminNote.hidden = !eAdmin.checked; }
-eAdmin.addEventListener("change", syncAdminNote);
+const editForm = $("edit-form");
+const eError = $("e-error");
+const eAdmin = $("e-admin");
 
 function openEdit(user) {
   editing = user.username;
-  document.getElementById("e-title").textContent = `Edit @${user.username}`;
-  document.getElementById("e-email").value = user.email || "";
-  document.getElementById("e-password").value = "";
+  $("e-password").value = "";
   eAdmin.checked = !!user.is_admin;
-  document.getElementById("e-mod").checked = !!user.is_moderator;
-  document.getElementById("e-notify").checked = user.notify_live !== 0;
-  syncAdminNote();
+  $("e-mod").checked = !!user.is_moderator;
   eError.hidden = true;
-  showUsersView("edit");
+  openUsers("edit", `Edit @${user.username}`);
 }
 
 editForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   eError.hidden = true;
   const body = {
-    email: document.getElementById("e-email").value,
     is_admin: eAdmin.checked,
-    is_moderator: document.getElementById("e-mod").checked,
-    notify_live: document.getElementById("e-notify").checked,
+    is_moderator: $("e-mod").checked,
   };
-  const pw = document.getElementById("e-password").value;
+  const pw = $("e-password").value;
   if (pw) body.password = pw;
-  const reply = await fetch(`/api/admin/users/${encodeURIComponent(editing)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (reply.ok) {
-    showUsersView("list");
-    loadUsers();
-  } else {
+  try {
+    const reply = await fetch(`/api/admin/users/${encodeURIComponent(editing)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (reply.ok) { closeUsers(); loadUsers(); return; }
     const data = await reply.json().catch(() => ({}));
     eError.textContent = data.error || "Could not save changes.";
-    eError.hidden = false;
-  }
+  } catch { eError.textContent = "Could not reach the server."; }
+  eError.hidden = false;
 });
 
 // ---- delete ----
-// Deleting takes an account, its watch history and its chat with it, and there
-// is no undo, so the only way through is to type the username. The server asks
-// for the same thing, so a mis-wired button cannot delete anyone either.
+// An account goes with its watch history and its chat, and there is no undo,
+// so the only way through is typing the username. The server asks for the
+// same thing, so a mis-wired button cannot delete anyone either.
 
-const deleteForm = document.getElementById("delete-form");
-const dConfirm = document.getElementById("d-confirm");
-const dGo = document.getElementById("d-go");
-const dError = document.getElementById("d-error");
+const deleteForm = $("delete-form");
+const dConfirm = $("d-confirm");
+const dGo = $("d-go");
+const dError = $("d-error");
 
-// Held separately from `editing`, and read only from here, so that whatever the
-// edit view does afterwards this flow can only ever delete the account it was
-// opened on.
+// Held apart from `editing`, and read only here, so whatever the edit view
+// does afterwards this flow can only delete the account it was opened on.
 let deleting = null;
 
-document.getElementById("e-delete").addEventListener("click", () => {
+$("e-delete").addEventListener("click", () => {
   deleting = editing;
-  document.getElementById("d-blurb").textContent =
+  $("d-blurb").textContent =
     `This removes @${deleting}, their watch history and their chat. It cannot be undone.`;
   dConfirm.value = "";
   dGo.disabled = true;
   dError.hidden = true;
-  showUsersView("delete");
+  openUsers("delete", `Delete @${deleting}`);
   dConfirm.focus();
+});
+
+$("d-back").addEventListener("click", () => {
+  const user = users.find((u) => u.username === deleting);
+  if (user) openEdit(user);
+  else closeUsers();
 });
 
 // The server normalises the same way, so the button and the endpoint agree on
@@ -1250,7 +1409,7 @@ deleteForm.addEventListener("submit", async (e) => {
     const reply = await fetch(url, { method: "DELETE" });
     if (reply.ok) {
       deleting = null;
-      showUsersView("list");
+      closeUsers();
       loadUsers();
       return;
     }
@@ -1265,97 +1424,84 @@ deleteForm.addEventListener("submit", async (e) => {
 
 // ---- activity ----
 
-const aWatch = document.getElementById("a-watch");
-const aChat = document.getElementById("a-chat");
+const aWatch = $("a-watch");
+const aChat = $("a-chat");
 
-async function openActivity(user) {
-  document.getElementById("a-title").textContent = `Activity · @${user.username}`;
-  aWatch.innerHTML = `<p class="muted">Loading…</p>`;
-  aChat.innerHTML = "";
-  switchActivityTab("watch");
-  showUsersView("activity");
-
-  let data = { watch_sessions: [], chat: [] };
-  try {
-    data = await (await fetch(`/api/admin/users/${encodeURIComponent(user.username)}/activity`)).json();
-  } catch { /* show empties */ }
-
-  aWatch.innerHTML = "";
-  if (!data.watch_sessions || !data.watch_sessions.length) {
-    aWatch.innerHTML = `<p class="muted">No watch sessions recorded yet.</p>`;
-  } else {
-    data.watch_sessions.forEach((s) => {
-      const row = document.createElement("div");
-      row.className = "activity-row";
-      const dur = s.left_at ? formatDuration(s.left_at - s.joined_at) : "still watching";
-      row.innerHTML = `<span class="act-when"></span><span class="act-dur"></span>`;
-      row.querySelector(".act-when").textContent = formatStamp(s.joined_at);
-      row.querySelector(".act-dur").textContent = dur;
-      aWatch.appendChild(row);
-    });
-  }
-
-  aChat.innerHTML = "";
-  if (!data.chat || !data.chat.length) {
-    aChat.innerHTML = `<p class="muted">No chat messages in the last 7 days.</p>`;
-  } else {
-    data.chat.forEach((m) => {
-      const row = document.createElement("div");
-      row.className = "activity-row chat-row";
-      row.innerHTML = `<span class="act-when"></span><span class="act-text"></span>`;
-      row.querySelector(".act-when").textContent = formatStamp(m.ts);
-      row.querySelector(".act-text").textContent =
-        m.text + (m.deleted_by ? "  (deleted)" : "");
-      aChat.appendChild(row);
-    });
-  }
+function activityRow(when, text, cls) {
+  const row = document.createElement("li");
+  row.className = "row activity-row";
+  row.append(textNode("span", "act-when", when), textNode("span", cls || "act-text", text));
+  return row;
 }
 
 function switchActivityTab(which) {
   document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
-    t.classList.toggle("selected", t.dataset.tab === which);
+    const on = t.dataset.tab === which;
+    t.classList.toggle("selected", on);
+    t.setAttribute("aria-pressed", on ? "true" : "false");
   });
   aWatch.hidden = which !== "watch";
   aChat.hidden = which !== "chat";
 }
+
 document.querySelectorAll(".activity-tabs .tab").forEach((t) => {
   t.addEventListener("click", () => switchActivityTab(t.dataset.tab));
 });
 
-// ---- bans (shared with the mod dashboard via /api/mod/*) ----
+async function openActivity(user) {
+  aWatch.textContent = "";
+  aWatch.appendChild(textNode("li", "empty", "Loading…"));
+  aChat.textContent = "";
+  switchActivityTab("watch");
+  openUsers("activity", `Activity · @${user.username}`);
+
+  let data = { watch_sessions: [], chat: [] };
+  try {
+    data = await getJSON(`/api/admin/users/${encodeURIComponent(user.username)}/activity`);
+  } catch { /* show the empties */ }
+
+  aWatch.textContent = "";
+  if (!data.watch_sessions || !data.watch_sessions.length) {
+    aWatch.appendChild(textNode("li", "empty", "No watch sessions recorded yet."));
+  } else {
+    data.watch_sessions.forEach((s) => {
+      const dur = s.left_at ? formatDuration(s.left_at - s.joined_at) : "still watching";
+      aWatch.appendChild(activityRow(formatStamp(s.joined_at), dur, "act-dur"));
+    });
+  }
+  aChat.textContent = "";
+  if (!data.chat || !data.chat.length) {
+    aChat.appendChild(textNode("li", "empty", "No chat messages in the last 7 days."));
+  } else {
+    data.chat.forEach((m) => {
+      aChat.appendChild(activityRow(formatStamp(m.ts), m.text + (m.deleted_by ? "  (deleted)" : "")));
+    });
+  }
+}
+
+// ---- bans (the same endpoints the moderation page uses) ----
 
 let bans = [];
 
 async function loadBans() {
-  try { bans = (await (await fetch("/api/mod/bans")).json()).bans || []; }
+  try { bans = (await getJSON("/api/mod/bans")).bans || []; }
   catch { bans = []; }
   renderBans();
 }
 
 function renderBans() {
-  const list = document.getElementById("ban-list");
-  document.getElementById("ban-empty").hidden = bans.length > 0;
-  // The count rides the button that opens the list, so the People tab still
-  // says at a glance whether anyone is barred without a section of its own.
-  const opener = document.getElementById("manage-bans");
-  if (opener) opener.textContent = bans.length ? `Bans (${bans.length})` : "Bans";
-  list.innerHTML = "";
+  const list = $("ban-list");
+  $("ban-empty").hidden = bans.length > 0;
+  $("ban-count").textContent = bans.length ? `(${bans.length})` : "";
+  list.textContent = "";
   bans.forEach((b) => {
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-    const left = document.createElement("span");
-    const name = b.display_name || b.username;
+    const { row, main, tools } = rowNode();
     const by = b.banned_by_name || b.banned_by;
-    left.innerHTML = `<b></b> <span class="muted"></span>`;
-    left.querySelector("b").textContent = `${name} @${b.username}`;
-    left.querySelector(".muted").textContent =
-      `banned by ${by}${b.reason ? ` · ${b.reason}` : ""}`;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "chip-btn";
-    btn.textContent = "Un-ban";
-    btn.addEventListener("click", () => unban(b.username, btn));
-    row.append(left, btn);
+    main.append(
+      textNode("span", "row-title", `${b.display_name || b.username} @${b.username}`),
+      textNode("span", "row-meta", `banned by ${by}${b.reason ? ` · ${b.reason}` : ""}`),
+    );
+    tools.appendChild(button("Lift the ban", "chip", (btn) => unban(b.username, btn)));
     list.appendChild(row);
   });
 }
@@ -1363,24 +1509,38 @@ function renderBans() {
 async function unban(username, btn) {
   btn.disabled = true;
   try {
-    const reply = await fetch("/api/mod/unban", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username }),
-    });
-    if (reply.ok) { loadBans(); return; }
-    const data = await reply.json().catch(() => ({}));
+    const { ok, data } = await postJSON("/api/mod/unban", { username });
+    if (ok) { loadBans(); return; }
     alert(data.error || "Could not lift the ban.");
   } catch { alert("Could not lift the ban."); }
   btn.disabled = false;
 }
 
-// ---- invites (generate, copy, revoke) ----
+// ---- invite codes ----
+// An invite link is /join#<code>. The code rides after the #, which a browser
+// never sends, so it never reaches a server log or a link preview.
 
 let invites = [];
+const inviteMsg = $("invite-msg");
+
+function inviteLink(code) {
+  return `${location.origin}/join#${encodeURIComponent(code)}`;
+}
+
+async function copyInviteLink(code, btn) {
+  const link = inviteLink(code);
+  say(inviteMsg, "", true);
+  $("invite-fallback").hidden = true;
+  if (await copyWithButton(link, btn)) {
+    say(inviteMsg, "Copied. Send it to the one person it is for.", true);
+  } else {
+    say(inviteMsg, "This browser would not copy it. Here it is to copy by hand.", false);
+    showFallback($("invite-fallback"), link);
+  }
+}
 
 async function loadInvites() {
-  try { invites = (await (await fetch("/api/admin/invites")).json()).invites || []; }
+  try { invites = (await getJSON("/api/admin/invites")).invites || []; }
   catch { invites = []; }
   renderInvites();
 }
@@ -1388,682 +1548,187 @@ async function loadInvites() {
 function inviteStatus(inv) {
   if (inv.redeemed_at) {
     const who = inv.redeemed_by_name || inv.redeemed_by || "someone";
-    const when = new Date(inv.redeemed_at * 1000).toLocaleDateString();
-    return { text: `redeemed by ${who} · ${when}`, cls: "redeemed" };
+    return { text: `used by ${who} · ${new Date(inv.redeemed_at * 1000).toLocaleDateString()}`, active: false };
   }
-  if (inv.revoked_at) return { text: "revoked", cls: "revoked" };
-  return { text: "active", cls: "active" };
+  if (inv.revoked_at) return { text: "revoked", active: false };
+  return { text: "active", active: true };
 }
 
 function renderInvites() {
-  const list = document.getElementById("invite-list");
-  document.getElementById("invite-empty").hidden = invites.length > 0;
-  list.innerHTML = "";
+  const list = $("invite-list");
+  $("invite-empty").hidden = invites.length > 0;
+  list.textContent = "";
   invites.forEach((inv) => {
     const status = inviteStatus(inv);
-    const row = document.createElement("div");
-    row.className = "activity-row ban-row";
-
-    const left = document.createElement("span");
-    const code = document.createElement("span");
-    code.className = "invite-code";
-    code.textContent = inv.code;
-    const meta = document.createElement("span");
-    meta.className = "invite-status " + status.cls;
-    meta.textContent = (inv.label ? `${inv.label} · ` : "") + status.text;
-    left.append(code, document.createElement("br"), meta);
-
-    const actions = document.createElement("span");
-    actions.className = "invite-actions";
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "chip-btn";
-    copyBtn.textContent = "Copy";
-    copyBtn.addEventListener("click", () => copyInvite(inv.code, copyBtn));
-    actions.appendChild(copyBtn);
-    if (status.cls === "active") {
-      const revokeBtn = document.createElement("button");
-      revokeBtn.type = "button";
-      revokeBtn.className = "chip-btn danger-chip";
-      revokeBtn.textContent = "Revoke";
-      revokeBtn.addEventListener("click", () => revokeInvite(inv.code, revokeBtn));
-      actions.appendChild(revokeBtn);
+    const { row, main, tools } = rowNode(status.active ? "" : "is-spent");
+    main.append(
+      textNode("span", "row-title code", inv.code),
+      textNode("span", "row-meta", (inv.label ? `${inv.label} · ` : "") + status.text),
+    );
+    tools.appendChild(button("Copy", "chip", (btn) => copyWithButton(inv.code, btn, () => {
+      say(inviteMsg, `This browser would not copy it. The code is ${inv.code}.`, false);
+    })));
+    if (status.active) {
+      tools.appendChild(button("Copy link", "chip", (btn) => copyInviteLink(inv.code, btn)));
+      tools.appendChild(button("Revoke", "chip danger", (btn) => revokeInvite(inv.code, btn)));
     } else {
-      // Spent codes previously had no action at all, so the list only grew.
-      // Only these can be removed; an active one has to be revoked first.
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "chip-btn danger-chip";
-      removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", () => removeInvite(inv.code, removeBtn));
-      actions.appendChild(removeBtn);
+      // A spent code is the only kind that can be removed; an active one has
+      // to be revoked first.
+      tools.appendChild(button("Remove", "chip danger", (btn) => removeInvite(inv.code, btn)));
     }
-
-    row.append(left, actions);
     list.appendChild(row);
   });
-  // The sweep is only offered when there is something to sweep.
-  const spent = invites.filter((i) => i.redeemed_at || i.revoked_at);
-  document.getElementById("invite-clear-used").hidden = spent.length === 0;
-}
-
-async function removeInvite(code, btn) {
-  btn.disabled = true;
-  try {
-    const reply = await fetch(
-      `/api/admin/invites/${encodeURIComponent(code)}/remove`,
-      { method: "POST" },
-    );
-    if (reply.ok) { loadInvites(); return; }
-    const data = await reply.json().catch(() => ({}));
-    alert(data.error || "Could not remove the code.");
-  } catch { alert("Could not remove the code."); }
-  btn.disabled = false;
-}
-
-document.getElementById("invite-clear-used").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  if (!confirm("Remove every used and revoked invite code? The accounts they created are not affected.")) return;
-  btn.disabled = true;
-  try {
-    const reply = await fetch("/api/admin/invites/clear-used", { method: "POST" });
-    if (!reply.ok) {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not clear the codes.");
-    }
-  } catch { alert("Could not reach the server."); }
-  btn.disabled = false;
-  loadInvites();
-});
-
-async function copyInvite(code, btn) {
-  try {
-    await navigator.clipboard.writeText(code);
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    alert(code);
-  }
+  $("invite-clear-used").hidden = !invites.some((i) => i.redeemed_at || i.revoked_at);
 }
 
 async function revokeInvite(code, btn) {
-  if (!confirm(`Revoke ${code}? It can no longer be redeemed.`)) return;
+  if (!confirm(`Revoke ${code}? It can no longer be used.`)) return;
   btn.disabled = true;
+  say(inviteMsg, "", true);
   try {
     const reply = await fetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
     if (reply.ok) { loadInvites(); return; }
     const data = await reply.json().catch(() => ({}));
-    alert(data.error || "Could not revoke the code.");
-  } catch { alert("Could not revoke the code."); }
+    say(inviteMsg, data.error || "Could not revoke the code.", false);
+  } catch { say(inviteMsg, "Could not reach the server.", false); }
   btn.disabled = false;
 }
 
-document.getElementById("invite-new").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const label = document.getElementById("invite-label").value;
+async function removeInvite(code, btn) {
+  if (!confirm(`Remove ${code} from the list? Any account it made is not affected.`)) return;
   btn.disabled = true;
+  say(inviteMsg, "", true);
   try {
-    const reply = await fetch("/api/admin/invites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label }),
-    });
-    if (reply.ok) {
-      document.getElementById("invite-label").value = "";
+    const { ok, data } = await postJSON(`/api/admin/invites/${encodeURIComponent(code)}/remove`);
+    if (ok) { loadInvites(); return; }
+    say(inviteMsg, data.error || "Could not remove the code.", false);
+  } catch { say(inviteMsg, "Could not reach the server.", false); }
+  btn.disabled = false;
+}
+
+$("invite-clear-used").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (!confirm("Remove every used and revoked invite code? The accounts they made are not affected.")) return;
+  btn.disabled = true;
+  say(inviteMsg, "", true);
+  try {
+    const { ok, data } = await postJSON("/api/admin/invites/clear-used");
+    if (!ok) say(inviteMsg, data.error || "Could not clear the codes.", false);
+  } catch { say(inviteMsg, "Could not reach the server.", false); }
+  btn.disabled = false;
+  loadInvites();
+});
+
+$("invite-new").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  say(inviteMsg, "", true);
+  try {
+    const { ok, data } = await postJSON("/api/admin/invites", { label: $("invite-label").value });
+    if (ok) {
+      $("invite-label").value = "";
+      $("invite-made-code").textContent = data.code;
+      $("invite-made").hidden = false;
+      $("invite-fallback").hidden = true;
       loadInvites();
     } else {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not generate a code.");
+      say(inviteMsg, data.error || "Could not generate a code.", false);
     }
-  } catch { alert("Could not reach the server."); }
+  } catch { say(inviteMsg, "Could not reach the server.", false); }
   btn.disabled = false;
 });
 
-// ---- guest passes (generate in a batch, copy, revoke, remove) ----
-// The workflow this is shaped around: make several at once, copy them all into
-// one group text, and each person redeems one. So the batch field and "copy all
-// unused" are the primary controls, not conveniences.
-
-let guestPasses = [];
-let guestMinutes = 30;
-
-async function loadGuestPasses() {
-  try {
-    const data = await (await fetch("/api/admin/guest-passes")).json();
-    guestPasses = data.passes || [];
-    guestMinutes = data.minutes || 30;
-    document.getElementById("guest-minutes").textContent = guestMinutes;
-  } catch { guestPasses = []; }
-  renderGuestPasses();
-}
-
-function guestPassStatus(row, now) {
-  if (row.redeemed_at) {
-    const who = row.redeemed_by_name || "a guest";
-    // While the session is still running, the useful thing to know is how long
-    // is left, not when it started.
-    const left = (row.guest_expires_at || 0) - now;
-    if (left > 0) {
-      return { text: `${who} · ${Math.ceil(left / 60)} min left`, cls: "active" };
-    }
-    return { text: `used by ${who}`, cls: "redeemed" };
-  }
-  if (row.revoked_at) return { text: "revoked", cls: "revoked" };
-  return { text: "unused", cls: "active" };
-}
-
-function renderGuestPasses() {
-  const list = document.getElementById("gp-list");
-  const now = Math.floor(Date.now() / 1000);
-  document.getElementById("gp-empty").hidden = guestPasses.length > 0;
-  const spent = guestPasses.filter((p) => p.redeemed_at || p.revoked_at);
-  const unused = guestPasses.filter((p) => !p.redeemed_at && !p.revoked_at);
-  document.getElementById("gp-copy-all").hidden = unused.length === 0;
-  document.getElementById("gp-clear-used").hidden = spent.length === 0;
-  list.innerHTML = "";
-  guestPasses.forEach((row) => {
-    const status = guestPassStatus(row, now);
-    const item = document.createElement("div");
-    item.className = "activity-row ban-row";
-
-    const left = document.createElement("span");
-    const code = document.createElement("span");
-    code.className = "invite-code";
-    code.textContent = row.code;
-    const meta = document.createElement("span");
-    meta.className = "invite-status " + status.cls;
-    meta.textContent = (row.label ? `${row.label} · ` : "") + status.text;
-    left.append(code, document.createElement("br"), meta);
-
-    const actions = document.createElement("span");
-    actions.className = "invite-actions";
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "chip-btn";
-    copyBtn.textContent = "Copy";
-    copyBtn.addEventListener("click", () => copyInvite(row.code, copyBtn));
-    actions.appendChild(copyBtn);
-
-    if (!row.redeemed_at && !row.revoked_at) {
-      const revokeBtn = document.createElement("button");
-      revokeBtn.type = "button";
-      revokeBtn.className = "chip-btn danger-chip";
-      revokeBtn.textContent = "Revoke";
-      revokeBtn.addEventListener("click", () => revokeGuestPass(row.code, revokeBtn));
-      actions.appendChild(revokeBtn);
-    } else {
-      // Only a spent pass can be removed. An active one has to be revoked
-      // first, so removing can never quietly un-issue a code someone holds.
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "chip-btn danger-chip";
-      removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", () => removeGuestPass(row.code, removeBtn));
-      actions.appendChild(removeBtn);
-    }
-
-    item.append(left, actions);
-    list.appendChild(item);
-  });
-}
-
-async function revokeGuestPass(code, btn) {
-  if (!confirm(`Revoke ${code}? It can no longer be redeemed.`)) return;
-  btn.disabled = true;
-  try {
-    const reply = await fetch(`/api/admin/guest-passes/${encodeURIComponent(code)}`, {
-      method: "DELETE",
-    });
-    if (reply.ok) { loadGuestPasses(); return; }
-    const data = await reply.json().catch(() => ({}));
-    alert(data.error || "Could not revoke the pass.");
-  } catch { alert("Could not revoke the pass."); }
-  btn.disabled = false;
-}
-
-async function removeGuestPass(code, btn) {
-  btn.disabled = true;
-  try {
-    const reply = await fetch(
-      `/api/admin/guest-passes/${encodeURIComponent(code)}/remove`,
-      { method: "POST" },
-    );
-    if (reply.ok) { loadGuestPasses(); return; }
-    const data = await reply.json().catch(() => ({}));
-    alert(data.error || "Could not remove the pass.");
-  } catch { alert("Could not remove the pass."); }
-  btn.disabled = false;
-}
-
-document.getElementById("gp-new").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const label = document.getElementById("gp-label").value;
-  const count = Number(document.getElementById("gp-count").value) || 1;
-  btn.disabled = true;
-  try {
-    const reply = await fetch("/api/admin/guest-passes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, count }),
-    });
-    if (reply.ok) {
-      document.getElementById("gp-label").value = "";
-      loadGuestPasses();
-    } else {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not generate passes.");
-    }
-  } catch { alert("Could not reach the server."); }
-  btn.disabled = false;
+$("invite-made-copy").addEventListener("click", (e) => {
+  copyInviteLink($("invite-made-code").textContent, e.currentTarget);
 });
 
-document.getElementById("gp-copy-all").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const codes = guestPasses
-    .filter((p) => !p.redeemed_at && !p.revoked_at)
-    .map((p) => p.code);
-  if (!codes.length) return;
-  try {
-    await navigator.clipboard.writeText(codes.join("\n"));
-    const was = btn.textContent;
-    btn.textContent = "Copied";
-    setTimeout(() => { btn.textContent = was; }, 1200);
-  } catch {
-    alert(codes.join("\n"));
-  }
-});
+// =============================================================================
+// The sections
+// =============================================================================
+// One section at a time. A section's data is fetched the first time it is
+// shown, so opening the dashboard costs the Go live screen and nothing else.
+// The dashboard always opens on Go live (a link to /admin#people lands on
+// People). Older links name the tabs this replaced, and still land.
 
-document.getElementById("gp-clear-used").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  if (!confirm("Remove every used and revoked pass? The codes themselves are already spent.")) return;
-  btn.disabled = true;
-  try {
-    const reply = await fetch("/api/admin/guest-passes/clear-used", { method: "POST" });
-    if (!reply.ok) {
-      const data = await reply.json().catch(() => ({}));
-      alert(data.error || "Could not clear the passes.");
-    }
-  } catch { alert("Could not reach the server."); }
-  btn.disabled = false;
-  loadGuestPasses();
-});
+const SECTIONS = [
+  { key: "golive", label: "Go live", href: "/admin#golive" },
+  { key: "people", label: "People", href: "/admin#people" },
+  { key: "library", label: "Library", href: "/admin#library" },
+  { key: "channel", label: "Channel", href: "/admin#channel" },
+  { key: "chat", label: "Chat rules", href: "/admin#chat" },
+  { key: "connections", label: "Connections", href: "/admin#connections" },
+  { key: "stats", label: "Stats", href: "/analytics" },
+];
 
-// ---- the live console (top of the dashboard) ----
-// The watch page itself, in a frame, so the streamer sees and hears exactly what
-// the room does without a second tab. The frame is talked to with postMessage
-// rather than by changing its src, because a reload would drop its chat socket
-// and its place in the stream every time the view is toggled.
+const OLD_NAMES = { broadcast: "golive", content: "library" };
 
-const liveView = document.getElementById("live-view");
-const liveFrame = document.getElementById("live-frame");
-const VIEW_KEY = "selfstream_dash_video";
-let showVideo = true;
-
-function tellFrame() {
-  if (!liveView || !liveView.contentWindow) return;
-  liveView.contentWindow.postMessage(
-    { type: "video", show: showVideo }, location.origin
-  );
-}
-
-function setView(show, remember) {
-  showVideo = show;
-  if (liveFrame) liveFrame.classList.toggle("is-chat-only", !show);
-  document.querySelectorAll(".live-view-toggle .chip-btn").forEach((btn) => {
-    btn.classList.toggle("is-on", (btn.dataset.view === "chat") !== show);
-  });
-  if (remember) {
-    try { localStorage.setItem(VIEW_KEY, show ? "full" : "chat"); } catch (e) {}
-  }
-  tellFrame();
-}
-
-function setUpConsole() {
-  if (!liveView) return;
-  let saved = "full";
-  try { saved = localStorage.getItem(VIEW_KEY) || "full"; } catch (e) {}
-  setView(saved !== "chat", false);
-  document.querySelectorAll(".live-view-toggle .chip-btn").forEach((btn) => {
-    btn.addEventListener("click", () => setView(btn.dataset.view !== "chat", true));
-  });
-  // The frame starts on the default view, so tell it again once it has loaded
-  // and after any later reload of its own.
-  liveView.addEventListener("load", tellFrame);
-}
-
-// ---- what is on: the title and the game ----
-// The two lines of the link preview, edited together on the console. The title
-// comes from /api/channel (loadChannel fills it); the game rides the stream
-// poll, because it changes far more often and the poll is already running.
-
-const titleInput = document.getElementById("onair-title");
-const gameInput = document.getElementById("game-input");
-const gameOptions = document.getElementById("game-options");
-const onairMsg = document.getElementById("onair-msg");
-let savedGame = "";
-
-function showOnAirMsg(text, ok) {
-  onairMsg.textContent = text;
-  onairMsg.classList.toggle("good", !!ok);
-  onairMsg.classList.toggle("bad", !ok);
-  onairMsg.hidden = !text;
-}
-
-// Called by loadChannel, which is the only thing that reads the saved title.
-function setTitleField(value) {
-  if (titleInput) titleInput.value = value;
-}
-
-function renderGameOptions(names) {
-  gameOptions.textContent = "";
-  (names || []).forEach((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    gameOptions.appendChild(option);
-  });
-}
-
-// One request for both fields. `game` is sent as a plain string because an empty
-// one is a real value there (it clears the label); an empty title is refused by
-// the server, so it is only sent when there is something to send.
-async function saveOnAir({ title, game }) {
-  showOnAirMsg("", true);
-  const body = {};
-  if (title !== undefined) body.title = title;
-  if (game !== undefined) body.game = game;
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await reply.json().catch(() => ({}));
-    if (!reply.ok) {
-      showOnAirMsg(data.error || "Could not save that.", false);
-      return;
-    }
-    if (game !== undefined) {
-      savedGame = game;
-      gameInput.value = game;
-    }
-    showOnAirMsg(game === "" ? "Saved. No game showing." : "Saved.", true);
-    loadStream();          // refreshes the remembered list straight away
-  } catch {
-    showOnAirMsg("Could not reach the server.", false);
-  }
-}
-
-function setUpOnAir() {
-  if (!gameInput) return;
-  const save = () => saveOnAir({
-    title: titleInput.value.trim(), game: gameInput.value.trim(),
-  });
-  [titleInput, gameInput].forEach((field) => {
-    field.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
-  });
-  document.getElementById("onair-save").addEventListener("click", save);
-  // Clears the game on its own, so it cannot trip over an empty title box.
-  document.getElementById("game-none").addEventListener("click", () => {
-    gameInput.value = "";
-    saveOnAir({ game: "" });
-  });
-}
-
-// ---- live stream strip (top of the dashboard) ----
-// A streamer should never have to read the container logs to know their broadcast
-// is up and being recorded, so the strip polls the admin stream status while the
-// page is open and shows live/offline, uptime, who is watching, and the recorder.
-const streamStrip = document.getElementById("stream-strip");
-const streamState = document.getElementById("stream-state");
-const streamSince = document.getElementById("stream-since");
-const streamWatching = document.getElementById("stream-watching");
-const streamSent = document.getElementById("stream-sent");
-const streamRec = document.getElementById("stream-rec");
-const roomLimit = document.getElementById("room-limit");
-const roomLimitNow = document.getElementById("room-limit-now");
-const roomLimitMsg = document.getElementById("room-limit-msg");
-// What the box last told us, so a poll landing mid-edit cannot overwrite what
-// is being typed. Same reason the game field keeps savedGame.
-let savedRoomLimit = null;
-
-function sentLabel(bytes) {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB sent`;
-  return `${Math.round(bytes / 1024 ** 2)} MB sent`;
-}
-
-function showRoomLimitMsg(text, ok) {
-  roomLimitMsg.textContent = text;
-  roomLimitMsg.classList.toggle("good", !!ok);
-  roomLimitMsg.classList.toggle("bad", !ok);
-  roomLimitMsg.hidden = !text;
-}
-
-async function saveRoomLimit() {
-  showRoomLimitMsg("", true);
-  const raw = Number.parseInt(roomLimit.value, 10);
-  if (!Number.isFinite(raw) || raw < 0) {
-    showRoomLimitMsg("That has to be a whole number, 0 or more.", false);
-    return;
-  }
-  try {
-    const reply = await fetch("/api/stream-info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_viewers: raw }),
-    });
-    const data = await reply.json().catch(() => ({}));
-    if (!reply.ok) {
-      showRoomLimitMsg(data.error || "Could not save that.", false);
-      return;
-    }
-    savedRoomLimit = raw;
-    showRoomLimitMsg(raw === 0 ? "Saved. No limit." : `Saved. ${raw} at a time.`, true);
-    loadStream();
-  } catch {
-    showRoomLimitMsg("Could not reach the server.", false);
-  }
-}
-
-if (roomLimit) {
-  document.getElementById("room-limit-save").addEventListener("click", saveRoomLimit);
-  roomLimit.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") saveRoomLimit();
-  });
-}
-
-function uptimeLabel(since) {
-  const secs = Math.max(0, Math.floor(Date.now() / 1000) - since);
-  if (secs < 60) return "up just now";
-  const hours = Math.floor(secs / 3600);
-  const mins = Math.floor((secs % 3600) / 60);
-  return hours > 0 ? `up ${hours}h ${mins}m` : `up ${mins}m`;
-}
-
-function renderStream(data) {
-  const live = !!data.live;
-  streamStrip.classList.toggle("is-live", live);
-  streamStrip.classList.toggle("is-offline", !live);
-  streamState.textContent = live ? "Live" : "Offline";
-  if (!live) {
-    streamSince.hidden = true;
-    streamWatching.hidden = true;
-    streamSent.hidden = true;
-    streamRec.hidden = true;
-    return;
-  }
-  streamSince.textContent = data.since ? uptimeLabel(data.since) : "";
-  streamSince.hidden = !data.since;
-  const n = typeof data.watching === "number" ? data.watching : 0;
-  streamWatching.textContent = n === 1 ? "1 watching" : `${n} watching`;
-  streamWatching.hidden = false;
-  // Only worth a line once there is something to report; a broadcast that has
-  // just started reads better without "0 MB sent" beside it.
-  const sent = typeof data.sent_bytes === "number" ? data.sent_bytes : 0;
-  streamSent.textContent = sentLabel(sent);
-  streamSent.hidden = sent <= 0;
-  // The recorder state is the headline: a live broadcast that is not being
-  // recorded is a problem to surface, not one to leave the streamer guessing at.
-  if (data.recording === "ok") {
-    streamRec.textContent = "recording";
-    streamRec.className = "stream-strip-rec is-recording";
-  } else if (data.recording === "restarting") {
-    streamRec.textContent = "recording (restarting)";
-    streamRec.className = "stream-strip-rec is-restarting";
-  } else {
-    streamRec.textContent = "not recording";
-    streamRec.className = "stream-strip-rec is-notrecording";
-  }
-  streamRec.hidden = false;
-}
-
-// The viewer limit rides this poll too rather than /api/channel, which any
-// signed-in viewer can read: how full the room may get is the operator's
-// business. The count beside it is people pulling video, which is not the same
-// as people in chat.
-function renderRoomLimit(data) {
-  if (!roomLimit) return;
-  const limit = typeof data.max_viewers === "number" ? data.max_viewers : 0;
-  if (limit !== savedRoomLimit && document.activeElement !== roomLimit) {
-    savedRoomLimit = limit;
-    roomLimit.value = String(limit);
-  }
-  const now = typeof data.video_watchers === "number" ? data.video_watchers : 0;
-  roomLimitNow.textContent = limit > 0
-    ? `${now} of ${limit} watching now`
-    : `${now} watching now`;
-}
-
-// The game rides the same poll. Only written into the box when the operator is
-// not mid-edit, so a poll landing while they type cannot overwrite it.
-function renderGame(data) {
-  if (!gameInput) return;
-  renderGameOptions(data.recent_games);
-  const value = data.game || "";
-  if (value !== savedGame && document.activeElement !== gameInput) {
-    savedGame = value;
-    gameInput.value = value;
-  }
-}
-
-async function loadStream() {
-  if (!streamStrip) return;
-  try {
-    const reply = await fetch("/api/admin/stream");
-    if (reply.ok) {
-      const data = await reply.json();
-      renderStream(data);
-      renderGame(data);
-      renderRoomLimit(data);
-      renderTheaterSubs(data);
-    }
-  } catch { /* keep the last state rather than flashing offline on a blip */ }
-}
-
-// The dashboard footer shows the running release, read from /api/status rather
-// than baked into the markup so a version bump changes it in exactly one place
-// (config.VERSION) and can never drift here. Left blank if status is unreachable.
-async function loadVersion() {
-  const line = document.getElementById("version-line");
-  if (!line) return;
-  try {
-    const data = await (await fetch("/api/status")).json();
-    if (data.version) line.textContent = `upperroom v${data.version}`;
-  } catch { /* leave the footer blank rather than show a stale guess */ }
-}
-
-// ---- the control groups ----
-// Fourteen panels stacked in one column was a page to scroll past and fourteen
-// requests fired at page open, most of them for something the operator was not
-// looking at. They are five tabs now: one group is shown at a time, and a
-// group's data is fetched the first time it is shown. The console above is not
-// a group, because it is what the page is for.
-
-const TAB_KEY = "selfstream_dash_tab";
-
-const PANEL_LOADERS = {
-  broadcast: [loadTheater],
-  content: [loadContent, loadRetention],
-  people: [loadBans, loadInvites, loadGuestPasses],
-  channel: [loadModeration, loadNotify],
-  connections: [loadStreamKey, loadOverlay, loadProjector],
+const LOADERS = {
+  golive: [loadStreamKey, loadStorageState],
+  people: [loadUsers, loadBans, loadInvites],
+  library: [loadContent, loadRetention],
+  channel: [loadNotify],
+  chat: [loadModeration],
+  connections: [loadOverlay, loadTheater, loadProjector],
 };
 
-const loadedPanels = new Set();
+const loaded = new Set();
+let current = "golive";
 
-function showPanel(name, remember) {
-  if (!PANEL_LOADERS[name]) name = "broadcast";
-  document.querySelectorAll(".admin-tabs .lib-tab").forEach((tab) => {
-    tab.classList.toggle("selected", tab.dataset.panel === name);
+function sectionFromHash() {
+  const name = (location.hash || "").replace("#", "");
+  return OLD_NAMES[name] || name;
+}
+
+function showSection(name, moveFocus) {
+  if (!LOADERS[name]) name = "golive";
+  current = name;
+  document.querySelectorAll(".dash-section").forEach((section) => {
+    section.hidden = section.dataset.panel !== name;
   });
-  document.querySelectorAll(".admin-group").forEach((group) => {
-    group.hidden = group.dataset.panel !== name;
-  });
-  if (!loadedPanels.has(name)) {
-    loadedPanels.add(name);
-    PANEL_LOADERS[name].forEach((load) => load());
+  document.body.dataset.section = name;
+  if (strip && strip.setSection) strip.setSection(name);
+  if (!loaded.has(name)) {
+    loaded.add(name);
+    LOADERS[name].forEach((load) => load());
   }
-  if (remember) {
-    try { localStorage.setItem(TAB_KEY, name); } catch (e) {}
+  if (moveFocus) {
+    window.scrollTo(0, 0);
+    const heading = document.querySelector(`.dash-section[data-panel="${name}"] h1`);
+    if (heading) heading.focus({ preventScroll: true });
   }
 }
 
-function setUpPanels() {
-  document.querySelectorAll(".admin-tabs .lib-tab").forEach((tab) => {
-    tab.addEventListener("click", () => showPanel(tab.dataset.panel, true));
-  });
-  // Following /admin#people from the dashboard itself changes only the hash, so
-  // the page never reloads and nothing below would run again.
-  window.addEventListener("hashchange", () => {
-    const name = (location.hash || "").replace("#", "");
-    if (PANEL_LOADERS[name]) showPanel(name, true);
-  });
-  // A link to /admin#people lands there; otherwise carry on from wherever the
-  // last visit finished.
-  let start = (location.hash || "").replace("#", "");
-  if (!PANEL_LOADERS[start]) {
-    try { start = localStorage.getItem(TAB_KEY) || ""; } catch (e) { start = ""; }
-  }
-  showPanel(start, false);
-}
-
-// Invites and guest passes share a panel: the same job twice over, so the two
-// lists take turns rather than sitting one above the other.
-function setUpCodeTabs() {
-  const tabs = document.querySelectorAll(".lib-tab[data-codes]");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.toggle("selected", t === tab));
-      document.querySelectorAll(".codes-view").forEach((view) => {
-        view.hidden = view.dataset.codes !== tab.dataset.codes;
-      });
-    });
-  });
+async function loadVersion() {
+  try {
+    const data = await getJSON("/api/status");
+    if (data.version) $("version-line").textContent = `upperroom v${data.version}`;
+  } catch { /* leave it blank rather than show a stale guess */ }
 }
 
 async function boot() {
   if (!(await requireAdmin())) return;
-  mountNav(me, { current: "dashboard" });
-  setUpConsole();
-  setUpOnAir();
-  setUpCodeTabs();
+  const start = LOADERS[sectionFromHash()] ? sectionFromHash() : "golive";
+  // The page polls /api/status itself, alongside the admin payload, so the
+  // lamp and the steps always describe the same moment.
+  strip = mountNav(me, {
+    current: "dashboard", sections: SECTIONS, section: start, poll: false, pageName: "Dashboard",
+  });
+  setUpProgram();
   loadVersion();
+  loadChannel();
   loadStream();
   setInterval(loadStream, 10000);
-  // Eager despite living in the Channel tab: it owns the accent applied to the
-  // whole document, and it is where the console's title field is filled from.
-  loadChannel();
-  // Last, so the first group's loaders run after everything above is wired.
-  setUpPanels();
+  // The store only matters on Go live, and only while it shows.
+  setInterval(() => { if (current === "golive") loadStorageState(); }, 60000);
   // Only while a session is open: the state moves on its own then (a title
-  // ending puts the room back to intermission), and between sessions the
-  // operator's own actions are the only thing that changes it. What is actually
-  // on air is the console's job now, and that is a live player, not a poll.
+  // ending puts the room back to intermission).
   setInterval(() => {
     if (!theaterActive) return;
     loadTheater();
     loadProjector();
   }, 10000);
+  window.addEventListener("hashchange", () => showSection(sectionFromHash(), true));
+  showSection(start, false);
 }
 
 boot();

@@ -3,8 +3,8 @@ Abuse resistance for the public surface.
 
 These pin properties that are silent when they break: a limiter that leaks does
 not fail any functional test, and an endpoint with no ceiling looks perfectly
-healthy until somebody leans on it. The app's only unauthenticated write
-endpoint (/api/guest) is what makes any of this load bearing.
+healthy until somebody leans on it. The app's unauthenticated write endpoints
+(sign-in and invite registration) are what make any of this load bearing.
 """
 
 import time
@@ -67,68 +67,28 @@ def test_the_limiter_refuses_rather_than_allocating_without_end():
     assert limiter.tracked() <= auth._MAX_TRACKED + 1
 
 
-# ---- the two budgets are separate -----------------------------------------
+# ---- guessing shares one budget -------------------------------------------
 
-def test_fetching_challenges_does_not_spend_the_code_guessing_allowance(client):
-    """The guest page asks for a question on load and after every wrong answer.
-    If that drew on the login limiter, ordinary use would lock people out and
-    the limiter that matters would be exhausted by noise."""
-    setup_admin(client)
-    ip = {"X-Forwarded-For": "203.0.113.77"}
-    for _ in range(20):
-        assert client.get("/api/guest/challenge", headers=ip).status_code == 200
-    # The login allowance is untouched: a wrong password still gets 401, not 429.
-    assert client.post(
-        "/api/auth", json={"username": "ghost", "password": "wrong"}, headers=ip
-    ).status_code == 401
-
-
-def test_the_challenge_endpoint_has_a_ceiling_of_its_own(client):
-    setup_admin(client)
-    ip = {"X-Forwarded-For": "203.0.113.78"}
-    codes = {
-        client.get("/api/guest/challenge", headers=ip).status_code
-        for _ in range(auth._CHALLENGE_LIMITER.max_attempts + 5)
-    }
-    assert 429 in codes, "challenge issuing has no ceiling at all"
-
-
-def test_guessing_pass_codes_draws_on_the_same_budget_as_guessing_passwords(client):
+def test_guessing_invite_codes_draws_on_the_same_budget_as_guessing_passwords(client):
     """Otherwise an attacker gets two budgets by alternating endpoints."""
     setup_admin(client)
     ip = {"X-Forwarded-For": "203.0.113.79"}
     for _ in range(5):
-        client.post("/api/guest", json={"code": "nope"}, headers=ip)
+        client.post("/api/register", json={"code": "nope"}, headers=ip)
     assert client.post(
         "/api/auth", json={"username": "ghost", "password": "wrong"}, headers=ip
     ).status_code == 429
 
 
-# ---- the guest endpoint refuses before it works ---------------------------
+# ---- registration refuses before it works ---------------------------------
 
 def test_the_rate_limit_is_checked_before_any_real_work(client):
-    """Order matters: the limiter has to come before the challenge check and the
-    database lookup, or a blocked caller still costs an HMAC and a query."""
+    """Order matters: the limiter has to come before the invite lookup, or a
+    blocked caller still costs a query."""
     import inspect
-    import routes.guest as guest_routes
-    src = inspect.getsource(guest_routes.redeem_guest)
-    assert src.index("too_many_attempts") < src.index("check_challenge")
-    assert src.index("check_challenge") < src.index("get_guest_pass")
-
-
-def test_an_unknown_code_gives_nothing_away(client):
-    """The refusal must not distinguish 'no such code' from 'already used', or
-    the endpoint becomes an oracle for testing codes."""
-    setup_admin(client)
-    import db
-    used = db.create_guest_pass("x", "owner", int(time.time()))
-    db.revoke_guest_pass(used, int(time.time()))
-    a = client.post("/api/guest", json={"code": "definitely-not-a-code"})
-    b = client.post("/api/guest", json={"code": used})
-    # Both fail at the challenge first, which is itself the point: nothing about
-    # the code is revealed until a human check has been passed.
-    assert a.status_code == b.status_code == 400
-    assert a.json()["error"] == b.json()["error"]
+    import routes.auth as auth_routes
+    src = inspect.getsource(auth_routes.register)
+    assert src.index("too_many_attempts") < src.index("db.get_invite")
 
 
 # ---- one account cannot take over the room --------------------------------
@@ -138,8 +98,7 @@ def test_one_account_is_capped_to_a_few_chat_sockets(client):
     opening sockets is quadratic for everyone else. Measured on the demo stack:
     10 sockets cost 120 frames, 25 cost 683, 50 cost 2,600.
 
-    The cap is what stops a single viewer, or a single thirty minute guest pass,
-    from doing that."""
+    The cap is what stops a single viewer from doing that."""
     from config import MAX_SOCKETS_PER_USER
     from starlette.websockets import WebSocketDisconnect
 
