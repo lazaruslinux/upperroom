@@ -16,6 +16,15 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    # 0.24.1 repeats the 0.24.0 lines: only the newest entry is ever shown, and
+    # most accounts had not signed in between the two releases.
+    "0.24.1": [
+        "A new look across the whole site.",
+        "Get a notification when the stream goes live: turn it on in Options.",
+        "On an iPhone, add the site to your Home Screen first and turn it on there.",
+        "Email alerts and guest passes are gone; new people join with an invite link.",
+        "A security update to the sign-in library. Nothing for you to do.",
+    ],
     "0.24.0": [
         "A new look across the whole site.",
         "Get a notification when the stream goes live: turn it on in Options.",

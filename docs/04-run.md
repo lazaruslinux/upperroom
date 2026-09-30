@@ -325,6 +325,14 @@ docker compose up -d --build
 Your accounts survive updates because they live in a docker volume, not in the
 container.
 
+If a release changes only the `Caddyfile`, `up -d --build` leaves the running
+Caddy alone, because nothing about its container changed. Reload it so the new
+file takes effect:
+
+```
+docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
 ### Updating to the media store
 
 Recordings and clips used to be a folder the gate and Caddy both mounted. They

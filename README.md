@@ -7,7 +7,7 @@ third party streaming service, and nobody gets an account unless you made it or
 handed them an invite. You can also share a single clip publicly. It runs on a
 server you control, at your own domain.
 
-Current version: **0.24.0**. Releases are tagged in git, and the running version
+Current version: **0.24.1**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
