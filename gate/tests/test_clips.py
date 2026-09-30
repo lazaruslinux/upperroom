@@ -11,7 +11,6 @@ not about the encoder; the media tests cover the cut itself.
 """
 
 import asyncio
-import os
 import time
 
 import pytest
@@ -22,7 +21,6 @@ from config import (
     CLIP_COOLDOWN_HOST_SECONDS, CLIP_COOLDOWN_SECONDS, CLIP_LENGTHS,
     DEFAULT_CLIP_LENGTH,
 )
-from config import CLIP_DIR
 
 from test_api import add_user, login, make_client, setup_admin
 
@@ -47,7 +45,6 @@ def live(tmp_path, monkeypatch):
         return 0, b"", b""
 
     monkeypatch.setattr(media, "_run_ffmpeg", fake_ffmpeg)
-    os.makedirs(CLIP_DIR, exist_ok=True)
     return started
 
 

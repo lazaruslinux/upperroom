@@ -487,12 +487,16 @@ function renderRetention(data) {
   const usage = data.usage || {};
   const counts = data.counts || {};
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  // The media store may be on another machine and may be away. Say that in
+  // place of the byte counts rather than showing zeros that read as "empty";
+  // the counts and limits come from the database and are still true.
+  const away = usage.available === false;
   const parts = [
-    `${formatBytes(usage.total_bytes)} used`,
+    away ? "Usage unknown: the media store is not answering" : `${formatBytes(usage.total_bytes)} used`,
     `${plural(counts.vods || 0, "broadcast")}, ${plural(counts.clips || 0, "clip")}`,
   ];
   if (counts.pinned) parts.push(`${counts.pinned} pinned`);
-  if (usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);
+  if (!away && usage.free_bytes) parts.push(`${formatBytes(usage.free_bytes)} free on disk`);
   document.getElementById("storage-usage").textContent = parts.join(" · ");
   // The bar is the media store against the whole filesystem it sits on, so it
   // answers "how close am I to trouble" rather than "how close to my own cap".

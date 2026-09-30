@@ -56,3 +56,7 @@ Thumbs.db
 
 # Access logs are runtime state, not code.
 logs/
+# Local design-tool state (decision pages); the surface briefs are kept.
+.impeccable/questions/
+.impeccable/review/
+.impeccable/mocks/

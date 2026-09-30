@@ -7,33 +7,37 @@ no clip public that was not chosen, and above all nothing still reachable after
 it was deleted or unshared.
 """
 
-import os
+import asyncio
 import time
 
 import db
+import fake_store
 import media
-from config import CLIP_DIR, SHARED_DIR
 
 from test_api import add_user, login, make_client, setup_admin
 
 
-def make_clip_row(name="A clip", creator="owner", with_file=True, game=""):
-    """A clip row plus a real file, so the link/unlink paths are exercised
-    against the filesystem rather than mocked. `game` is what was playing when
-    the clip was cut, which the share card names."""
+def make_clip_row(name="A clip", creator="owner", with_file=True, game="",
+                  poster=True):
+    """A clip row plus its files in the (fake) media store, so the link and
+    unlink paths are exercised against files rather than mocked. `game` is what
+    was playing when the clip was cut, which the share card names."""
     now = int(time.time())
     clip_id = db.create_clip(
         name, "", creator, None, now - 60, now, 60, now, game=game
     )
     filename = f"{clip_id}.mp4"
+    media_store = fake_store.current()
     if with_file:
-        os.makedirs(CLIP_DIR, exist_ok=True)
-        with open(os.path.join(CLIP_DIR, filename), "wb") as fh:
-            fh.write(b"not really video, but bytes on disk" * 40)
-        with open(os.path.join(CLIP_DIR, f"{clip_id}.jpg"), "wb") as fh:
-            fh.write(b"poster")
-    db.set_clip_filename(clip_id, filename)
+        media_store.write("clips", filename, b"not really video, but bytes" * 40)
+        if poster:
+            media_store.write("clips", f"{clip_id}.jpg", b"poster")
+    db.set_clip_filename(clip_id, filename, has_poster=with_file and poster)
     return clip_id
+
+
+def shared(token, ext="mp4"):
+    return fake_store.current().has("shared", f"{token}.{ext}")
 
 
 # ---- publishing ------------------------------------------------------------
@@ -61,8 +65,9 @@ def test_publishing_makes_it_reachable_without_any_session(client):
     assert public.status_code == 200
     assert public.json()["name"] == "A clip"
 
-    # And the file itself was linked into the public directory.
-    assert os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+    # And the file itself was linked into the public area, poster too.
+    assert shared(token)
+    assert shared(token, "jpg")
 
     # The listing must say so too: list_clips once dropped share_token, which
     # left every clip looking unshared on the dashboard.
@@ -119,13 +124,14 @@ def test_unpublishing_removes_the_file_and_the_link(client):
     token = client.post(
         f"/api/clips/{clip_id}/share", json={"share": True}
     ).json()["url"].rsplit("/", 1)[-1]
-    assert os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+    assert shared(token)
 
     client.post(f"/api/clips/{clip_id}/share", json={"share": False})
     assert make_client().get(f"/api/shared/{token}").status_code == 404
-    assert not os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+    assert not shared(token)
+    assert not shared(token, "jpg")
     # The clip itself is untouched: the bytes survive under their private name.
-    assert os.path.exists(os.path.join(CLIP_DIR, f"{clip_id}.mp4"))
+    assert fake_store.current().has("clips", f"{clip_id}.mp4")
 
 
 def test_deleting_a_published_clip_takes_the_public_copy_with_it(client):
@@ -138,7 +144,7 @@ def test_deleting_a_published_clip_takes_the_public_copy_with_it(client):
     ).json()["url"].rsplit("/", 1)[-1]
 
     assert client.delete(f"/api/clips/{clip_id}").status_code == 200
-    assert not os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+    assert not shared(token)
     assert make_client().get(f"/api/shared/{token}").status_code == 404
 
 
@@ -164,27 +170,24 @@ def test_retention_sweeping_a_published_clip_takes_the_public_copy_too(client):
     assert candidates[0]["share_token"] == token
 
     for item in candidates:
-        media._remove_item_files(item)
-    assert not os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+        assert asyncio.run(media._remove_item_files(item))
+    assert not shared(token)
 
 
 def test_the_startup_sweep_removes_public_files_with_no_clip_behind_them(client):
     """Last line of defence. If anything ever leaves a file here without a live
     token, it is gone at the next start rather than served forever."""
     setup_admin(client)
-    os.makedirs(SHARED_DIR, exist_ok=True)
-    stray = os.path.join(SHARED_DIR, "a-token-nobody-issued.mp4")
-    with open(stray, "wb") as fh:
-        fh.write(b"orphan")
+    fake_store.current().write("shared", "a-token-nobody-issued.mp4", b"orphan")
     # A genuinely published clip must survive the same sweep.
     clip_id = make_clip_row()
     token = client.post(
         f"/api/clips/{clip_id}/share", json={"share": True}
     ).json()["url"].rsplit("/", 1)[-1]
 
-    media.sweep_orphan_shared()
-    assert not os.path.exists(stray)
-    assert os.path.exists(os.path.join(SHARED_DIR, f"{token}.mp4"))
+    assert asyncio.run(media.sweep_orphan_shared()) == 1
+    assert not shared("a-token-nobody-issued")
+    assert shared(token)
 
 
 # ---- who may publish -------------------------------------------------------

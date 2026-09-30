@@ -2,9 +2,9 @@
 Recording, clips, and the live preview thumbnail for the upperroom gate.
 
 A broadcast is recorded with a plain stream copy (no transcode) to local scratch
-while live, then archived to the media store when it ends. Clips are cut from
-that in-progress file on demand, and a background worker keeps a fresh preview
-frame for the home card. The stream watcher ties it together: it polls MediaMTX
+while live, then uploaded to the media store (store.py) when it ends. Clips are
+cut from that in-progress file on demand and uploaded once whole, and a
+background worker keeps a fresh preview frame for the home card. The stream watcher ties it together: it polls MediaMTX
 and drives the online/offline transitions (start/stop recording, announce
 go-live, and narrate the night in chat).
 """
@@ -12,7 +12,6 @@ go-live, and narrate the night in chat).
 import asyncio
 import logging
 import os
-import shutil
 import signal
 import time
 from datetime import datetime, timezone
@@ -20,15 +19,16 @@ from datetime import datetime, timezone
 import httpx
 
 import db
+import store
 import theater
 from config import (
-    CLIP_COOLDOWN_HOST_SECONDS, CLIP_COOLDOWN_SECONDS, CLIP_DIR,
+    CLIP_COOLDOWN_HOST_SECONDS, CLIP_COOLDOWN_SECONDS,
     CLIP_KEYFRAME_SLACK, CLIP_LAG, DEFAULT_CLIP_LENGTH, MAX_CLIP_NAME,
-    MEDIAMTX_API, MEDIA_DIR, SHARED_DIR,
+    MEDIAMTX_API,
     MEDIA_SOURCE, POINTS_PER_MINUTE, RECORD_BACKOFF, RECORD_STALL_POLLS,
     CHAT_IDLE_WIPE_SECONDS, NIGHT_GAP_SECONDS,
     RECORD_STARTUP_GRACE, RECORD_SURVIVAL_SECONDS, RECORD_TMP, RETENTION_INTERVAL,
-    STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP, VOD_DIR,
+    STREAM_PATH, THUMB_INTERVAL, THUMB_PATH, THUMB_TMP,
 )
 from hub import hub
 from notify import notify_live
@@ -288,8 +288,8 @@ async def thumbnail_worker():
 
 # ---- Recording (VODs) and clips -------------------------------------------
 # A broadcast is recorded with a plain stream copy (no transcode) to local
-# scratch while live, then archived to the media store when it ends. Clips are
-# cut from that in-progress file on demand.
+# scratch while live, then uploaded to the media store when it ends. Clips are
+# cut from that in-progress file on demand, and uploaded once they are whole.
 
 _rec = {
     "active": False, "vod_id": None, "tmp_path": None,
@@ -416,102 +416,63 @@ async def _make_poster(src, dst, seek=2):
     )
 
 
-async def _probe_duration(path):
-    code, out, _ = await _run_ffmpeg(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", path],
-        timeout=20,
-    )
-    try:
-        return int(float(out.decode().strip()))
-    except Exception:
-        logger.debug("could not probe duration of %s", path, exc_info=True)
-        return 0
-
-
-def shared_paths(token):
-    """The public file names for a share token: the video and its poster."""
-    return (
-        os.path.join(SHARED_DIR, f"{token}.mp4"),
-        os.path.join(SHARED_DIR, f"{token}.jpg"),
-    )
-
-
-def link_shared(clip_id, filename, token):
-    """Make a published clip reachable by hard-linking it into SHARED_DIR.
+async def link_shared(clip_id, filename, token):
+    """Make a published clip reachable by hard-linking it into the store's
+    public area.
 
     A hard link is a second name for the same bytes, so this costs no disk and
-    cannot drift from the original. Returns True if the video was linked; the
-    poster is best effort, since a clip without one is still watchable.
-    """
-    os.makedirs(SHARED_DIR, exist_ok=True)
-    source = os.path.join(CLIP_DIR, os.path.basename(filename or ""))
-    video, poster = shared_paths(token)
-    if not filename or not os.path.exists(source):
-        logger.warning("cannot publish clip %s: %s is missing", clip_id, source)
-        return False
+    cannot drift from the original. Raises StoreError when the video could not
+    be linked (status 404 when the clip's file is not there); the poster is best
+    effort, since a clip without one is still watchable."""
+    await store.link(os.path.basename(filename or ""), f"{token}.mp4")
     try:
-        if not os.path.exists(video):
-            os.link(source, video)
-    except OSError:
-        logger.warning("could not link %s for sharing", source, exc_info=True)
-        return False
-    source_poster = os.path.join(CLIP_DIR, f"{clip_id}.jpg")
-    try:
-        if os.path.exists(source_poster) and not os.path.exists(poster):
-            os.link(source_poster, poster)
-    except OSError:
+        await store.link(f"{clip_id}.jpg", f"{token}.jpg")
+    except store.StoreError:
         logger.debug("could not link the poster for clip %s", clip_id, exc_info=True)
-    return True
 
 
-def unlink_shared(token):
+async def unlink_shared(token):
     """Remove the public names for a token. The clip itself is untouched: the
-    bytes survive because CLIP_DIR still holds a name for them."""
+    bytes survive because the clips area still holds a name for them. Raises
+    StoreError when the store could not be asked, so the caller keeps whatever
+    it would otherwise have let go and the link is never left half-revoked."""
     if not token:
         return
-    for path in shared_paths(token):
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except OSError:
-            logger.warning("could not unshare %s", path, exc_info=True)
+    for name in (f"{token}.mp4", f"{token}.jpg"):
+        await store.delete("shared", name)
 
 
-def sweep_orphan_shared():
+async def sweep_orphan_shared():
     """Delete public files with no live token behind them.
 
     Belt and braces for the case that matters most here: a file left reachable
     after its clip is gone. Publishing and unpublishing keep these in step, but
-    this is the one directory where being wrong means strangers can still watch
-    something that was deleted, so it is also checked at startup."""
-    if not os.path.isdir(SHARED_DIR):
+    this is the one area where being wrong means strangers can still watch
+    something that was deleted, so it is also checked at startup.
+
+    The listing comes first and the tokens are read after it. Publishing writes
+    the token before it links the file, so anything this listing holds for a
+    clip being published right now already has its token in the set."""
+    try:
+        entries = await store.list_area("shared")
+    except store.StoreError as exc:
+        logger.warning("could not list the media store's public files; "
+                       "skipping their sweep: %s", exc)
         return 0
     live = db.published_clip_tokens()
     removed = 0
-    for name in os.listdir(SHARED_DIR):
-        token = os.path.splitext(name)[0]
-        if token in live:
+    for entry in entries:
+        name = entry["name"]
+        if os.path.splitext(name)[0] in live:
             continue
         try:
-            os.remove(os.path.join(SHARED_DIR, name))
-            removed += 1
-            logger.info("removed an orphaned public clip file: %s", name)
-        except OSError:
-            logger.warning("could not remove %s", name, exc_info=True)
+            await store.delete("shared", name)
+        except store.StoreError as exc:
+            logger.warning("stopped sweeping public files: %s", exc)
+            break
+        removed += 1
+        logger.info("removed an orphaned public clip file: %s", name)
     return removed
-
-
-def _remove_media_files(folder, filename, item_id):
-    for name in (filename, f"{item_id}.jpg"):
-        if not name:
-            continue
-        path = os.path.join(folder, os.path.basename(name))
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except Exception:
-            logger.debug("could not remove media file %s", path, exc_info=True)
 
 
 def cleanup_record_scratch():
@@ -554,74 +515,59 @@ def cleanup_record_scratch():
             logger.warning("could not remove scratch file %s", path, exc_info=True)
 
 
-def _dir_bytes(folder):
-    """Bytes used by the regular files in one directory. Stat'ed rather than
-    tracked in the database, so it is the truth about the disk and it counts
-    orphans whose rows are already gone."""
-    total = 0
-    try:
-        with os.scandir(folder) as entries:
-            for entry in entries:
-                try:
-                    if entry.is_file():
-                        total += entry.stat().st_size
-                except OSError:
-                    continue
-    except OSError:
-        logger.debug("media dir %s not listable", folder, exc_info=True)
-    return total
 
 
-def media_usage():
+async def media_usage():
     """Bytes used by the media store, split by kind, plus the free space on the
-    filesystem holding it. Never touches the database, never raises."""
-    vods_bytes = _dir_bytes(VOD_DIR)
-    clips_bytes = _dir_bytes(CLIP_DIR)
-    free_bytes = 0
-    fs_total_bytes = 0
+    disk holding it, as the store reports them. Never touches the database,
+    never raises: when the store cannot be asked this says so, as
+    {"available": False}, and the Storage panel shows that rather than zeros.
+
+    Measured by the store rather than tracked in the database, so it is the
+    truth about the disk and it counts orphans whose rows are already gone."""
     try:
-        usage = shutil.disk_usage(MEDIA_DIR)
-        free_bytes = usage.free
-        fs_total_bytes = usage.total
-    except OSError:
-        logger.debug("could not stat the media filesystem", exc_info=True)
+        usage = await store.usage()
+    except store.StoreError as exc:
+        logger.warning("could not read the media store's usage: %s", exc)
+        return {"available": False}
     return {
-        "vods_bytes": vods_bytes,
-        "clips_bytes": clips_bytes,
-        "total_bytes": vods_bytes + clips_bytes,
-        "free_bytes": free_bytes,
-        "fs_total_bytes": fs_total_bytes,
+        "available": True,
+        "vods_bytes": usage["vods_bytes"],
+        "clips_bytes": usage["clips_bytes"],
+        # The public area is hard links to clips, so it is the same bytes again
+        # and is left out of the total the cap is measured against.
+        "total_bytes": usage["vods_bytes"] + usage["clips_bytes"],
+        "free_bytes": usage["free_bytes"],
+        "fs_total_bytes": usage["total_bytes"],
     }
 
 
 def _item_bytes(item):
-    folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
-    total = 0
-    for name in (item.get("filename"), f"{item['id']}.jpg"):
-        if not name:
-            continue
-        try:
-            total += os.path.getsize(os.path.join(folder, os.path.basename(name)))
-        except OSError:
-            continue
-    return total
+    """What removing an item frees, as recorded when it was uploaded. None when
+    it is not known yet, which only a row from before the store can be."""
+    return item.get("size_bytes")
 
 
-def _remove_item_files(item):
-    """Remove a VOD or clip's file and poster. True when nothing of it is left
-    on disk, which is what lets the caller decide whether the row may go.
+async def _remove_item_files(item):
+    """Have the store remove a VOD or clip's file and poster. True once the
+    store has answered for every one of them, whether or not each was still
+    there; False when it could not be asked, which is what keeps the row.
 
-    A published clip has a second name in SHARED_DIR, and the bytes only go when
-    the last name does. Missing that would leave a deleted clip still playing
-    for anyone holding the link, including after the retention sweep removed it,
-    so the public name goes first."""
-    folder = VOD_DIR if item["kind"] == "vod" else CLIP_DIR
-    if item.get("share_token"):
-        unlink_shared(item["share_token"])
-    _remove_media_files(folder, item.get("filename"), item["id"])
-    for name in (item.get("filename"), f"{item['id']}.jpg"):
-        if name and os.path.exists(os.path.join(folder, os.path.basename(name))):
-            return False
+    A published clip has a second name in the public area, and the bytes only
+    go when the last name does. Missing that would leave a deleted clip still
+    playing for anyone holding the link, including after the retention sweep
+    removed it, so the public name goes first."""
+    area = "vods" if item["kind"] == "vod" else "clips"
+    try:
+        if item.get("share_token"):
+            await unlink_shared(item["share_token"])
+        for name in (item.get("filename"), f"{item['id']}.jpg"):
+            if name:
+                await store.delete(area, os.path.basename(name))
+    except store.StoreError as exc:
+        logger.warning("%s id=%s was kept: the media store could not remove its "
+                       "files: %s", item["kind"], item["id"], exc)
+        return False
     return True
 
 
@@ -629,28 +575,28 @@ def _over_cap(cap_gb, used_bytes):
     return cap_gb > 0 and used_bytes > cap_gb * 1024 * 1024 * 1024
 
 
-def _remove_batch(items, why):
-    """Remove the files for a batch, then delete the rows of the ones whose
-    files really went. Files first, deliberately: a row whose file could not be
+async def _remove_batch(items, why):
+    """Remove the files for a batch, then delete the rows of the ones the store
+    answered for. Files first, deliberately: a row whose files could not be
     removed keeps its recording visible and deletable, while deleting the row
-    anyway would leave bytes on disk that nothing points at and that the size
-    cap would then try to reclaim by deleting somebody else's recording."""
+    anyway would leave bytes in the store that nothing points at and that the
+    size cap would then try to reclaim by deleting somebody else's recording.
+
+    The first item the store cannot be asked about ends the batch. Every other
+    one would wait out the same timeout to learn the same thing, and the next
+    pass tries them all again."""
     gone = []
     for item in items:
-        if _remove_item_files(item):
-            gone.append(item)
-            logger.info("%s removed by %s: id=%s", item["kind"], why, item["id"])
-        else:
-            logger.warning(
-                "%s id=%s was kept: its files could not be removed",
-                item["kind"], item["id"],
-            )
+        if not await _remove_item_files(item):
+            break
+        gone.append(item)
+        logger.info("%s removed by %s: id=%s", item["kind"], why, item["id"])
     if gone:
         db.delete_media_rows(gone)
     return gone
 
 
-def _apply_size_cap(cap_gb):
+async def _apply_size_cap(cap_gb):
     """Bring the media store back under the size cap, oldest first.
 
     Two things it will not do. It never removes the newest recording or the
@@ -658,12 +604,25 @@ def _apply_size_cap(cap_gb):
     moment it lands. And if removing everything it is allowed to remove would
     still leave the store over the cap, it removes nothing at all: the excess is
     then something retention cannot reach (a recording still being written, or a
-    file no row points at), and deleting real recordings would not fix it."""
-    used = media_usage()["total_bytes"]
+    file no row points at), and deleting real recordings would not fix it.
+
+    It also removes nothing it cannot measure: with the store unreachable, or
+    with an item whose size has not been recorded yet, the pass is skipped and
+    the next one tries again."""
+    if cap_gb <= 0:
+        return []
+    usage = await media_usage()
+    if not usage["available"]:
+        return []
+    used = usage["total_bytes"]
     if not _over_cap(cap_gb, used):
         return []
     limit = cap_gb * 1024 * 1024 * 1024
     candidates = db.retention_candidates()
+    if any(_item_bytes(c) is None for c in candidates):
+        logger.info("the size cap is waiting for the sizes of older items to be "
+                    "read from the media store; removing nothing this pass")
+        return []
     # The newest of each kind is off limits, whatever the cap says.
     protected = set()
     for kind in ("vod", "clip"):
@@ -687,7 +646,7 @@ def _apply_size_cap(cap_gb):
             used, cap_gb, freed,
         )
         return []
-    return _remove_batch(doomed, "the size cap")
+    return await _remove_batch(doomed, "the size cap")
 
 
 # One sweep at a time. It runs from three places (the hourly worker, the end of
@@ -707,54 +666,95 @@ async def enforce_retention():
             return 0
         async with _retention_lock:
             doomed = db.prune_candidates(limits, int(time.time()))
-            removed = await asyncio.to_thread(_remove_batch, doomed, "retention")
-            capped = await asyncio.to_thread(
-                _apply_size_cap, limits["media_cap_gb"]
-            )
+            removed = await _remove_batch(doomed, "retention")
+            capped = await _apply_size_cap(limits["media_cap_gb"])
         return len(removed) + len(capped)
     except Exception:
         logger.warning("retention sweep failed", exc_info=True)
         return 0
 
 
-def sweep_orphan_media():
+async def sweep_orphan_media():
     """Remove files in the media store that no row points at.
 
-    They come from a gate that stopped between writing a recording and marking
-    it finished, whose row is then dropped at the next start. Left alone they
-    are invisible bytes that count against the size cap, which could only pay
-    for them by deleting real recordings. Called at startup, when nothing is
-    recording or being clipped, for the same reason the scratch sweep is."""
+    They come from a gate that stopped between uploading a recording and
+    marking it finished, whose row is then dropped at the next start. Left alone
+    they are invisible bytes that count against the size cap, which could only
+    pay for them by deleting real recordings.
+
+    Both areas are listed before the rows are read, never after. A file is
+    uploaded only once the row that will name it exists, so everything in the
+    listing that belongs to work in flight right now already has its row; the
+    other order could list an upload that finished after the rows were read and
+    delete it. If the store cannot be listed the sweep is skipped entirely."""
+    listed = {}
+    try:
+        for kind, area in (("vod", "vods"), ("clip", "clips")):
+            listed[kind] = await store.list_area(area)
+    except store.StoreError as exc:
+        logger.warning("could not list the media store; skipping the orphan "
+                       "sweep: %s", exc)
+        return 0
     try:
         known = db.media_filenames()
     except Exception:
         logger.warning("could not list media files to sweep", exc_info=True)
         return 0
     swept = 0
-    for kind, folder in (("vod", VOD_DIR), ("clip", CLIP_DIR)):
-        try:
-            entries = os.listdir(folder)
-        except OSError:
-            continue
-        for name in entries:
+    for kind, area in (("vod", "vods"), ("clip", "clips")):
+        for entry in listed[kind]:
+            name = entry["name"]
             if name in known[kind]:
                 continue
-            path = os.path.join(folder, name)
-            if not os.path.isfile(path):
-                continue
             try:
-                os.remove(path)
-                swept += 1
-                logger.info("removed orphaned media file: %s", path)
-            except OSError:
-                logger.warning("could not remove %s", path, exc_info=True)
+                await store.delete(area, name)
+            except store.StoreError as exc:
+                logger.warning("stopped the orphan sweep: %s", exc)
+                return swept
+            swept += 1
+            logger.info("removed orphaned media file: %s/%s", area, name)
     return swept
+
+
+async def backfill_media_facts():
+    """Record whether each older item has a poster and what it weighs, from
+    what the store actually holds. Only rows from before those columns existed
+    need it; listings treat them as "try the poster" until this has run, and the
+    size cap waits for it. Runs from the retention worker, so a store that was
+    away at startup is caught up an hour later. Never raises."""
+    try:
+        rows = db.media_missing_facts()
+        if not rows:
+            return 0
+        sizes = {}
+        for kind, area in (("vod", "vods"), ("clip", "clips")):
+            sizes[kind] = {
+                entry["name"]: entry["size"]
+                for entry in await store.list_area(area)
+            }
+    except store.StoreError as exc:
+        logger.info("could not read older items' sizes from the media store "
+                    "yet: %s", exc)
+        return 0
+    except Exception:
+        logger.warning("media backfill failed", exc_info=True)
+        return 0
+    for row in rows:
+        held = sizes[row["kind"]]
+        poster = held.get(f"{row['id']}.jpg")
+        video = held.get(os.path.basename(row["filename"])) or 0
+        db.set_media_facts(row["kind"], row["id"], poster is not None,
+                           video + (poster or 0))
+    logger.info("recorded poster and size for %s older items", len(rows))
+    return len(rows)
 
 
 async def retention_worker():
     """Apply the retention limits on a timer, so lowering a limit on the
     dashboard takes effect without waiting for the next broadcast to end."""
     while True:
+        # Before the sweep, so the size cap has every item's size to work with.
+        await backfill_media_facts()
         await enforce_retention()
         try:
             await sweep_idle_chat()
@@ -1009,8 +1009,8 @@ async def stop_recording():
     await _stop_recorder_process(proc, drain, graceful=True)
     # Normal end of broadcast: an expected exit, so INFO rather than WARNING.
     logger.info("recording stopped (rc=%s)", proc.returncode if proc else None)
-    # Archive and finalize in the background so a slow transfer to the media
-    # store (which may be a network mount) never blocks the stream watcher.
+    # Archive and finalize in the background so a slow upload to the media
+    # store (which may be on another machine) never blocks the stream watcher.
     asyncio.create_task(_finalize_recording(vod_id, tmp_path, started_at, ended_at))
 
 
@@ -1019,6 +1019,7 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
     # the flag across the whole pass and calls this for each recording in it.
     was_busy = _archiving["busy"]
     _archiving["busy"] = True
+    poster = os.path.join(RECORD_TMP, f"poster-{vod_id}.jpg")
     try:
         if not (tmp_path and os.path.exists(tmp_path)
                 and os.path.getsize(tmp_path) > 100_000):
@@ -1032,61 +1033,55 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
         # spare the file, so from here until the row names an archived copy a
         # crash, a restart or a raised exception costs nothing.
         db.mark_vod_pending(vod_id, tmp_path, ended_at)
-        # Poster first, while the file is still on fast local scratch.
-        await _make_poster(tmp_path, os.path.join(VOD_DIR, f"{vod_id}.jpg"))
-        dst = os.path.join(VOD_DIR, filename)
-        # Remux the recording into a regular, faststart MP4. The live recording is
-        # a fragmented MP4 (empty_moov + keyframe fragments) so it survives an
-        # abrupt stop, but fragmented files load slowly and break some mobile
-        # players. A plain stream copy with +faststart rewrites it to a single
-        # moov-at-front file that seeks and plays everywhere; no re-encode, so it
-        # stays quick. If the remux fails, fall back to moving the raw recording
-        # so the VOD is never lost, even if playback is degraded.
-        code, _, _ = await _run_ffmpeg(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", tmp_path,
-             "-c", "copy", "-movflags", "+faststart", dst],
-            timeout=600,
-        )
-        remuxed = code == 0 and os.path.exists(dst) and os.path.getsize(dst) > 100_000
-        if not remuxed:
-            logger.warning(
-                "recording remux failed (rc=%s); keeping raw file for %s",
-                code, dst,
-            )
-        # Probe whichever copy exists; the raw scratch is the same recording, so
-        # the fallback path gets the same answer it did when it probed the moved
-        # file instead.
-        duration = (await _probe_duration(dst if remuxed else tmp_path)
-                    or max(0, ended_at - started_at))
+        # Poster first, while the file is still on fast local scratch, and up
+        # first: it is small, so a store that is away is found out in seconds
+        # rather than after a whole broadcast has been pushed at it.
+        await _make_poster(tmp_path, poster)
+        has_poster = os.path.exists(poster)
+        poster_bytes = 0
+        if has_poster:
+            poster_bytes = await store.put_file("vods", f"{vod_id}.jpg", poster)
+        # The raw recording goes up as it is, and the store remuxes it in place
+        # into a regular faststart MP4 (store/main.py says why). Remuxing there
+        # rather than here is what spares this box from needing twice the
+        # recording's size free. A remux that fails keeps the raw file, so the
+        # VOD is never lost, even if playback is degraded.
+        await store.put_file("vods", filename, tmp_path)
+        result = await store.finalize_vod(filename)
+        if not result["remuxed"]:
+            logger.warning("recording remux failed on the media store; keeping "
+                           "the raw file for %s", filename)
+        duration = result["duration"] or max(0, ended_at - started_at)
         # The row learns the filename before the scratch copy goes. Releasing the
         # scratch first left a window where a finalize that raised (a busy
         # database, a full disk) lost the recording twice over: nothing was left
         # to park, the next start dropped the unfinished row, and the orphan
         # sweep then deleted the archived file it no longer pointed at.
-        db.finalize_vod(vod_id, ended_at, duration, filename)
-        if remuxed:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                logger.debug("could not remove scratch recording %s", tmp_path,
-                             exc_info=True)
-        else:
-            # Same rule for the raw-file fallback: the move is what consumes the
-            # scratch, so it happens after the row can name what it produced. A
-            # move that fails here is caught below and re-parks the recording.
-            await asyncio.to_thread(shutil.move, tmp_path, dst)
+        db.finalize_vod(vod_id, ended_at, duration, filename,
+                        has_poster=has_poster,
+                        size_bytes=result["size"] + poster_bytes)
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            logger.debug("could not remove scratch recording %s", tmp_path,
+                         exc_info=True)
         db.snapshot_chat("vod", vod_id, started_at, ended_at)
-        logger.info("recording finalized: %s (%ss)", dst, duration)
+        logger.info("recording finalized: %s (%ss)", filename, duration)
         # Finalizing is when the media store jumps in size, so reclaim here
         # rather than waiting up to an hour for the sweep.
         await enforce_retention()
-    except Exception:
-        # The recording itself is fine; only the archive failed, which on a media
-        # store that lives across a network mount usually means the far side is
-        # unreachable. Park it rather than lose it: the row stays, the scratch
-        # file stays, and retry_pending_archives picks it up later.
-        logger.warning("recording finalize failed for vod_id=%s", vod_id,
-                       exc_info=True)
+    except Exception as exc:
+        # The recording itself is fine; only the archive failed, which usually
+        # means the media store is unreachable. Park it rather than lose it: the
+        # row stays, the scratch file stays, and retry_pending_archives picks it
+        # up later. An unreachable store is expected weather, so it gets one
+        # line; anything else gets the traceback.
+        if isinstance(exc, store.StoreError):
+            logger.warning("recording finalize failed for vod_id=%s: %s",
+                           vod_id, exc)
+        else:
+            logger.warning("recording finalize failed for vod_id=%s", vod_id,
+                           exc_info=True)
         try:
             if tmp_path and os.path.exists(tmp_path):
                 db.mark_vod_pending(vod_id, tmp_path, ended_at)
@@ -1098,6 +1093,12 @@ async def _finalize_recording(vod_id, tmp_path, started_at, ended_at):
             logger.warning("could not park unarchived recording %s", vod_id,
                            exc_info=True)
     finally:
+        # Made fresh from the recording on every attempt, so never worth keeping.
+        try:
+            if os.path.exists(poster):
+                os.remove(poster)
+        except OSError:
+            logger.debug("could not remove poster scratch %s", poster, exc_info=True)
         _archiving["busy"] = was_busy
 
 
@@ -1150,6 +1151,12 @@ async def retry_pending_archives():
         return retried
     finally:
         _archiving["busy"] = False
+
+
+# What a viewer is told when the clip was cut but the media store could not
+# take it. Plain and short: the store being away is not their problem to solve,
+# and "try again" would promise something nobody knows yet.
+CLIPS_UNAVAILABLE = "Saving clips is not available right now."
 
 
 def cooldown_for(user):
@@ -1256,39 +1263,67 @@ async def make_clip(user, name, at=None, seconds=None):
         game=game,
     )
     filename = f"{clip_id}.mp4"
-    dst = os.path.join(CLIP_DIR, filename)
-    # Seeking with -ss on a stream copy lands on the keyframe at or before the
-    # requested point, because a copy cannot cut mid-GOP; only re-encoding could,
-    # and this box has one core. So the clip starts up to one keyframe interval
-    # early, and since the duration is measured from where it actually started,
-    # the far end would fall short by the same amount and cut off the very moment
-    # the viewer pressed Clip.
-    #
-    # Ask for that slack back. The clip then runs slightly long instead of
-    # slightly short, which is the right direction to be wrong in: an extra
-    # second of lead-out is a shrug, and losing the thing you clipped is the
-    # whole failure.
-    code, _, err = await _run_ffmpeg(
-        ["ffmpeg", "-y", "-loglevel", "error",
-         "-ss", str(start - started_at), "-i", src,
-         "-t", str(duration + CLIP_KEYFRAME_SLACK),
-         *COPY_MAPS,
-         "-c", "copy", "-movflags", "+faststart", dst],
-        timeout=40,
-    )
-    if code != 0 or not os.path.exists(dst) or os.path.getsize(dst) < 1000:
-        if not os.path.exists(dst):
-            why = "output file missing"
-        elif os.path.getsize(dst) < 1000:
-            why = f"output too small ({os.path.getsize(dst)} bytes)"
-        else:
-            why = f"ffmpeg rc={code}: {_stderr_tail(err)}"
-        logger.warning("clip creation failed for id=%s: %s", clip_id, why)
+    # Cut into local scratch beside the recording it comes from, and only send
+    # the finished clip to the store. Nothing is written to the store until
+    # there is a whole clip to write, so a store that is away costs a failed
+    # upload, never a half-made clip on the far side.
+    cut = os.path.join(RECORD_TMP, f"clip-{clip_id}.mp4")
+    poster = os.path.join(RECORD_TMP, f"clip-{clip_id}.jpg")
+    try:
+        # Seeking with -ss on a stream copy lands on the keyframe at or before
+        # the requested point, because a copy cannot cut mid-GOP; only
+        # re-encoding could, and this box has one core. So the clip starts up to
+        # one keyframe interval early, and since the duration is measured from
+        # where it actually started, the far end would fall short by the same
+        # amount and cut off the very moment the viewer pressed Clip.
+        #
+        # Ask for that slack back. The clip then runs slightly long instead of
+        # slightly short, which is the right direction to be wrong in: an extra
+        # second of lead-out is a shrug, and losing the thing you clipped is the
+        # whole failure.
+        code, _, err = await _run_ffmpeg(
+            ["ffmpeg", "-y", "-loglevel", "error",
+             "-ss", str(start - started_at), "-i", src,
+             "-t", str(duration + CLIP_KEYFRAME_SLACK),
+             *COPY_MAPS,
+             "-c", "copy", "-movflags", "+faststart", cut],
+            timeout=40,
+        )
+        if code != 0 or not os.path.exists(cut) or os.path.getsize(cut) < 1000:
+            if not os.path.exists(cut):
+                why = "output file missing"
+            elif os.path.getsize(cut) < 1000:
+                why = f"output too small ({os.path.getsize(cut)} bytes)"
+            else:
+                why = f"ffmpeg rc={code}: {_stderr_tail(err)}"
+            logger.warning("clip creation failed for id=%s: %s", clip_id, why)
+            db.delete_media("clip", clip_id)
+            return None, "Could not make the clip. Try again in a moment."
+        await _make_poster(cut, poster, seek=1)
+        has_poster = os.path.exists(poster)
+        # The poster goes up first because it is small: a store that is away is
+        # then found out at once, and the viewer hears so in seconds.
+        size = 0
+        if has_poster:
+            size += await store.put_file("clips", f"{clip_id}.jpg", poster)
+        size += await store.put_file("clips", filename, cut)
+    except store.StoreError as exc:
+        logger.warning("clip id=%s could not be saved to the media store: %s",
+                       clip_id, exc)
         db.delete_media("clip", clip_id)
-        _remove_media_files(CLIP_DIR, filename, clip_id)
+        return None, CLIPS_UNAVAILABLE
+    except Exception:
+        logger.warning("clip id=%s could not be saved", clip_id, exc_info=True)
+        db.delete_media("clip", clip_id)
         return None, "Could not make the clip. Try again in a moment."
-    db.set_clip_filename(clip_id, filename)
-    await _make_poster(dst, os.path.join(CLIP_DIR, f"{clip_id}.jpg"), seek=1)
+    finally:
+        for path in (cut, poster):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                logger.debug("could not remove clip scratch %s", path, exc_info=True)
+    db.set_clip_filename(clip_id, filename, has_poster=has_poster, size_bytes=size)
     db.snapshot_chat("clip", clip_id, start, end)
     logger.info(
         "clip created: id=%s name=%r by=%s (%ss)", clip_id, name, username, duration

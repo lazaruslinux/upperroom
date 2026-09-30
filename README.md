@@ -8,7 +8,7 @@ them an invite. You can also hand out a guest pass to let somebody watch for a
 while without one, or share a single clip publicly. It runs on a server you
 control, at your own domain.
 
-Current version: **0.22.0**. Releases are tagged in git, and the running version
+Current version: **0.23.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -193,12 +193,15 @@ Caddy  --  checks the session cookie, and the country, before serving any video
 Viewer's browser  --  sign in, then video plus chat plus presence
 ```
 
-Three containers:
+Four containers:
 
 - `mediamtx` receives OBS and produces HLS. It asks `gate` whether a publisher
   is allowed in.
 - `gate` is a small FastAPI service for login, sessions, chat, presence,
   recording and the dashboards.
+- `store` holds the recordings and clips behind a small HTTP API with two keys:
+  the gate writes, Caddy only reads. It can run here or on another machine with
+  more disk (`docs/04-run.md`).
 - `caddy` terminates TLS, serves the pages, and guards the video and the
   recordings.
 
@@ -268,8 +271,8 @@ install is unaffected. Credentials, teardown and the full details are in
 ## Configuration
 
 `.env` holds what the server needs in order to boot: your domain, the session
-signing secret, the certificate email, how long a session lasts, the country
-list, and an SMTP relay if you want go-live email. See `.env.example`, which
+signing secret, the media store's two keys, the certificate email, how long a
+session lasts, the country list, and an SMTP relay if you want go-live email. See `.env.example`, which
 explains every value.
 
 Everything about the channel itself lives in the admin dashboard rather than in

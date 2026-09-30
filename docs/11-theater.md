@@ -244,10 +244,11 @@ What it does not carry is anything about your library: no item ids, no paths, no
 server address, and nothing at all when no session is running. `/api/status`,
 which anyone signed in reads, is unchanged and says nothing about theater.
 
-Posters are stored under the media directory in `art/`, served behind the same
-session check as your recordings, and re-encoded on the way in so only pixels
-are written. They are deliberately not in the recordings or clips folders, so
-retention never treats a poster as something to prune.
+Posters are stored on the gate's own data volume in `art/`, served by the gate
+to anyone signed in to the room (guests included, since the poster is part of
+what they are watching), and re-encoded on the way in so only pixels are
+written. They are deliberately not in the media store, so retention never treats
+a poster as something to prune and a poster never counts against the size cap.
 
 ## 11.5 Demo mode
 

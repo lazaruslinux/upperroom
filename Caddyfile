@@ -169,27 +169,41 @@
 		}
 
 		# Theater posters, which everyone in the room sees, guests included.
-		# Before /media/* below, which is members only.
-		handle_path /media/art/* {
+		# Before /media/* below, which is members only. They live on the gate's
+		# own data volume rather than in the media store (they are not
+		# recordings), so the gate serves them, and checks the session again
+		# itself. The whole path is passed on, not stripped, because the gate's
+		# route is /media/art/<name>.
+		handle /media/art/* {
 			forward_auth gate:8000 {
 				uri /api/verify?scope=art
 				import to_gate
 			}
-			root * /srv/media/art
-			file_server
+			reverse_proxy gate:8000 {
+				import to_gate
+			}
 		}
 
-		# Saved recordings and clips. The files are served straight from the
-		# shared media volume (with range requests, so seeking works), behind the
-		# same session check as the live video, so large files never pass through
-		# the gate. /media/vods/<f> and /media/clips/<f> map onto the media dir.
+		# Saved recordings and clips, from the media store: a separate service
+		# on this machine or another one, which answers range requests itself,
+		# so seeking works. Behind the same session check as the live video, so
+		# large files never pass through the gate. The prefix is stripped, so
+		# /media/vods/<f> reaches the store as /vods/<f>.
+		#
+		# The store has its own key, and Caddy holds only the read one, which
+		# can fetch a file and do nothing else. The viewer's cookie is removed
+		# on the way: the store has no use for a session and must never be
+		# handed one, so a store on another machine learns nothing about who is
+		# watching and holds nothing that could be replayed against this site.
 		handle_path /media/* {
 			forward_auth gate:8000 {
 				uri /api/verify?scope=media
 				import to_gate
 			}
-			root * /srv/media
-			file_server
+			reverse_proxy {$SELFSTREAM_STORE_UPSTREAM} {
+				header_up Authorization "Bearer {$SELFSTREAM_STORE_READ_KEY}"
+				header_up -Cookie
+			}
 		}
 
 		# Published clips: the one thing on this site deliberately reachable
@@ -202,12 +216,16 @@
 		#
 		# The whole credential is the filename: a clip is only reachable at
 		# /shared/<token>.mp4 where the token is 16 random bytes, and only the
-		# publish path ever creates a file in here. file_server without `browse`
-		# means the directory itself cannot be listed, so the tokens cannot be
-		# discovered by asking for the folder.
+		# publish path ever creates a file in here. The store never lists a
+		# directory over a read, so the tokens cannot be discovered by asking
+		# for the folder. The path is passed on whole, so it can only ever name
+		# the store's public area, and the same read key and the same cookie
+		# rule apply as above.
 		handle /shared/* {
-			root * /srv/media
-			file_server
+			reverse_proxy {$SELFSTREAM_STORE_UPSTREAM} {
+				header_up Authorization "Bearer {$SELFSTREAM_STORE_READ_KEY}"
+				header_up -Cookie
+			}
 		}
 
 		# The page that wraps a shared clip, rendered by the gate rather than

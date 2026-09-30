@@ -475,6 +475,15 @@ def init_db():
         # does not. Clips made before this column exists have no game, and the
         # blank is what the card reads as "no game".
         _ensure_column(conn, "clips", "game", "TEXT NOT NULL DEFAULT ''")
+        # What the media store holds for each item, recorded when it is
+        # uploaded, so a listing never has to ask the store: whether it has a
+        # poster, and how many bytes it takes (video plus poster), which is what
+        # the size cap adds up. NULL means not known yet. Rows from before the
+        # store are filled in once from its listing, and until then a poster is
+        # tried rather than hidden.
+        for table in ("vods", "clips"):
+            _ensure_column(conn, table, "has_poster", "INTEGER")
+            _ensure_column(conn, table, "size_bytes", "INTEGER")
         # Clip length moved out of config.py and onto the channel. An existing
         # channel picks up 60 here, which is the change this shipped for.
         _ensure_column(
@@ -2069,23 +2078,28 @@ def create_vod(title, description, started_at):
         return cur.lastrowid
 
 
-def finalize_vod(vod_id, ended_at, duration, filename):
+def finalize_vod(vod_id, ended_at, duration, filename, has_poster=None,
+                 size_bytes=None):
     """Mark a recording archived and playable. Clears pending_path in the same
     statement, so an archive that succeeded on a retry stops being pending."""
     with connect() as conn:
         conn.execute(
             "UPDATE vods SET ended_at = ?, duration = ?, filename = ?, ready = 1, "
-            "pending_path = NULL WHERE id = ?",
-            (ended_at, duration, filename, vod_id),
+            "pending_path = NULL, has_poster = ?, size_bytes = ? WHERE id = ?",
+            (ended_at, duration, filename, _flag(has_poster), size_bytes, vod_id),
         )
+
+
+def _flag(value):
+    return None if value is None else (1 if value else 0)
 
 
 def list_vods():
     """Finished VODs for the landing page, most recent first."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, title, description, filename, started_at, duration, views, keep "
-            "FROM vods WHERE ready = 1 ORDER BY started_at DESC"
+            "SELECT id, title, description, filename, started_at, duration, views, keep, "
+            "has_poster FROM vods WHERE ready = 1 ORDER BY started_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2115,10 +2129,12 @@ def rename_clip(clip_id, name):
         conn.execute("UPDATE clips SET name = ? WHERE id = ?", (name, clip_id))
 
 
-def set_clip_filename(clip_id, filename):
+def set_clip_filename(clip_id, filename, has_poster=None, size_bytes=None):
     with connect() as conn:
         conn.execute(
-            "UPDATE clips SET filename = ? WHERE id = ?", (filename, clip_id)
+            "UPDATE clips SET filename = ?, has_poster = ?, size_bytes = ? "
+            "WHERE id = ?",
+            (filename, _flag(has_poster), size_bytes, clip_id),
         )
 
 
@@ -2198,7 +2214,7 @@ def list_clips():
     with connect() as conn:
         rows = conn.execute(
             "SELECT id, name, filename, creator, start_ts, duration, views, created_at, "
-            "keep, share_token FROM clips ORDER BY created_at DESC"
+            "keep, share_token, has_poster FROM clips ORDER BY created_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2377,7 +2393,7 @@ def _rows_for_retention(conn, kind):
     # forever, and nothing would look wrong from the inside.
     share = "share_token" if kind == "clip" else "NULL AS share_token"
     return conn.execute(
-        f"SELECT id, filename, {share}, {ts_column} AS ts FROM {table} "
+        f"SELECT id, filename, {share}, size_bytes, {ts_column} AS ts FROM {table} "
         f"WHERE keep = 0{ready} AND filename IS NOT NULL AND filename != '' "
         "ORDER BY ts DESC, id DESC"
     ).fetchall()
@@ -2392,8 +2408,9 @@ def _delete_media_row(conn, kind, ref_id):
 def prune_candidates(limits, now):
     """The VODs and clips past the count and age limits, newest kept and pinned
     items always kept, as {kind, id, filename}. This only reads: the caller
-    removes the files first and deletes the rows for the ones that actually
-    went, so a file that cannot be removed never loses its row."""
+    has the media store remove the files first and deletes the rows only once
+    it has answered, so a file the store could not be asked about never loses
+    its row."""
     doomed = []
     with connect() as conn:
         for kind in _MEDIA_KINDS:
@@ -2414,26 +2431,55 @@ def prune_candidates(limits, now):
 
 def media_filenames():
     """Every filename and poster the database expects to exist, by kind, so a
-    sweep can tell a real file from one nothing points at any more."""
+    sweep can tell a real file from one nothing points at any more.
+
+    Every row claims the files named by its id as well as the one it names,
+    whether or not it names one yet. A clip's row exists before its upload does
+    and a parked recording's before its retry does, and in both cases the file
+    that arrives is named by the id; a sweep that ran in between must not take
+    it for an orphan."""
     known = {"vod": set(), "clip": set()}
     with connect() as conn:
         for kind, (table, _ts) in _MEDIA_KINDS.items():
             for row in conn.execute(f"SELECT id, filename FROM {table}"):
                 if row["filename"]:
                     known[kind].add(os.path.basename(row["filename"]))
+                known[kind].add(f"{row['id']}.mp4")
                 known[kind].add(f"{row['id']}.jpg")
-        # A parked recording still points at its archive: the retry finishes the
-        # same file, named by the recording's id, so sweeping it would only make
-        # the retry redo work it had already done.
-        for row in conn.execute("SELECT id FROM vods WHERE pending_path IS NOT NULL"):
-            known["vod"].add(f"{row['id']}.mp4")
     return known
+
+
+def media_missing_facts():
+    """Finished items whose poster and size have not been recorded, as
+    {kind, id, filename}. Only rows from before those columns existed, so once
+    the backfill has run this is empty and costs one query."""
+    rows = []
+    with connect() as conn:
+        for kind, (table, _ts) in _MEDIA_KINDS.items():
+            for row in conn.execute(
+                f"SELECT id, filename FROM {table} "
+                "WHERE filename IS NOT NULL AND filename != '' "
+                "AND (has_poster IS NULL OR size_bytes IS NULL)"
+            ):
+                rows.append({"kind": kind, "id": row["id"], "filename": row["filename"]})
+    return rows
+
+
+def set_media_facts(kind, ref_id, has_poster, size_bytes):
+    table = _media_table(kind)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {table} SET has_poster = ?, size_bytes = ? WHERE id = ?",
+            (_flag(has_poster), size_bytes, ref_id),
+        )
 
 
 def retention_candidates():
     """Every unpinned, finished VOD and clip, oldest first, as
-    {kind, id, filename, ts}. The size cap walks this from the oldest until the
-    media store is back under its limit."""
+    {kind, id, filename, share_token, size_bytes, ts}. The size cap walks this
+    from the oldest until the media store is back under its limit. The token
+    comes along for the same reason it does in prune_candidates: a published
+    clip the cap removes must lose its public copy too."""
     rows = []
     with connect() as conn:
         for kind in _MEDIA_KINDS:
@@ -2443,6 +2489,8 @@ def retention_candidates():
                         "kind": kind,
                         "id": row["id"],
                         "filename": row["filename"],
+                        "share_token": row["share_token"],
+                        "size_bytes": row["size_bytes"],
                         "ts": row["ts"],
                     }
                 )
@@ -2451,8 +2499,8 @@ def retention_candidates():
 
 
 def delete_media_rows(items):
-    """Delete a batch of {kind, id} rows and everything tied to them. Used by the
-    size cap, which decides what goes by looking at the files on disk."""
+    """Delete a batch of {kind, id} rows and everything tied to them, once the
+    media store has answered for their files."""
     with connect() as conn:
         for item in items:
             _delete_media_row(conn, item["kind"], item["id"])

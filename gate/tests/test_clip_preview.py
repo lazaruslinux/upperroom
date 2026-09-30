@@ -8,11 +8,9 @@ and a token that is unknown or revoked tells a stranger nothing at all.
 """
 
 import asyncio
-import os
 
 import db
 import media
-from config import SHARED_DIR
 
 from test_api import add_user, make_client, setup_admin
 from test_sharing import make_clip_row
@@ -95,11 +93,9 @@ def test_the_picture_is_the_clips_own_frame(client):
 
 
 def test_a_clip_with_no_poster_falls_back_to_the_channel_card(client):
-    # The poster is linked best effort when a clip is published, so a clip
-    # without one must not point a fetcher at a 404.
+    # A clip whose poster could not be made must not point a fetcher at a 404.
     setup_admin(client, username="owner", channel="Northwind Live")
-    token = publish(client, make_clip_row())
-    os.remove(os.path.join(SHARED_DIR, f"{token}.jpg"))
+    token = publish(client, make_clip_row(poster=False))
     body = page(token)
     assert (
         '<meta property="og:image" '

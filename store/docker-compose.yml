@@ -1,0 +1,96 @@
+# An example for running the media store on a machine of its own, reached from
+# the streaming server over a Tailscale tailnet and from nowhere else.
+#
+#   tailscale  joins your tailnet as a node of its own and forwards one TCP
+#              port, 8080, to the store. It is the only way in.
+#   store      the same service the main compose file runs, on an internal
+#              network with no route out and no published port.
+#
+# Copy this directory to the storage machine, write a .env next to this file
+# (below), point the media volume at your disk, then `docker compose up -d
+# --build`. Every value is a placeholder for yours; nothing here names an
+# install.
+#
+# .env (never committed; the repo's .gitignore already covers it):
+#
+#   TS_AUTHKEY=tskey-auth-...     a tagged, pre-approved auth key
+#   TS_TAG=tag:upperroom-store    the tag the node advertises
+#   STORE_READ_KEY=...            openssl rand -hex 32, the same value as the
+#                                 streaming server's SELFSTREAM_STORE_READ_KEY
+#   STORE_WRITE_KEY=...           openssl rand -hex 32, the same value as its
+#                                 SELFSTREAM_STORE_KEY
+#
+# Then, in the streaming server's .env, point both halves at this node's tailnet
+# address and turn its own store off (docs/04-run.md):
+#
+#   SELFSTREAM_STORE_URL=http://STORE_TAILNET_IP:8080
+#   SELFSTREAM_STORE_UPSTREAM=STORE_TAILNET_IP:8080
+#
+# Limit who may reach it in your tailnet policy, so only the streaming server
+# can open tcp:8080 on this tag (docs/05-security.md has the rule).
+
+services:
+  tailscale:
+    # Pinned by tag so the example stays readable. In your own copy, pin it by
+    # digest too (tailscale/tailscale:v1.102.5@sha256:...), so an update is
+    # something you choose rather than something that happens to you.
+    image: tailscale/tailscale:v1.102.5
+    hostname: upperroom-store
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_EXTRA_ARGS=--advertise-tags=${TS_TAG}
+      - TS_STATE_DIR=/var/lib/tailscale
+      # Userspace networking: no tun device and no extra capabilities, which is
+      # all a node that only forwards one port needs.
+      - TS_USERSPACE=true
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+    configs:
+      - source: serve
+        target: /config/serve.json
+    networks:
+      - store_only
+      - egress
+
+  store:
+    build: .
+    restart: unless-stopped
+    environment:
+      - STORE_DIR=/media
+      - STORE_READ_KEY=${STORE_READ_KEY}
+      - STORE_WRITE_KEY=${STORE_WRITE_KEY}
+    volumes:
+      # A named volume by default. To use a disk you already have, replace it
+      # with a bind mount of a directory owned by uid 10001, e.g.
+      #   - /your/disk/upperroom-media:/media
+      - media:/media
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - store_only
+
+# Forward the tailnet's port 8080 to the store and nothing else. The name
+# resolves on the internal network the two containers share.
+configs:
+  serve:
+    content: |
+      {"TCP": {"8080": {"TCPForward": "store:8080"}}}
+
+networks:
+  # No route out: the store can answer the sidecar and cannot start a
+  # connection to anything.
+  store_only:
+    internal: true
+  # The sidecar alone reaches the internet, to join the tailnet.
+  egress:
+
+volumes:
+  tailscale_state:
+  media:

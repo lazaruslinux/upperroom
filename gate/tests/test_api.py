@@ -1463,8 +1463,10 @@ def test_retention_reports_its_defaults_and_real_usage(client):
     assert body["clip_keep_days"] == 2
     assert body["counts"] == {"vods": 0, "clips": 0, "pinned": 0}
     assert set(body["usage"]) == {
-        "vods_bytes", "clips_bytes", "total_bytes", "free_bytes", "fs_total_bytes",
+        "available", "vods_bytes", "clips_bytes", "total_bytes", "free_bytes",
+        "fs_total_bytes",
     }
+    assert body["usage"]["available"] is True
 
 
 @pytest.mark.parametrize("value", [-1, "lots", None, 1.5])

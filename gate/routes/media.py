@@ -2,9 +2,9 @@
 Media routes: the live preview thumbnail, VOD and clip listings and playback
 metadata, view counting, clip creation, and the stream status the player polls.
 
-The media files themselves are served straight from disk by Caddy at /media/*
-(behind the same session check as the live video), so large files never pass
-through this Python service; only metadata and view counting live here.
+The media files themselves are served by the media store, proxied by Caddy at
+/media/* (behind the same session check as the live video), so large files never
+pass through this Python service; only metadata and view counting live here.
 """
 
 import html
@@ -21,16 +21,17 @@ from auth import (
     GUEST_REFUSED, admin_user, may_act_on, member_user, session_user,
 )
 from config import (
-    CLIP_DIR, CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
-    SITE_URL, THUMB_INTERVAL, THUMB_PATH, VERSION, VOD_DIR,
+    CLIP_LENGTHS, COOKIE_NAME, MAX_CLIP_NAME, MAX_COMMENT_LENGTH,
+    SITE_URL, THUMB_INTERVAL, THUMB_PATH, VERSION,
     WEB_DIR,
 )
 from hub import hub
 import theater
 from media import (
-    fetch_path, link_shared, make_clip, ready_epoch, shared_paths, unlink_shared,
-    _remove_media_files,
+    fetch_path, link_shared, make_clip, ready_epoch, unlink_shared,
+    _remove_item_files,
 )
+from store import StoreError
 
 logger = logging.getLogger("upperroom.media")
 
@@ -243,11 +244,11 @@ def _clip_og_block(request, clip, token):
     game = (clip.get("game") or "").strip()
     description = f"{site} playing {game}" if game else site
     page = _absolute(request, f"/clip/{token}")
-    # The clip's own poster, already public beside the video at /shared/. The
-    # link is best effort at publish time, so fall back to the channel card when
-    # there is no poster rather than pointing a fetcher at a 404.
-    poster = shared_paths(token)[1]
-    if os.path.exists(poster):
+    # The clip's own poster, already public beside the video at /shared/. A clip
+    # recorded as having none gets the channel card rather than pointing a
+    # fetcher at a 404; read from the row, never by asking the store, so a
+    # store that is away cannot slow a public page down.
+    if clip.get("has_poster") != 0:
         image = _absolute(request, f"/shared/{token}.jpg")
         # Width only: the height follows whatever the stream was shot at.
         size = ['<meta property="og:image:width" content="640">']
@@ -300,9 +301,24 @@ def clip_page(request: Request, token: str):
 
 
 # ---- VODs and clips -------------------------------------------------------
-# Metadata and view counting live here; the media files themselves are served
-# straight from disk by Caddy at /media/* (behind the same session check as the
-# live video), so large files never pass through this Python service.
+# Metadata and view counting live here; the media files themselves are served by
+# the media store through Caddy at /media/* (behind the same session check as
+# the live video), so large files never pass through this Python service.
+
+# What an admin is told when the media store cannot be asked. Deleting and
+# unsharing both change the store first and the database second, so a store
+# that is away leaves the item exactly as it was: still listed, still shared,
+# and pressing the button again later finishes the job.
+_STORE_AWAY_DELETE = (
+    "The media store is not answering, so nothing was deleted. "
+    "Try again in a moment."
+)
+_STORE_AWAY_SHARE = "Sharing is not available right now."
+_STORE_AWAY_UNSHARE = (
+    "The media store is not answering, so the clip is still shared. "
+    "Try again in a moment."
+)
+
 
 def _signed_in(request):
     """Whether this request may see the library.
@@ -314,11 +330,14 @@ def _signed_in(request):
 
 
 def _media_summary(row, kind):
-    """Shape a VOD or clip row for a listing, including whether a poster exists."""
-    folder = VOD_DIR if kind == "vod" else CLIP_DIR
-    has_poster = bool(row.get("id")) and os.path.exists(
-        os.path.join(folder, f"{row['id']}.jpg")
-    )
+    """Shape a VOD or clip row for a listing, including whether a poster exists.
+
+    Answered from the row alone. A listing is the busiest thing the library
+    does, and it must never wait on the media store: a store that is away should
+    cost the pictures, not the page. A row whose poster is not recorded yet
+    (older than the column, not yet backfilled) says yes and lets the browser
+    try, which at worst shows the same fallback a missing poster always did."""
+    has_poster = bool(row.get("filename")) and row.get("has_poster") != 0
     out = {
         "id": row["id"],
         "filename": row.get("filename"),
@@ -492,8 +511,14 @@ async def set_clip_share(clip_id: int, request: Request):
         return JSONResponse({"error": "No such clip."}, status_code=404)
 
     if not share:
-        token = db.unpublish_clip(clip_id)
-        unlink_shared(token)
+        # The public files go first and the token only once the store has said
+        # they are gone. The other way round, a store that was away would leave
+        # the files reachable with nothing left in the database to say so.
+        try:
+            await unlink_shared(clip.get("share_token"))
+        except StoreError:
+            return JSONResponse({"error": _STORE_AWAY_UNSHARE}, status_code=503)
+        db.unpublish_clip(clip_id)
         return {"ok": True, "shared": False, "url": None}
 
     if clip.get("share_token"):
@@ -506,13 +531,18 @@ async def set_clip_share(clip_id: int, request: Request):
     token = secrets.token_urlsafe(16)
     if not db.publish_clip(clip_id, token):
         return JSONResponse({"error": "Could not share that clip."}, status_code=409)
-    if not link_shared(clip_id, clip.get("filename"), token):
+    try:
+        await link_shared(clip_id, clip.get("filename"), token)
+    except StoreError as exc:
         # The file could not be linked, so undo the row rather than advertise a
-        # link that will 404.
+        # link that will 404. A missing file and a store that is away read
+        # differently, because only one of them is worth trying again.
         db.unpublish_clip(clip_id)
-        return JSONResponse(
-            {"error": "That clip's file is missing."}, status_code=409
-        )
+        if exc.status == 404:
+            return JSONResponse(
+                {"error": "That clip's file is missing."}, status_code=409
+            )
+        return JSONResponse({"error": _STORE_AWAY_SHARE}, status_code=503)
     # A prefix only: the token is the whole credential for a public clip.
     logger.info("clip %s published as %s...", clip_id, token[:6])
     return {"ok": True, "shared": True, "url": f"/clip/{token}"}
@@ -644,27 +674,32 @@ def delete_comment(comment_id: int, request: Request):
 
 
 @router.delete("/api/vods/{vod_id}")
-def delete_vod(vod_id: int, request: Request):
+async def delete_vod(vod_id: int, request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    row = db.delete_media("vod", vod_id)
+    row = db.get_vod(vod_id)
     if not row:
         return JSONResponse({"error": "No such VOD."}, status_code=404)
-    _remove_media_files(VOD_DIR, row.get("filename"), vod_id)
+    if not await _remove_item_files({**row, "kind": "vod"}):
+        return JSONResponse({"error": _STORE_AWAY_DELETE}, status_code=503)
+    db.delete_media("vod", vod_id)
     return {"ok": True}
 
 
 @router.delete("/api/clips/{clip_id}")
-def delete_clip(clip_id: int, request: Request):
+async def delete_clip(clip_id: int, request: Request):
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    row = db.delete_media("clip", clip_id)
+    row = db.get_clip(clip_id)
     if not row:
         return JSONResponse({"error": "No such clip."}, status_code=404)
-    # The public copy first. It is a second name for the same bytes, so leaving
-    # it behind would keep a deleted clip playing for anyone holding the link.
-    unlink_shared(row.get("share_token"))
-    _remove_media_files(CLIP_DIR, row.get("filename"), clip_id)
+    # The public copy goes first, inside the remover. It is a second name for
+    # the same bytes, so leaving it behind would keep a deleted clip playing for
+    # anyone holding the link. The row goes last, once the store has answered:
+    # deleting it first with the store away would leave bytes nothing points at.
+    if not await _remove_item_files({**row, "kind": "clip"}):
+        return JSONResponse({"error": _STORE_AWAY_DELETE}, status_code=503)
+    db.delete_media("clip", clip_id)
     return {"ok": True}
 
 

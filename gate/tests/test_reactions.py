@@ -235,12 +235,9 @@ def test_a_shared_clip_exposes_no_likes_or_comments(client):
     clip_id = a_clip()
     client.post(f"/api/clips/{clip_id}/comments", json={"text": "a private thought"})
     client.post(f"/api/clips/{clip_id}/like", json={"liked": True})
-    # Publishing needs a real file, so put one there.
-    import os
-    from config import CLIP_DIR
-    os.makedirs(CLIP_DIR, exist_ok=True)
-    with open(os.path.join(CLIP_DIR, f"{clip_id}.mp4"), "wb") as fh:
-        fh.write(b"bytes" * 300)
+    # Publishing needs a real file, so put one in the media store.
+    import fake_store
+    fake_store.current().write("clips", f"{clip_id}.mp4", b"bytes" * 300)
     token = client.post(
         f"/api/clips/{clip_id}/share", json={"share": True}
     ).json()["url"].rsplit("/", 1)[-1]

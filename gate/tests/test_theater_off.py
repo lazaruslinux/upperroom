@@ -30,6 +30,7 @@ def theater_off(monkeypatch):
     ("get", "/api/admin/theater/projector"),
     ("post", "/api/admin/theater/projector/key"),
     ("get", "/api/admin/theater/search?q=long"),
+    ("get", "/media/art/demo-one.jpg"),
 ])
 def test_every_theater_route_is_a_404(client, theater_off, method, path):
     setup_admin(client, username="owner")

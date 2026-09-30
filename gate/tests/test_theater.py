@@ -25,9 +25,7 @@ import db
 import media
 import projector
 import theater
-from config import (
-    ART_DIR, CHAT_IDLE_WIPE_SECONDS, CLIP_DIR, NIGHT_GAP_SECONDS, VOD_DIR,
-)
+from config import ART_DIR, CHAT_IDLE_WIPE_SECONDS, NIGHT_GAP_SECONDS
 from conftest import make_client
 from hub import hub
 from projector import ProjectorError, link
@@ -939,7 +937,7 @@ def test_the_link_remembers_when_it_last_heard_from_the_projector(client):
     assert link.last_seen() > 0
 
 
-# ---- 7. Poster art and the media store ------------------------------------
+# ---- 7. Poster art --------------------------------------------------------
 
 def test_poster_art_is_re_encoded_and_anything_else_is_refused(client):
     name = theater.save_art("art-test", base64.b64encode(a_jpeg()).decode("ascii"))
@@ -958,28 +956,71 @@ def test_an_id_that_is_not_a_safe_filename_never_reaches_the_disk(client):
         assert theater.save_art(bad, base64.b64encode(a_jpeg()).decode()) is None
 
 
-def test_retention_and_the_orphan_sweep_leave_poster_art_alone(client):
-    # Art lives beside the recordings but is not one: the sweeps walk vods/ and
-    # clips/ only, and a poster is not a file "no row points at".
-    os.makedirs(ART_DIR, exist_ok=True)
-    poster = os.path.join(ART_DIR, "keep-me.jpg")
-    with open(poster, "wb") as handle:
-        handle.write(a_jpeg())
-    orphan = os.path.join(VOD_DIR, "999999.mp4")
-    with open(orphan, "wb") as handle:
-        handle.write(b"x" * 100)
+def test_poster_art_is_the_gates_own_and_never_the_media_stores(client, media_store):
+    # Art is not a recording: it lives on the gate's data volume, so the media
+    # store's sweeps cannot remove it and its bytes can never count against the
+    # size cap, where a poster could pay for itself by deleting a recording.
+    name = theater.save_art("keep-me", base64.b64encode(a_jpeg()).decode("ascii"))
+    stored = os.path.join(ART_DIR, name)
+    media_store.write("vods", "999999.mp4")
     try:
-        assert media.sweep_orphan_media() >= 1
-        assert not os.path.exists(orphan)
-        assert os.path.exists(poster)
-        # And it does not count against the size cap either, so a poster can
-        # never pay for itself by deleting somebody's recording.
-        usage = media.media_usage()
-        assert usage["total_bytes"] == (
-            media._dir_bytes(VOD_DIR) + media._dir_bytes(CLIP_DIR)
-        )
+        assert asyncio.run(media.sweep_orphan_media()) == 1
+        assert os.path.exists(stored)
+        assert "put" not in media_store.calls
+        assert asyncio.run(media.media_usage())["total_bytes"] == 0
     finally:
-        os.remove(poster)
+        os.remove(stored)
+
+
+def stored_art(jf_id="served"):
+    name = theater.save_art(jf_id, base64.b64encode(a_jpeg()).decode("ascii"))
+    return name, os.path.join(ART_DIR, name)
+
+
+def test_the_gate_serves_a_poster_to_anyone_signed_in(client):
+    setup_admin(client, username="owner")
+    name, stored = stored_art()
+    try:
+        resp = client.get(f"/media/art/{name}")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/jpeg"
+        assert Image.open(io.BytesIO(resp.content)).format == "JPEG"
+    finally:
+        os.remove(stored)
+
+
+def test_a_guest_may_see_the_poster(client):
+    # The poster is part of what the room is watching, like the state itself.
+    setup_admin(client, username="owner")
+    guest = make_client()
+    assert redeem(guest, make_pass()).status_code == 200
+    name, stored = stored_art()
+    try:
+        assert guest.get(f"/media/art/{name}").status_code == 200
+    finally:
+        os.remove(stored)
+
+
+def test_a_poster_needs_a_session(client):
+    setup_admin(client, username="owner")
+    name, stored = stored_art()
+    try:
+        assert make_client().get(f"/media/art/{name}").status_code == 401
+    finally:
+        os.remove(stored)
+
+
+@pytest.mark.parametrize("name", [
+    "..%2Fselfstream.db", "served.png", "served", ".jpg", "a%20b.jpg",
+    "served.jpg%0A", "x" * 65 + ".jpg",
+])
+def test_a_poster_name_outside_the_rule_is_not_found(client, name):
+    setup_admin(client, username="owner")
+    _, stored = stored_art()
+    try:
+        assert client.get(f"/media/art/{name}").status_code == 404
+    finally:
+        os.remove(stored)
 
 
 # ---- The night, not the broadcast ------------------------------------------

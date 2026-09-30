@@ -8,10 +8,11 @@ carries a library id, the projector's key, or anything about the machine the
 library lives on.
 """
 
+import os
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 
 import config
 import db
@@ -44,6 +45,23 @@ def theater_state(request: Request):
     if not session_user(request):
         return JSONResponse({"error": "Sign in first."}, status_code=401)
     return theater.public_state()
+
+
+@router.get("/media/art/{name}")
+def art_file(name: str, request: Request):
+    """One stored poster, off the gate's own data volume. Guests included, for
+    the reason /api/theater lets them in: the poster is part of what the room
+    is watching. The name is held to the rule it was written under, so nothing
+    outside the art directory can be named."""
+    if not session_user(request):
+        return Response(status_code=401)
+    stem, dot, ext = name.rpartition(".")
+    if not dot or ext != "jpg" or not theater.SAFE_ID.fullmatch(stem):
+        return Response(status_code=404)
+    path = os.path.join(config.ART_DIR, name)
+    if not os.path.isfile(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @router.post("/api/admin/theater/session")

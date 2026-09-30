@@ -16,6 +16,10 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.23.0": [
+        "Saved broadcasts and clips are back.",
+        "If saving is ever unavailable, the site now says so instead of hanging.",
+    ],
     "0.22.0": [
         "Theater mode is switched off for now.",
         "Security fixes across the site, nothing for you to do.",

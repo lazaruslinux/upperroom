@@ -31,11 +31,12 @@ from starlette.responses import JSONResponse
 import auth
 import config
 import db
+import store
 from hub import chat_purge_worker, hub
 from media import (
-    cleanup_record_scratch, retention_worker, retry_pending_archives,
-    stream_watcher, sweep_orphan_media, sweep_orphan_shared,
-    thumbnail_worker,
+    backfill_media_facts, cleanup_record_scratch, retention_worker,
+    retry_pending_archives, stream_watcher, sweep_orphan_media,
+    sweep_orphan_shared, thumbnail_worker,
 )
 from routes import admin as admin_routes
 from routes import auth as auth_routes
@@ -61,8 +62,9 @@ def _log_startup_summary():
     )
     limits = db.get_retention()
     logger.info(
-        "media dir=%s, record scratch=%s, retention=%s",
-        config.MEDIA_DIR,
+        "media store=%s (key %s), record scratch=%s, retention=%s",
+        config.STORE_URL,
+        "set" if config.STORE_KEY else "MISSING: nothing can be archived",
         config.RECORD_TMP,
         ", ".join(f"{k}={v}" for k, v in limits.items() if v) or "off",
     )
@@ -74,17 +76,45 @@ def _log_startup_summary():
     )
 
 
-async def _startup_archive_retry():
-    """Try once, in the background, to archive the recordings a previous run
-    parked, so a restart after the media store comes back is all it takes.
+# How long the startup pass gives a store that is still starting: ten tries, two
+# seconds apart, which covers a container started alongside this one.
+_STORE_STARTUP_TRIES = 10
+_STORE_STARTUP_PAUSE = 2
 
-    A background task and not part of startup on purpose. Per parked recording
-    this is a poster, a remux with a ten-minute ceiling and a move, all against a
-    store that may be a network mount answering at network-outage speed. Awaited
-    before the server starts serving, that is minutes of a site refusing
-    connections, at exactly the moment somebody restarted it to get it back. The
-    hourly retry in retention_worker is the backstop if this one finds the store
-    still away."""
+
+async def _startup_store_pass():
+    """The startup work that needs the media store, in the background: sweep
+    the store for files no row points at, record what older items weigh, then
+    try once to archive the recordings a previous run parked, so a restart
+    after the store comes back is all it takes.
+
+    A background task and not part of startup on purpose. Every step here is a
+    call to a store that may be on another machine and may be away, and each
+    parked recording is a whole broadcast to upload and remux. Awaited before
+    the server starts serving, that is a site refusing connections at exactly
+    the moment somebody restarted it to get it back. The sweeps are safe to run
+    beside live traffic (they list before they read the rows; see
+    sweep_orphan_media), and the hourly retry in retention_worker is the
+    backstop if this finds the store still away."""
+    # Started together, the store may still be coming up when the gate is, and
+    # a sweep that found it "away" would be skipped until the next restart. So
+    # it gets a short grace first. Bounded, because a store that really is away
+    # is exactly the case this must not wait on for long.
+    for attempt in range(_STORE_STARTUP_TRIES):
+        try:
+            await store.usage()
+            break
+        except store.StoreError:
+            if attempt + 1 < _STORE_STARTUP_TRIES:
+                await asyncio.sleep(_STORE_STARTUP_PAUSE)
+    # Files whose rows were dropped at startup are bytes nothing points at,
+    # which would otherwise count against the size cap.
+    await sweep_orphan_media()
+    # And the public area. This is the one place where a stale file means
+    # strangers can still watch something that was deleted, so it is checked on
+    # every start rather than trusted to the publish and delete paths alone.
+    await sweep_orphan_shared()
+    await backfill_media_facts()
     try:
         await retry_pending_archives()
     except Exception:
@@ -105,15 +135,8 @@ async def lifespan(_app):
     # the recording scratch dir of anything not tied to an active recording. A
     # recording parked by a failed archive is spared by the sweep itself.
     cleanup_record_scratch()
-    # And the archived side: files whose rows were dropped above are bytes
-    # nothing points at, which would otherwise count against the size cap.
-    sweep_orphan_media()
-    # And the public directory. This is the one place where a stale file means
-    # strangers can still watch something that was deleted, so it is checked on
-    # every start rather than trusted to the publish and delete paths alone.
-    sweep_orphan_shared()
     tasks = [
-        asyncio.create_task(_startup_archive_retry()),
+        asyncio.create_task(_startup_store_pass()),
         asyncio.create_task(stream_watcher()),
         asyncio.create_task(thumbnail_worker()),
         asyncio.create_task(chat_purge_worker()),
@@ -157,8 +180,7 @@ class RefuseCrossSiteWrites:
 app = FastAPI(title="upperroom", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_middleware(RefuseCrossSiteWrites)
 db.init_db()
-for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.VOD_DIR, config.CLIP_DIR,
-             config.SHARED_DIR, config.ART_DIR):
+for _dir in (config.AVATAR_DIR, config.RECORD_TMP, config.ART_DIR):
     os.makedirs(_dir, exist_ok=True)
 
 app.include_router(auth_routes.router)

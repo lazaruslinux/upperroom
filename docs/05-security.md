@@ -92,6 +92,11 @@ docker compose up -d
 
 That invalidates every existing cookie at once.
 
+The media store's two keys rotate the same way: put new values in `.env` (and in
+the store's own `.env` if it runs on another machine) and run
+`docker compose up -d`. The gate, Caddy and the store pick them up together, and
+the old keys stop working at once.
+
 ## What is deliberately public
 
 Two things answer a visitor with no session at all. Both are deliberate, and
@@ -106,7 +111,9 @@ That is the whole point of the feature, so it is worth knowing its shape:
 - It is **per clip**. There is no way to publish the library.
 - It is **admin only**, and **off** until you turn it on for a specific clip.
 - **Unsharing takes effect immediately.** The file stops being reachable, not
-  just the page.
+  just the page. If the media store cannot be reached at that moment, the clip
+  stays shared and you are told, rather than the link being half revoked: the
+  database only lets go of the token once the store has removed the file.
 - The link is the entire credential: it looks like
   `https://your-domain/clip/<token>`, where the token is a long random value,
   and the video file itself is served at `/shared/<token>.mp4`. The folder it
@@ -280,36 +287,73 @@ Both are needed: they write separate files, and one alone leaves the key in the
 other. If you have logs from before this, treat the keys in them as burned:
 regenerate both from the dashboard and delete the old files.
 
+## The media store and its two keys
+
+Recordings and clips live in the media store (`store/`), a small service that
+answers over HTTP on one port and publishes none to the internet. It sits on the
+same private docker network as the gate by default, and can live on another
+machine entirely (`docs/04-run.md`). Either way, what it trusts is two keys:
+
+- **The write key** (`SELFSTREAM_STORE_KEY`) is the gate's. It uploads, remuxes,
+  hard-links a clip into the public area, deletes, and lists. Only the gate
+  holds it.
+- **The read key** (`SELFSTREAM_STORE_READ_KEY`) is Caddy's. It fetches one file
+  by its exact name and does nothing else: it cannot write, delete, list a
+  directory or read the usage. Caddy only uses it after its own checks, the
+  session check for `/media/*` and nothing but the country gate for the public
+  `/shared/*`, so holding it adds nothing a visitor could not already reach.
+
+The store refuses to start if either key is missing, shorter than 32
+characters, or the same as the other, and compares them in constant time. It
+answers only names of the one shape the gate writes (a row id or a share token
+and `.mp4` or `.jpg`) in its three areas, so no request can name a path outside
+them, and it never lists a directory over a read, so the public area's tokens
+cannot be discovered. Caddy strips the viewer's cookie before the request
+reaches it: the store has no use for a session and is never handed one, so a
+store on another machine learns nothing about who is watching and holds nothing
+that could be replayed against the site. It runs as an unprivileged user on a
+read-only root filesystem with every capability dropped, so the only thing it
+can write is its own volume.
+
 ## Putting the media store on another machine
 
-Recordings and clips do not have to live on the server that serves them. The
-media store is one directory (`SELFSTREAM_MEDIA_DIR`, `media_data` in Docker) and
-it can be a network mount from a NAS or a home server, which is often the only
-practical way to keep more than a few broadcasts. `docs/04-run.md` covers how.
-What it changes, security-wise, is worth being explicit about:
+The store is often happier on the machine with the disks, and
+`store/docker-compose.yml` is an example of running it there behind a Tailscale
+sidecar. What that changes, security-wise, is worth being explicit about:
 
-- **The server becomes a client of your storage.** It opens the connection; your
-  storage does not reach into it. Nothing new listens on the streaming server,
-  and its public surface is unchanged.
-- **Anyone who takes the server takes that access with them.** So export one
-  dedicated directory, never a whole pool or a home directory. Everything else on
-  that machine then stays out of reach even in the worst case.
-- **Make the storage side enforce the limits, not the client.** On ZFS, a
-  dedicated dataset with `exec=off`, `setuid=off` and `devices=off` means a file
-  written there can never be run on the storage machine whatever the client
-  sends, and a `quota` means a runaway server cannot fill the pool and take your
-  other services down with it. Squash the client to an unprivileged user so
-  nothing lands owned by root.
-- **Reach it over a private network, not the internet.** A WireGuard tunnel or
-  similar (both machines already reachable to each other, nothing forwarded at
-  the router) keeps the transfer encrypted and the storage port off the public
-  internet entirely. Bind the storage service to that interface, so it is not
-  reachable from the rest of your LAN either.
+- **Nothing new listens on the streaming server.** The gate and Caddy open the
+  connections; the storage machine never reaches into the streaming server, and
+  its public surface is unchanged.
+- **The storage machine exposes one port, to your tailnet only.** The store sits
+  on an internal docker network with no route out, and the sidecar forwards
+  tcp:8080 to it and nothing else. Nothing is forwarded at the router.
+- **Say who may reach it in your tailnet policy.** Tag the store's node and the
+  streaming server, and allow exactly that one direction on that one port, for
+  example:
+
+  ```json
+  "grants": [
+    {"src": ["tag:upperroom-gate"], "dst": ["tag:upperroom-store"], "ip": ["tcp:8080"]}
+  ]
+  ```
+
+  Every other machine on your tailnet, and the store node itself, then has no
+  way in or out through it.
+- **A compromised streaming server reaches that one port and no further.** Its
+  `.env` holds both keys, so an attacker who owns it can read, replace or delete
+  the recordings and clips. That is the extent of it: no shell on the storage
+  machine, no other directory, no other service, no mount to walk. The store
+  cannot write outside its own volume even if the attacker controls every byte
+  it is sent, and nothing it stores is ever executed. Give the volume a quota
+  (a dedicated dataset or partition) so a runaway or hostile writer cannot fill
+  the disk your other services share.
+- **The traffic is encrypted end to end.** Tailscale is WireGuard underneath, so
+  the plain HTTP between the containers never crosses a network in the clear.
 - **A storage outage is not a data loss.** Recording is written to local scratch
-  first and only moved to the store when the broadcast ends, so an unreachable
-  store never interrupts a live stream. If the move fails the recording is kept
-  and retried rather than discarded; the dashboard's Storage panel says when one
-  is waiting.
+  first and only uploaded when the broadcast ends, so an unreachable store never
+  interrupts a live stream. If the upload fails the recording is kept and
+  retried rather than discarded, and nothing is deleted while the store cannot
+  confirm it (`docs/04-run.md`, "When the store cannot be reached").
 
 ## What this does not do
 

@@ -23,7 +23,8 @@ in the usual way (see `docs/04-run.md`):
 docker compose --profile demo up -d
 ```
 
-This starts the normal three services (`mediamtx`, `gate`, `caddy`) plus:
+This starts the normal four services (`mediamtx`, `gate`, `store`, `caddy`)
+plus:
 
 - `demo-seed`, a one-shot container that creates the demo accounts, the stream
   title and description, and the invite code, then exits. It is idempotent, so

@@ -28,7 +28,6 @@ def channel(tmp_path, monkeypatch):
     avatars.mkdir()
     (avatars / "alice.jpg").write_bytes(b"avatar-bytes")
     monkeypatch.setattr(manage, "AVATAR_DIR", str(avatars))
-    monkeypatch.setattr(manage, "MEDIA_DIR", str(tmp_path / "media"))
     monkeypatch.setattr(manage, "BACKUP_DIR", str(tmp_path / "backups"))
     db.init_db()
     db.add_user("alice", "Alice", "password1", is_admin=True)
@@ -120,14 +119,28 @@ def test_restore_puts_the_avatars_back(channel):
     assert open(restored, "rb").read() == b"avatar-bytes"
 
 
-def test_restore_reports_media_files_that_are_not_here(channel):
+def test_restore_reports_media_files_that_are_not_in_the_store(channel, media_store):
     vod_id = db.create_vod("Show", "", int(time.time()))
     db.finalize_vod(vod_id, int(time.time()), 60, f"{vod_id}.mp4")
+    here = db.create_vod("Kept", "", int(time.time()))
+    db.finalize_vod(here, int(time.time()), 60, f"{here}.mp4")
+    media_store.write("vods", f"{here}.mp4")
     archive = manage.make_backup()
     summary = manage.do_restore(archive, db.DB_PATH, manage.AVATAR_DIR, force=True)
     # Recordings are never in a backup, so the row survives without its file and
     # the operator is told rather than left to discover it.
     assert summary["missing_media"] == 1
+
+
+def test_restore_says_when_the_store_could_not_be_asked(channel, media_store):
+    vod_id = db.create_vod("Show", "", int(time.time()))
+    db.finalize_vod(vod_id, int(time.time()), 60, f"{vod_id}.mp4")
+    archive = manage.make_backup()
+    media_store.down()
+    summary = manage.do_restore(archive, db.DB_PATH, manage.AVATAR_DIR, force=True)
+    # Not a count of zero, which would read as "all present".
+    assert summary["missing_media"] is None
+    assert db.get_vod(vod_id) is not None
 
 
 def _tar_with(tmp_path, entries, name="evil.tar.gz"):

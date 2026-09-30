@@ -75,7 +75,7 @@ for _access_logger in ("uvicorn.access", "uvicorn.error"):
 # git tags), and surfaced in one place: /api/status reads it so the dashboard
 # footer and any external check report the version without a number baked into
 # the markup.
-VERSION = "0.22.0"
+VERSION = "0.23.0"
 
 JWT_SECRET = os.environ["SELFSTREAM_JWT_SECRET"]
 SESSION_HOURS = int(os.environ.get("SELFSTREAM_SESSION_HOURS", "6"))
@@ -230,25 +230,21 @@ MEDIA_SOURCE = os.environ.get("SELFSTREAM_MEDIA_SOURCE") or os.environ.get(
 # Recordings (VODs) and viewer clips. Broadcasts are recorded to a node local
 # scratch dir while live (a plain copy, no transcode, over the internal docker
 # network, so it never touches the live stream's bandwidth), then archived to the
-# media store once the stream ends. The operator points SELFSTREAM_MEDIA_DIR
-# wherever they like (a big disk, a NAS, a ZFS mount); it defaults to a docker
-# volume so a fresh checkout just works.
+# media store once the stream ends. Clips are cut into the same scratch dir and
+# only uploaded once they are whole.
 RECORD_TMP = os.environ.get("SELFSTREAM_RECORD_TMP", "/data/rec")
-MEDIA_DIR = os.environ.get("SELFSTREAM_MEDIA_DIR", "/data/media")
-VOD_DIR = os.path.join(MEDIA_DIR, "vods")
-CLIP_DIR = os.path.join(MEDIA_DIR, "clips")
-# Published clips. A clip in here is reachable without signing in, so nothing
-# may be written to it except by the publish path. The files are hard links to
-# the originals in CLIP_DIR, not copies: a hard link is a second name for the
-# same bytes on disk, so publishing costs no space and the shared copy can never
-# drift from the real one. The bytes go when the last name goes, which is why
-# deleting a clip has to remove both.
-SHARED_DIR = os.path.join(MEDIA_DIR, "shared")
-# Poster art for whatever a theater session is showing. It sits under the media
-# dir so Caddy serves it behind the same session check as the recordings, and
-# deliberately NOT under VOD_DIR or CLIP_DIR: retention and the orphan sweeps
-# walk those two folders, and a poster is not a recording to be pruned.
-ART_DIR = os.path.join(MEDIA_DIR, "art")
+# The media store: a separate service (store/ in this repo) holding every
+# recording and clip, reached over HTTP with the store's write key. By default
+# it is the container beside this one; point the URL at another machine to keep
+# the archive there instead (docs/04-run.md). The gate never touches those files
+# any other way, so an unreachable store is a fast, clear error, never a hang.
+STORE_URL = os.environ.get("SELFSTREAM_STORE_URL", "http://store:8080").rstrip("/")
+STORE_KEY = os.environ.get("SELFSTREAM_STORE_KEY", "")
+# Poster art for whatever a theater session is showing, on the gate's own data
+# volume and served by the gate itself, behind a session check that lets guests
+# in. It is not in the media store on purpose: it is not a recording, retention
+# has nothing to say about it, and it is small enough to live with the database.
+ART_DIR = os.environ.get("SELFSTREAM_ART_DIR", "/data/art")
 # Retention lives in the dashboard now (channel_settings), not here: the limits
 # are per-channel state the operator changes without a restart, and they ship at
 # zero so a fresh install never deletes a recording on its own. The old

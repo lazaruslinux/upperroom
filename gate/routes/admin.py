@@ -168,10 +168,13 @@ _RETENTION_MAX = {
 }
 
 
-def _retention_payload():
+async def _retention_payload():
     return {
         **db.get_retention(),
-        "usage": media_usage(),
+        # {"available": False} when the media store cannot be asked. The panel
+        # says so and shows everything else as usual: counts, limits and the
+        # pending line all come from the database, not from the store.
+        "usage": await media_usage(),
         "counts": db.count_media(),
         # Recordings that finished but could not be written to the media store.
         # Normally 0; anything else is the one storage problem an operator has to
@@ -181,12 +184,12 @@ def _retention_payload():
 
 
 @router.get("/api/admin/retention")
-def get_retention(request: Request):
+async def get_retention(request: Request):
     # The retention limits plus what the media store is actually using, so the
     # dashboard can show the numbers and their effect in one place.
     if not admin_user(request):
         return JSONResponse({"error": "Admins only."}, status_code=403)
-    return _retention_payload()
+    return await _retention_payload()
 
 
 @router.post("/api/admin/retention")
@@ -221,7 +224,7 @@ async def set_retention(request: Request):
     # Apply the new limits at once, so lowering one takes effect on save rather
     # than at the next sweep, and the response can report what that cost.
     removed = await enforce_retention()
-    return {"ok": True, "removed": removed, **_retention_payload()}
+    return {"ok": True, "removed": removed, **(await _retention_payload())}
 
 
 @router.get("/api/admin/users")

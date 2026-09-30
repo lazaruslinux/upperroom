@@ -19,6 +19,7 @@ line you are prompted for it without it showing on screen.
 """
 
 import argparse
+import asyncio
 import getpass
 import json
 import os
@@ -30,6 +31,7 @@ import tempfile
 import time
 
 import db
+import store
 
 # Where backups are written when no path is given. Inside the gate's data
 # volume, so they survive the container being replaced. Point
@@ -37,7 +39,6 @@ import db
 # on a disk you already back up.
 BACKUP_DIR = os.environ.get("SELFSTREAM_BACKUP_DIR", "/data/backups")
 AVATAR_DIR = os.environ.get("SELFSTREAM_AVATAR_DIR", "/data/avatars")
-MEDIA_DIR = os.environ.get("SELFSTREAM_MEDIA_DIR", "/data/media")
 
 # The archive layout. Anything else in a tarball means it is not one of ours.
 MANIFEST_NAME = "manifest.json"
@@ -199,20 +200,25 @@ def check_database(db_file):
 def _missing_media(db_file):
     """How many VOD and clip rows point at a file that is not in the media
     store. Recordings are deliberately not in a backup, so this is expected on a
-    restore to a new server; it is reported rather than hidden."""
+    restore to a new server; it is reported rather than hidden. None when the
+    store cannot be asked, which is said as that rather than as a count."""
+    try:
+        held = {
+            area: {entry["name"] for entry in asyncio.run(store.list_area(area))}
+            for area in ("vods", "clips")
+        }
+    except store.StoreError:
+        return None
     conn = sqlite3.connect(db_file)
     missing = 0
     try:
-        for table, folder in (("vods", "vods"), ("clips", "clips")):
+        for area in ("vods", "clips"):
             try:
-                rows = conn.execute(f"SELECT filename FROM {table}").fetchall()
+                rows = conn.execute(f"SELECT filename FROM {area}").fetchall()
             except sqlite3.Error:
                 continue
             for (filename,) in rows:
-                if not filename:
-                    continue
-                path = os.path.join(MEDIA_DIR, folder, os.path.basename(filename))
-                if not os.path.exists(path):
+                if filename and os.path.basename(filename) not in held[area]:
                     missing += 1
     finally:
         conn.close()
@@ -344,9 +350,9 @@ def main():
         print(f"Wrote {path} ({readable}).")
         print("This holds accounts, chat, settings and avatars.")
         print("It deliberately does NOT hold:")
-        print("  - recordings and clips: far too large. Back up the media volume")
-        print("    separately, or accept that a restore keeps the list but not the")
-        print("    files.")
+        print("  - recordings and clips: far too large. Back up the media store's")
+        print("    volume separately, or accept that a restore keeps the list but")
+        print("    not the files.")
         print("  - your .env: it holds secrets and lives outside this container.")
         print("    Restoring without the original session secret only means")
         print("    everyone signs in again; the stream key is in the database.")
@@ -370,10 +376,15 @@ def main():
         )
         for original, kept in summary["kept"].items():
             print(f"  Kept the previous {os.path.basename(original)} at {kept}")
-        if summary["missing_media"]:
+        if summary["missing_media"] is None:
+            print(
+                "  Could not reach the media store to check that the recordings "
+                "and clips are there."
+            )
+        elif summary["missing_media"]:
             print(
                 f"  {summary['missing_media']} recordings or clips are listed but "
-                "their files are not on this server (backups never hold them)."
+                "their files are not in the media store (backups never hold them)."
             )
         if not manifest.get("admins"):
             print("  Warning: this backup has no admin account in it.")

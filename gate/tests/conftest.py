@@ -7,7 +7,8 @@ module points all of that at a throwaway scratch area BEFORE the gate package is
 imported, which keeps the suite off the real /data paths. The MediaMTX poll and
 the ffmpeg record/thumbnail workers run only inside the app's lifespan, and the
 tests never enter it (the client below is not used as a context manager), so no
-test touches docker or the network.
+test touches docker or the network. The media store is an in-process fake
+(fake_store.py), swapped in for every test.
 """
 
 import os
@@ -28,7 +29,12 @@ _SCRATCH = tempfile.mkdtemp(prefix="upperroom-tests-")
 os.environ["SELFSTREAM_JWT_SECRET"] = "test-secret-not-a-real-key"
 os.environ["SELFSTREAM_DB"] = os.path.join(_SCRATCH, "boot.db")
 os.environ["SELFSTREAM_AVATAR_DIR"] = os.path.join(_SCRATCH, "avatars")
-os.environ["SELFSTREAM_MEDIA_DIR"] = os.path.join(_SCRATCH, "media")
+os.environ["SELFSTREAM_ART_DIR"] = os.path.join(_SCRATCH, "art")
+# Every call to the media store is faked per test (below). This is only the
+# backstop for one that slips through: a port nothing listens on refuses at
+# once, where a name that has to be looked up could hang a test on DNS.
+os.environ["SELFSTREAM_STORE_URL"] = "http://127.0.0.1:9"
+os.environ["SELFSTREAM_STORE_KEY"] = "test-store-key-not-a-real-one"
 os.environ["SELFSTREAM_RECORD_TMP"] = os.path.join(_SCRATCH, "rec")
 os.environ["SELFSTREAM_THUMB"] = os.path.join(_SCRATCH, "thumb.jpg")
 # The gate renders the watch page (for its link preview tags) out of the static
@@ -53,10 +59,22 @@ import auth  # noqa: E402
 import db  # noqa: E402
 import main  # noqa: E402
 import projector  # noqa: E402
+import store  # noqa: E402
 import watchers  # noqa: E402
 import theater  # noqa: E402
+from fake_store import CALLS, FakeStore  # noqa: E402
 from hub import hub  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def media_store(tmp_path, monkeypatch):
+    """A fresh, empty, working media store for every test, in process. A test
+    that wants it unreachable calls media_store.down()."""
+    fake = FakeStore(str(tmp_path / "media-store"))
+    for name in CALLS:
+        monkeypatch.setattr(store, name, getattr(fake, name))
+    return fake
 
 
 def make_client():

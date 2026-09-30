@@ -13,6 +13,10 @@ Set every value. A couple of tips:
 
 - Generate the cookie secret with `openssl rand -hex 32` and paste the result
   into `SELFSTREAM_JWT_SECRET`.
+- Generate the media store's two keys the same way, one for
+  `SELFSTREAM_STORE_KEY` and a different one for `SELFSTREAM_STORE_READ_KEY`.
+  The store refuses to start without both, so recordings and clips have nowhere
+  to go until they are set.
 - `PUBLISH_PASS` is optional now: the stream key lives on the admin dashboard and
   is generated for you the first time you open the Stream key panel. Set
   `PUBLISH_PASS` only if you want to seed a specific key on first start (an
@@ -93,8 +97,14 @@ Every broadcast is recorded automatically. While you are live the recording is
 written to a local scratch volume (a plain copy of the stream, with no
 re-encoding, pulled over the internal docker network), so it never competes with
 the live stream for bandwidth or quality. When the stream ends, the finished
-file is archived to the media store and shown on the browse page under
+file is uploaded to the media store and shown on the browse page under
 **Broadcasts**.
+
+The media store is the `store` container: a small service that holds every
+recording and clip and answers over HTTP, with one key for the gate (which
+writes) and another for Caddy (which only reads). Nothing else touches those
+files, so the store can sit on this server or on another machine without the
+rest of the site noticing the difference.
 Viewers can also clip the recent stream while you are live, and those appear
 under **Clips**, each with synced chat replay. Pressing Clip asks how much to
 take (one minute, 45 seconds or 30 seconds) and saves it straight away; naming
@@ -178,10 +188,11 @@ then on the dashboard is where it lives.
 
 ### Storing recordings on a bigger disk
 
-By default, recordings and clips live in a docker volume named `media_data`, so
-a fresh checkout just works. To keep them somewhere with more room (a separate
-disk, a NAS, a network mount), point that volume at your own path with an
-**uncommitted** `docker-compose.override.yml` next to `docker-compose.yml`:
+By default the store keeps recordings and clips in a docker volume named
+`media_data`, so a fresh checkout just works. To keep them somewhere with more
+room on the same server (a separate disk, a big partition), point that volume at
+your own path with an **uncommitted** `docker-compose.override.yml` next to
+`docker-compose.yml`:
 
 ```yaml
 # docker-compose.override.yml  (git-ignored; your paths stay out of the repo)
@@ -195,7 +206,9 @@ volumes:
 ```
 
 Docker merges this automatically; nothing else changes. Keep your real path only
-here, never in a committed file.
+here, never in a committed file. The store runs as an unprivileged user (uid
+10001), so the directory has to belong to it: `chown 10001:10001
+/your/own/path/to/recordings`.
 
 Docker reads these options when it creates the volume, not on every start, so if
 the volume already exists you have to remove it (`docker compose down`, then
@@ -204,45 +217,78 @@ Move the files across first if there are any you want to keep.
 
 ### Keeping them on another machine
 
-The same mount can come from a NAS or a home server rather than a local disk. For
-an NFS export:
+Recordings add up fast, and the machine with the room for them is often not the
+one serving the stream. Run the store there instead. It is the same container,
+so the only change is how the gate and Caddy reach it: over a private network,
+on one port, with the same two keys.
+
+`store/docker-compose.yml` is an example that does exactly that with Tailscale:
+the store sits on an internal network with no route out, and a Tailscale
+sidecar joins your tailnet and forwards port 8080 to it and nothing else. Copy
+the `store/` directory to the storage machine, fill in the `.env` its comments
+describe (the two keys must be the same values as on the streaming server), and
+start it. The streaming server has to be on the same tailnet, as a machine
+rather than a container.
+
+Then, on the streaming server, point both halves at the store's tailnet address
+in `.env`:
+
+```
+SELFSTREAM_STORE_URL=http://STORE_TAILNET_IP:8080
+SELFSTREAM_STORE_UPSTREAM=STORE_TAILNET_IP:8080
+```
+
+and switch the local store off in your uncommitted override, by giving it a
+profile nobody enables. Nothing else depends on it, so nothing else changes:
 
 ```yaml
 # docker-compose.override.yml  (git-ignored)
-volumes:
-  media_data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=10.0.0.2,nfsvers=4.2,rw,soft,timeo=600,retrans=3,noatime"
-      device: ":/export/upperroom/media"
+services:
+  store:
+    profiles: ["store-elsewhere"]
 ```
 
-Two things are worth setting deliberately here:
+Run `docker compose up -d` and `docker compose ps` no longer lists a store.
+The address is the tailnet IP rather than a name because the containers on the
+streaming server resolve names through Docker, which may not know your tailnet's
+names. `docs/05-security.md` covers what the keys can and cannot do and what to
+put in your tailnet policy.
 
-- **`soft`, not `hard`.** A hard mount retries for ever, so a storage outage
-  leaves the archive stuck rather than failing; `soft` returns an error after
-  `timeo` x `retrans`, which is what lets the retry below do its job.
-- **Reach it over a private network.** Point `addr` at the storage machine's
-  address on a VPN or tunnel the two already share, not at a public one, and bind
-  the export to that interface. `docs/05-security.md` has the rest of the
-  reasoning, including what to lock down on the storage side.
+This replaces the older advice to mount a NAS export as the media volume. A
+network mount that dies takes everything that touches it down with it: a file
+check hangs, a "not there" can mean "unreachable", and a container that mounts
+it may not even start. Over HTTP a store that is away is a refused connection or
+a timeout of a few seconds, which the gate can tell apart from an answer.
 
-### When the store cannot be written
+### When the store cannot be reached
 
-A broadcast is recorded to local scratch and only moved into the media store when
-it ends, so an unreachable store never interrupts a live stream. If that move
-fails, the recording is **kept, not discarded**: it stays on scratch and the
-server tries again when it next starts and once an hour after that. The Storage
-panel on the dashboard says when one is waiting, and the line goes away by itself
-once the archive lands. Nothing is expected of you beyond fixing the storage.
+A broadcast is recorded to local scratch and only uploaded to the store when it
+ends, so an unreachable store never interrupts a live stream. While it is away:
+
+- **A finished broadcast is kept, not discarded.** It stays on scratch, and the
+  server tries again when it next starts and once an hour after that. The
+  Storage panel on the dashboard says when one is waiting, and the line goes
+  away by itself once the archive lands. The remux happens on the store, so the
+  streaming server never needs room for a second copy of the recording.
+- **Pressing Clip says "Saving clips is not available right now."** within a few
+  seconds. Nothing is half made, and the viewer's cooldown is not used up.
+- **Nothing is deleted.** Retention, the size cap and the Delete button all have
+  the store remove the files first and only then drop the row, so while it is
+  away every recording stays listed and the next pass or the next press finishes
+  the job. Stopping a share works the same way: the clip stays shared, and you
+  are told, until the store confirms the public copy is gone.
+- **The library still loads.** Listings never ask the store; only the videos and
+  posters themselves are missing until it is back. The Storage panel says the
+  store is not answering instead of showing its usage.
+
+Nothing is expected of you beyond bringing the store back.
 
 The retry at startup runs **beside** the server, not before it. Each waiting
-recording is a poster, a remux and a move against a store that may still be
-answering at outage speed, and the site would otherwise refuse connections for
-as long as that took, at exactly the moment somebody restarted it to get the
-site back. Only one retry runs at a time, and one waits while a broadcast is
-recording: this is usually a small machine, and the live stream comes first.
+recording is a whole broadcast to upload and remux, against a store that may
+still be away, and the site would otherwise refuse connections for as long as
+that took, at exactly the moment somebody restarted it to get the site back.
+Only one retry runs at a time, and one waits while a broadcast is recording:
+this is usually a small machine, and the live stream comes first.
 
 ## 4.6 Updating
 
@@ -256,6 +302,39 @@ docker compose up -d --build
 Your accounts survive updates because they live in a docker volume, not in the
 container.
 
+### Updating to the media store
+
+Recordings and clips used to be a folder the gate and Caddy both mounted. They
+now live behind the `store` service, and an install from before it needs three
+things once:
+
+1. **Two new keys in `.env`**, `SELFSTREAM_STORE_KEY` and
+   `SELFSTREAM_STORE_READ_KEY`, each from `openssl rand -hex 32` and different
+   from each other (see `.env.example`).
+2. **Hand the existing volume to the store's user.** The files in `media_data`
+   were written by the old gate as root, and the store runs as uid 10001. Build
+   the new images, then, with the stack stopped, change the owner in one pass:
+
+   ```
+   docker compose build
+   docker compose down
+   docker compose run --rm --no-deps --user 0:0 --cap-add CHOWN \
+       store chown -R 10001:10001 /media
+   docker compose up -d
+   ```
+
+   Only the owner changes; no file is moved, rewritten or removed. If you
+   pointed `media_data` at your own path, the same command covers it.
+3. **Your override.** `SELFSTREAM_MEDIA_DIR` is no longer read, and neither the
+   gate nor Caddy mounts the media volume any more, so drop any override of
+   those mounts. An override that points `media_data` at a local path keeps
+   working as it is. One that mounts a NAS export there should move to running
+   the store on that machine instead (above).
+
+Theater posters moved from the media volume to the gate's own data volume. Any
+already stored are fetched from the projector again the next time they are
+shown, and the old `art/` folder in the media volume can be deleted by hand.
+
 If you run your own copy of the Caddyfile rather than the one in the repo, carry
 two things across when updating past 0.21: every `reverse_proxy gate:8000` and
 `forward_auth gate:8000` block imports the `to_gate` snippet, and each
@@ -263,6 +342,14 @@ two things across when updating past 0.21: every `reverse_proxy gate:8000` and
 `scope=art` for `/media/art/*`, `scope=media` for `/media/*`). Without the
 scope, the gate treats a check as the members-only library and refuses guests
 the live video.
+
+With the media store, three blocks change, so compare yours with the repo's:
+`/media/art/*` is a `handle` (not `handle_path`) that proxies to the gate;
+`/media/*` and `/shared/*` proxy to `{$SELFSTREAM_STORE_UPSTREAM}` with
+`header_up Authorization "Bearer {$SELFSTREAM_STORE_READ_KEY}"` and
+`header_up -Cookie` in place of their `root` and `file_server`. Caddy then needs
+`SELFSTREAM_STORE_UPSTREAM` and `SELFSTREAM_STORE_READ_KEY` in its environment,
+and no longer mounts the media volume.
 
 ### Telling people what changed
 
@@ -312,7 +399,7 @@ handle /clip/* {
 ```
 
 keeping it above the catch-all and below the `handle /shared/*` block, which
-still serves the video and its poster off disk. Without this the clip page works
+serves the video and its poster. Without this the clip page works
 exactly as before and shared links keep the generic card.
 
 ## 4.7 Troubleshooting

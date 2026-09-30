@@ -1,7 +1,8 @@
-# upperroom runs as three small containers:
+# upperroom runs as four small containers:
 #
 #   mediamtx  receives the stream from OBS and republishes it as HLS
 #   gate      handles login, the session cookie, chat, and presence
+#   store     holds the recordings and clips behind a small keyed HTTP API
 #   caddy     terminates TLS, serves the pages, and guards the video
 #
 # Every value in ${...} comes from your local .env file, which is never
@@ -43,11 +44,15 @@ services:
       # second client dies mid-demux on a loaded machine and stalls recording.
       # The port is internal to this network and is never published.
       - SELFSTREAM_MEDIA_SOURCE=rtsp://mediamtx:8554/live
-      # Recordings are written to local scratch while live, then archived to the
-      # media store. Retention lives in the admin dashboard; these two are read
-      # only once, to seed it when updating an install that predates it.
+      # Recordings are written to local scratch while live, then uploaded to
+      # the media store with its write key. The URL defaults to the store
+      # container below; to keep the store on another machine, set it in .env
+      # (see docs/04-run.md). Retention lives in the admin dashboard; the two
+      # VOD_KEEP values further down are read only once, to seed it when
+      # updating an install that predates it.
       - SELFSTREAM_RECORD_TMP=/rec
-      - SELFSTREAM_MEDIA_DIR=/media
+      - SELFSTREAM_STORE_URL=${SELFSTREAM_STORE_URL:-http://store:8080}
+      - SELFSTREAM_STORE_KEY=${SELFSTREAM_STORE_KEY}
       # The static site, read only. The gate serves one page out of it, the
       # watch page, so it can fill in that page's link-preview tags before
       # handing it over.
@@ -69,11 +74,37 @@ services:
       # Read only, and the same directory Caddy serves: the gate renders the
       # watch page's preview tags, it never writes here.
       - ./web:/srv/web:ro
-      # The media store (recordings and clips). By default a local docker volume,
-      # so a fresh checkout just works. To keep recordings on a big disk or a NAS
-      # instead, override the source of this mount in an uncommitted
-      # docker-compose.override.yml (see docs/04-run.md).
+    networks:
+      - selfstream
+
+  # The media store: every recording and clip, behind two keys. The gate holds
+  # the write key and Caddy the read key; nothing else can reach it, and it
+  # publishes no port. It runs as an unprivileged user on a read-only root with
+  # every capability dropped, so all it can write is its own volume.
+  #
+  # To keep the archive on another machine instead, run store/ there (its
+  # docker-compose.yml is an example), point SELFSTREAM_STORE_URL and
+  # SELFSTREAM_STORE_UPSTREAM at it in .env, and switch this one off in your
+  # docker-compose.override.yml (docs/04-run.md shows how).
+  store:
+    build: ./store
+    restart: unless-stopped
+    environment:
+      - STORE_DIR=/media
+      - STORE_READ_KEY=${SELFSTREAM_STORE_READ_KEY}
+      - STORE_WRITE_KEY=${SELFSTREAM_STORE_KEY}
+    volumes:
+      # By default a local docker volume, so a fresh checkout just works. To
+      # keep recordings on a bigger disk, point this at your own path in an
+      # uncommitted docker-compose.override.yml (see docs/04-run.md).
       - media_data:/media
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - selfstream
 
@@ -83,6 +114,11 @@ services:
     environment:
       - SELFSTREAM_DOMAIN=${SELFSTREAM_DOMAIN}
       - TLS_EMAIL=${TLS_EMAIL}
+      # Where recordings and clips are fetched from, and the store's read key,
+      # which can fetch a file and nothing else. The default is the store
+      # container beside this one.
+      - SELFSTREAM_STORE_UPSTREAM=${SELFSTREAM_STORE_UPSTREAM:-store:8080}
+      - SELFSTREAM_STORE_READ_KEY=${SELFSTREAM_STORE_READ_KEY}
     ports:
       - "80:80"
       - "443:443"
@@ -93,9 +129,6 @@ services:
       # abusive addresses at the firewall, where they cost nothing, rather than
       # leaving every request to be refused by the application.
       - ./logs/caddy:/var/log/caddy
-      # Read-only view of the same media store the gate writes to, so Caddy can
-      # serve the recording and clip files directly.
-      - media_data:/srv/media:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
