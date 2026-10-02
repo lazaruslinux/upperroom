@@ -11,8 +11,8 @@ In OBS, open Settings, then Stream.
 - Server: `rtmp://watch.example.com:1935`
 - Stream Key: copy it from the admin dashboard
 
-Sign in as an admin and open the dashboard. It opens on **Go live**, and its
-first step, **Settings in OBS**, has a **Server** and a **Stream Key** field
+Sign in as an admin and open the dashboard. It opens on **Manage Stream**, and
+its first step, **Settings in OBS**, has a **Server** and a **Stream Key** field
 named exactly as OBS names them, each with a **Copy** button: copy each one
 into the box of the same name here. The key looks like `live?pass=...` and
 stays hidden until you press **Show**. The step ticks the first time OBS goes
@@ -52,7 +52,7 @@ each of them downloads. At 8000 Kbps that is about 3.9 GB per person per hour,
 at 6000 Kbps about 2.9 GB. Multiply by however many people watch and by how long
 you are on, and that is your bandwidth for the night. If that number is
 uncomfortable, the two levers are this setting and the room limit on the
-dashboard's Go live screen (see `docs/06-accounts-and-chat.md`).
+dashboard's Manage Stream screen (see `docs/06-accounts-and-chat.md`).
 
 Your own upload is one copy of the stream and nothing more, however many people
 are watching: viewers pull from the server, never from you.
@@ -83,8 +83,9 @@ early shows the offline card instead of tonight's title and a live frame. The
 step ticks once the link is copied. Someone without an account needs an invite
 link first (`docs/06-accounts-and-chat.md`).
 
-Beside the steps is the room: your own watch page, with the picture and the
-chat, so you can keep an eye on it without a second tab. **Chat only** drops
+Above the steps is the room: your own watch page, with the picture and the
+chat (on a phone the chat sits under the picture), so you can keep an eye on it
+without a second tab. **Chat only** drops
 the picture (the choice is remembered on that browser), and **Sound** turns
 its sound on. Under it, the call board shows who is here.
 

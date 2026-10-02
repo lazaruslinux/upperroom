@@ -325,7 +325,7 @@
       {
         "name": "lamp-glow",
         "value": "0 0 18px rgba(255, 59, 47, 0.45), 0 0 2px rgba(255, 59, 47, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
-        "purpose": "The lit ON AIR lamp only; the one glow on the site (text-shadow 0 0 6px rgba(255, 220, 210, 0.6) on its letters)."
+        "purpose": "The lit ON AIR lamp, and its one echo the live dot (no inset highlight there); the one glow on the site (text-shadow 0 0 6px rgba(255, 220, 210, 0.6) on its letters)."
       },
       {
         "name": "dark-glass",
@@ -394,7 +394,7 @@
       },
       {
         "name": "strip-centered",
-        "value": "1340px"
+        "value": "1460px"
       }
     ]
   },
@@ -477,7 +477,7 @@
     "overview": "The site is a broadcast booth after the lights are down. One lamp says whether the room is on air, the stream is the program monitor, and the people in the room are lit lines on a call board. It refuses the platform layout (top bar, rail, badge soup): the stream and the people lead, and controls, settings and stats sit behind a quiet menu until someone reaches for them.\n\nThe material is acoustic charcoal and anodized hardware. Panels are flat and set into one dark ground, divided by 1px seams, with barely-there 2px corners. Labels read like engraving on a console: condensed, small caps, widely tracked, dim. Ink is a warm white, never pure. The one light in the room is the ON AIR lamp; everything else is lit only by contrast. Motion is sparse: a chat line rising 3px as it arrives, quick color changes, a step's tick fading in, and nothing at all under reduced motion.\n\nThe system is dark only. There is no light theme and none is planned; `color-scheme: dark` is declared at the root. Each install sets its own site name and one channel accent; the booth itself does not change.",
     "keyCharacteristics": [
       "One charcoal ground, flat panels, 1px seams, 2px corners.",
-      "One red, one glow: the ON AIR lamp.",
+      "One red, one glow: the ON AIR lamp, echoed once by the live dot on Manage Stream.",
       "One channel accent, operator-chosen, for the primary action and the current selection.",
       "Barlow Condensed for the lamp, titles and engraved labels; Inter for everything read at length and for every button.",
       "One spacing unit (4px); every measure is a multiple of it.",
@@ -486,7 +486,7 @@
     "rules": [
       {
         "name": "The One Red Rule",
-        "body": "The lamp's red is the lamp and nothing else. Errors, deletions and warnings never use a color: an error is plain ink with a small outlined warning mark beside it, and a destructive button is an ordinary key whose confirmation question is the warning.",
+        "body": "The lamp's red is the lamp and its one echo, the steady live dot on the dashboard's Manage Stream section link, lit only while the lamp is. Errors, deletions and warnings never use a color: an error is plain ink with a small outlined warning mark beside it, and a destructive button is an ordinary key whose confirmation question is the warning.",
         "section": "colors"
       },
       {
@@ -506,7 +506,7 @@
       },
       {
         "name": "The One Glow Rule",
-        "body": "Nothing glows but the ON AIR lamp. No accent glow, no hover glow, no colored shadows.",
+        "body": "Nothing glows but the ON AIR lamp and its live dot. No accent glow, no hover glow, no colored shadows.",
         "section": "elevation"
       },
       {
@@ -516,7 +516,7 @@
       }
     ],
     "dos": [
-      "**Do** keep the ON AIR lamp the only red and the only glow on any surface.",
+      "**Do** keep the ON AIR lamp (and its one echo, the live dot) the only red and the only glow on any surface.",
       "**Do** give each screen exactly one loud word in the accent at full width; everything else is an ordinary key.",
       "**Do** build depth from ground, panel and raised fills with 1px seams and 2px corners.",
       "**Do** set every padding, gap and margin as a multiple of 4px.",

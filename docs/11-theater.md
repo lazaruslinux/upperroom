@@ -91,7 +91,7 @@ card plays the real stream rather than a still, so a viewer parked there costs
 the same as one watching and takes the same place in the room. It drops back to
 the still frame when the room is full or the tab is hidden. If that matters on
 your host's plan, lower `PROJECTOR_VIDEO_BITRATE`, or cap the audience under
-the **room limit** on the dashboard's **Go live** screen (see
+the **room limit** on the dashboard's **Manage Stream** screen (see
 `docs/06-accounts-and-chat.md`). The numbers under the room there show what
 the running broadcast has sent so far.
 
@@ -100,7 +100,7 @@ the running broadcast has sent so far.
 1. On your server's dashboard, open the **Connections** section, find
    **Projector** and press **Regenerate the key** to mint a key. Copy it.
 2. Copy your **stream key** and server address from the first step of the
-   **Go live** screen, exactly as you would for OBS.
+   **Manage Stream** screen, exactly as you would for OBS.
 3. On your media machine:
 
    ```

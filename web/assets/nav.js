@@ -3,7 +3,7 @@
 // One strip, built in one place: the menu key and the site name on the left,
 // the ON AIR lamp and the on-air clock on the right (the centre, on a wide
 // screen). The lamp is lit only while the stream is live, and it is the only
-// thing on the site in that red.
+// thing on the site in that red but for its one echo, the dashboard's live dot.
 //
 // The menu is the way around a signed-in site: the room, past broadcasts,
 // options, the role pages, and signing out. Search lives on the browse page.
@@ -22,10 +22,13 @@
 // one it is showing as `section`. They sit on the right of the strip on a wide
 // screen and at the top of the menu on anything narrower; strip.setSection()
 // moves the mark when the dashboard switches section without a page load.
+// The section that runs the stream carries a small red dot, in the strip and
+// in the menu, while the lamp is lit: the lamp's one echo.
 
 (function () {
   const ACCENTS = ["green", "amber", "blue", "ghost"];
   const POLL_MS = 15000;
+  const LIVE_SECTION = "golive";     // the dashboard section that gets the dot
 
   // Authored icons, one stroke weight (see svg.i in style.css). Static
   // markup with nobody's input in it.
@@ -42,6 +45,15 @@
 
   function icon(name, extra) {
     return `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"${extra || ""}>${ICON[name]}</svg>`;
+  }
+
+  // Hidden until the lamp lights. Only a mark: the lamp already says it.
+  function liveDot() {
+    const dot = document.createElement("span");
+    dot.className = "live-dot";
+    dot.setAttribute("aria-hidden", "true");
+    dot.hidden = true;
+    return dot;
   }
 
   // ---- small helpers, kept private like every other page keeps its own ----
@@ -137,6 +149,7 @@
       const live = !!data.online;
       lamp.classList.toggle("on", live);
       lamp.textContent = live ? "On air" : "Off air";
+      document.querySelectorAll(".live-dot").forEach((dot) => { dot.hidden = !live; });
       since = live ? (data.since || Math.floor(Date.now() / 1000)) : null;
       clock.hidden = !live;
       if (live && !ticker) ticker = setInterval(tick, 1000);
@@ -177,7 +190,7 @@
     ];
     const roles = [];
     // A page that carries the dashboard's own sections already offers both of
-    // these, as Go live and Stats.
+    // these, as Manage Stream and Stats.
     if (me.admin && !opts.sections) {
       roles.push({ key: "dashboard", label: "Dashboard", href: "/admin", icon: "dashboard" });
       roles.push({ key: "analytics", label: "Stats", href: "/analytics", icon: "stats" });
@@ -255,6 +268,7 @@
       const label = document.createElement("span");
       label.textContent = item.label;
       row.appendChild(label);
+      if (item.key === `section:${LIVE_SECTION}`) row.appendChild(liveDot());
       if (item.key === "logout") {
         row.addEventListener("click", async () => {
           try { await fetch("/api/logout", { method: "POST" }); } catch {}
@@ -333,6 +347,7 @@
       link.href = sec.href;
       link.dataset.section = sec.key;
       link.textContent = sec.label;
+      if (sec.key === LIVE_SECTION) link.appendChild(liveDot());
       if (sec.key === opts.section) link.setAttribute("aria-current", "page");
       nav.appendChild(link);
     });

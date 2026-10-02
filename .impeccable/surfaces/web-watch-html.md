@@ -14,7 +14,7 @@ related_targets: ["web/admin.html","web/index.html","web/home.html"]
 
 ## Audience, job, constraints
 - Friends on phones, arriving from a group-text link while the operator plays games. Job: tap, land in the room, watch, chat. The watch link lands anyone with an account straight in the room.
-- Operator job: open the dashboard, go live from OBS, copy the watch link, watch the room. The dashboard opens on one Go live screen; everything else sits behind a quiet menu.
+- Operator job: open the dashboard, go live from OBS, copy the watch link, watch the room. The dashboard opens on one Manage Stream screen; everything else sits behind a quiet menu.
 - Anti-goals (the operator's words): gimmicky or gamer RGB; busy on a phone. No pixel or dot-matrix fonts. No religious imagery.
 - Static pages, no build step, strict CSP (no inline script or style attributes), versioned asset URLs, self-hosted fonts.
 
@@ -25,7 +25,7 @@ OWN-WORLD: Acoustic charcoal grounds (#111214, panel #1b1d21, hairline #2a2d33),
 
 STORY: A friend understands in one glance whether the room is on air, sees who is there, and talks. The operator sees each go-live step become true and sends the link.
 
-FIRST VIEWPORT: Phone /watch: a slim lamp strip across the top edge (lit ON AIR, or dark glass reading OFF AIR), the stream full width beneath as the program monitor with nothing drawn over it, one call-board row of lit tiles for who is here, chat filling the rest, the composer at the thumb. Desktop /admin: the Go live screen, three ticking steps left, the program monitor and call board right, one loud "Copy watch link" action.
+FIRST VIEWPORT: Phone /watch: a slim lamp strip across the top edge (lit ON AIR, or dark glass reading OFF AIR), the stream full width beneath as the program monitor with nothing drawn over it, one call-board row of lit tiles for who is here, chat filling the rest, the composer at the thumb. Desktop /admin: the Manage Stream screen, the program monitor, chat and call board on top, three ticking steps under them, one loud "Copy watch link" action.
 
 FORM: Studio booth, after hours; position 6 of 7 on my ordered grounded list; seed key 29541f9c (re-roll 1). Raises kept: nothing overlays the stream; empty and offline states designed as deliberately as live; one loud word per screen; steps tick as they become true; one strict spacing grid; one centered axis on phones.
 

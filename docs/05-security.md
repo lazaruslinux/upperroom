@@ -486,7 +486,7 @@ You do not have to configure any of this; it is on by default.
   chat, and removing someone's admin role reaches their open sockets, so neither
   keeps powers until they happen to reconnect. A moderator cannot rename an
   admin's clip or delete an admin's comment, the same line chat draws.
-- **The room can be capped.** The room limit on the dashboard's Go live screen sets how
+- **The room can be capped.** The room limit on the dashboard's Manage Stream screen sets how
   many people may pull the live video at once; `0`, the default, is no limit.
   Caddy already asks the gate to authorize every video segment, so that is
   where the limit is applied. Each check names which door it is for in the

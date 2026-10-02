@@ -61,15 +61,16 @@ Either way they make their own viewer account, and it is theirs from then on.
 No terminal, and no email is involved.
 
 Once somebody has an account, the watch link is all they need. **Copy watch
-link**, the third step on the dashboard's **Go live** screen, copies it in one
-press. Send it once you are on air, so its preview shows tonight's title and a
+link**, the third step on the dashboard's **Manage Stream** screen, copies it in
+one press. Send it once you are on air, so its preview shows tonight's title and a
 live frame.
 
 See `docs/06-accounts-and-chat.md` for the details.
 
 Everything you run the place with is on the dashboard at `/admin`. It opens on
-**Go live**: the OBS settings, whether you are on air, the watch link, and the
-room itself with the title, the game, who is here and the room limit. The rest
+**Manage Stream**: the room itself with its chat, the title, the game, who is
+here and the room limit, then under it the OBS settings, whether you are on air,
+and the watch link. While you are on air its name carries a red dot. The rest
 are sections in the strip (in the menu, on a phone): **People** (accounts, bans
 and invites), **Library** (storage limits, past broadcasts and clips),
 **Channel** (branding and notifications), **Chat rules** (slow mode and banned
@@ -176,8 +177,8 @@ said live, comments are what people say afterwards. An author can delete their
 own; you and your moderators can delete any. A comment obeys the same chat
 rules, so someone banned from chat cannot comment instead.
 
-The dashboard's **Go live** screen shows the broadcast at a glance so you never
-have to read the container logs to know it is up: the lamp in the strip says
+The dashboard's **Manage Stream** screen shows the broadcast at a glance so you
+never have to read the container logs to know it is up: the lamp in the strip says
 **On air** or **Off air** with how long you have been on, the second step says
 since when and whether the broadcast is being recorded ("recording to the
 library", "the recorder is restarting" while it is cycling, "not recording" if
@@ -469,8 +470,8 @@ page, which reads the code itself); it just previews with the generic card.
 - The video never starts. Confirm OBS says it is streaming. Check
   `docker compose logs mediamtx` for a connection from your address. Make sure
   the OBS stream key matches the one in the first step of the dashboard's
-  **Go live** screen (it looks like `live?pass=...`). That step ticks only once
-  OBS has gone live with the current key.
+  **Manage Stream** screen (it looks like `live?pass=...`). That step ticks only
+  once OBS has gone live with the current key.
 - OBS cannot connect. The firewall rule for port 1935 may not match your current
   home IP. See `docs/01-vps-setup.md`, section 1.4.
 - Notifications are off on the dashboard and Options says they are not set up.

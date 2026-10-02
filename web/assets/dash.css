@@ -3,13 +3,13 @@
    (/analytics) and the first-run setup page, in the booth.
 
    On top of style.css, whose tokens, controls, lamp strip, slate and call
-   board all of this reuses. Nothing here uses the lamp's red: on these pages
-   it is the lamp in the strip and nothing else. The accent marks the one
-   thing to do next and the current selection.
+   board all of this reuses. The lamp's red appears here once: the live dot
+   on the Manage Stream section link, lit only while the lamp is. The accent
+   marks the one thing to do next and the current selection.
 
-   Organization: the section menu in the strip -> page frames -> the Go live
-   screen (steps, then the room) -> section pages (groups, rows, forms) ->
-   moderation -> stats -> setup.
+   Organization: the section menu in the strip -> page frames -> the Manage
+   Stream screen (the room, then the steps) -> section pages (groups, rows,
+   forms) -> moderation -> stats -> setup.
    ========================================================================= */
 
 /* ---- the section menu ---- */
@@ -18,7 +18,8 @@
    lamp in the middle. On a narrower desktop the lamp steps left, beside the
    site name, to make room for them. Narrower still there is no room for seven
    of them at all, so they lead the menu sheet instead (nav.js puts them in
-   both places). */
+   both places). The lamp only centres once both halves of the strip can hold
+   all seven, live dot included. */
 .strip-sections { display: none; }
 .strip-section {
   display: inline-flex;
@@ -32,6 +33,7 @@
   text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
+  gap: calc(var(--u) * 2);
   transition: color 150ms ease, background-color 150ms ease;
 }
 .strip-section:hover { color: var(--ink); }
@@ -44,13 +46,24 @@
 /* In the menu their words line up with the icon rows' words below them. */
 .menu-row.menu-section { padding-left: calc(var(--u) * 3 + 32px); }
 
+/* The lamp's one echo: a steady dot on Manage Stream while on air, so the
+   way back to the stream is lit from every section. Never animated. */
+.live-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lamp);
+  box-shadow: 0 0 18px rgba(255, 59, 47, 0.45), 0 0 2px rgba(255, 59, 47, 0.9);
+}
+
 @media (min-width: 1080px) {
   .strip-sections { display: flex; gap: calc(var(--u) * 1); }
   .menu-section { display: none; }
   .strip.has-sections { grid-template-columns: auto auto minmax(0, 1fr); }
   .strip.has-sections .strip-on { justify-self: start; }
 }
-@media (min-width: 1340px) {
+@media (min-width: 1460px) {
   .strip.has-sections { grid-template-columns: 1fr auto 1fr; }
   .strip.has-sections .strip-on { justify-self: center; }
 }
@@ -167,9 +180,10 @@ a.row-title:hover { text-decoration-color: var(--ink-2); }
 }
 
 /* =========================================================================
-   Go live
+   Manage Stream
    ========================================================================= */
 
+/* The room first, the steps under it, one column at every width. */
 .desk {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -177,26 +191,30 @@ a.row-title:hover { text-decoration-color: var(--ink-2); }
   padding: calc(var(--u) * 6) calc(var(--u) * 4) calc(var(--u) * 8);
 }
 @media (min-width: 960px) {
-  .desk {
-    grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
-    align-items: start;
-    gap: calc(var(--u) * 8);
-    padding: calc(var(--u) * 8);
-  }
+  .desk { padding: calc(var(--u) * 8); }
 }
 
 /* ---- the steps ---- */
 
+/* Stacked on a narrow screen; side by side from 960px, with step 1 wider for
+   its server and key, and a seam between the columns instead of under them. */
 .steps { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .step {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
+  align-content: start;
   gap: calc(var(--u) * 4);
   padding: calc(var(--u) * 5) 0;
   border-bottom: 1px solid var(--seam);
 }
 .step:first-child { padding-top: 0; }
 .step:last-child { border-bottom: 0; }
+@media (min-width: 960px) {
+  .steps { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .step { padding: 0 calc(var(--u) * 6); border-bottom: 0; border-left: 1px solid var(--seam); }
+  .step:first-child { padding-left: 0; border-left: 0; }
+  .step:last-child { padding-right: 0; }
+}
 
 /* The tick: dark until the step is true, then filled with ink. The step to
    do next carries the accent. */
@@ -268,24 +286,24 @@ a.row-title:hover { text-decoration-color: var(--ink-2); }
   border-radius: var(--radius);
   background: var(--panel);
 }
-/* The frame is exactly as tall as the watch page inside it needs: on a
-   narrow panel the picture alone, so its caption, the call board and the
-   numbers follow it directly. Chat is one tap away behind Chat only there
-   (style.css), not stacked underneath: the operator's anti-goal is "busy on
-   a phone" and the product keeps one screen for the operator, so the phone
-   dashboard shows the picture or the chat, never a scroll of both. From
-   640px (the width the framed page puts chat beside the picture) the
-   picture's own height, and never less than chat needs to be useful. */
+/* The frame is exactly as tall as the watch page inside it needs. On a
+   narrow panel that is the picture with chat stacked under it (style.css):
+   room for about five messages and the composer, the messages scrolling inside
+   the frame, so the operator can read and answer chat on a phone without
+   leaving the dashboard. From 640px (the width the framed page puts chat
+   beside the picture) the picture's own height, never less than chat needs
+   to be useful, and never so tall that the steps under the room fall below
+   the window: past that the picture letterboxes inside the frame. */
 .program { border-bottom: 1px solid var(--seam); background: var(--screen); }
 .program iframe {
   display: block;
   width: 100%;
-  height: 200px;
-  height: calc(100cqw * 0.5625);
+  height: 560px;
+  height: calc(100cqw * 0.5625 + 360px);
   border: 0;
 }
 @container (min-width: 640px) {
-  .program iframe { height: max(300px, calc((100cqw - 301px) * 0.5625)); }
+  .program iframe { height: max(300px, min(calc((100cqw - 301px) * 0.5625), calc(100vh - 430px))); }
 }
 .program.is-chat-only iframe { height: 420px; }
 

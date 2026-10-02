@@ -86,8 +86,22 @@ yourself out.
 
 ## The admin dashboard
 
-`/admin` always opens on **Go live**, the one screen a night is run from. On
-the left, three steps, each ticking as it becomes true:
+`/admin` always opens on **Manage Stream**, the one screen a night is run from.
+While you are on air, its name in the strip and in the menu carries a small red
+dot, so the way back to it is lit from every other section.
+
+At the top is **the room**: your own watch page in a frame (the picture and
+the chat; **Chat only** drops the picture, **Sound** turns its sound on, and the
+arrow opens the room in a tab of its own), then the slate with tonight's title
+and game (**Edit** changes them; **No game** clears the game), the call board
+of who is in the room, and three numbers the server itself counts: how many are
+**watching** the video, the **room limit** (**Change** sets it), and how much
+this broadcast has **sent**. Off air the same screen shows the room dark,
+exactly as a viewer sees it. On a phone the chat sits under the picture inside
+the frame, with its own scroll and the message box at the bottom.
+
+Under the room, three steps, each ticking as it becomes true (side by side on a
+wide screen, one under another on a phone):
 
 1. **Settings in OBS**: the **Server** and **Stream Key** exactly as OBS names
    its fields (Settings, Stream, Service: Custom), each with **Copy**, the key
@@ -105,16 +119,6 @@ the left, three steps, each ticking as it becomes true:
    before you are on air shows the offline card rather than tonight's title and
    a live frame. If the browser will not copy, the link is shown under the
    button, selected, to copy by hand.
-
-On the right is **the room**: your own watch page in a frame (the picture and
-the chat; **Chat only** drops the picture, **Sound** turns its sound on, and the
-arrow opens the room in a tab of its own), then the slate with tonight's title
-and game (**Edit** changes them; **No game** clears the game), the call board
-of who is in the room, and three numbers the server itself counts: how many are
-**watching** the video, the **room limit** (**Change** sets it), and how much
-this broadcast has **sent**. Off air the same screen shows the room dark,
-exactly as a viewer sees it. On a phone it all stacks: the steps and **Copy
-watch link** first, the room under them.
 
 Everything else is a section, along the right of the strip on a wide screen
 and at the top of the menu on anything narrower:
@@ -428,8 +432,8 @@ number of viewers is what your bandwidth bill is made of. At the 1080p and
 6000 Kbps the theater projector publishes, that is roughly **2.9 GB per person
 per hour**; at 8000 Kbps from OBS, roughly 3.9 GB.
 
-The **room limit**, in the numbers under the room on the dashboard's **Go live**
-screen (press **Change**), sets how many people may watch at once. `0`, the default, means no limit. Past the limit, the video is refused and
+The **room limit**, in the numbers under the room on the dashboard's **Manage
+Stream** screen (press **Change**), sets how many people may watch at once. `0`, the default, means no limit. Past the limit, the video is refused and
 the page says the room is full; the person is not signed out and **chat still
 works for them**, so they can wait in the room and the video starts on its own
 when a place opens up. A place opens up about thirty seconds after somebody

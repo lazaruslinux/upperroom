@@ -165,7 +165,7 @@ The system is dark only. There is no light theme and none is planned; `color-sch
 
 **Key Characteristics:**
 - One charcoal ground, flat panels, 1px seams, 2px corners.
-- One red, one glow: the ON AIR lamp.
+- One red, one glow: the ON AIR lamp, echoed once by the live dot on Manage Stream.
 - One channel accent, operator-chosen, for the primary action and the current selection.
 - Barlow Condensed for the lamp, titles and engraved labels; Inter for everything read at length and for every button.
 - One spacing unit (4px); every measure is a multiple of it.
@@ -181,7 +181,7 @@ A near-black charcoal booth in warm-white ink, with one reserved red lamp and on
 - **Accent Ink** (`accent-ink`): text and icons on an accent fill; a near-black tinted toward the accent.
 
 ### Secondary
-- **ON AIR Red** (`lamp`, with `lamp-face` and `lamp-edge` for the lit gradient and rim, and `lamp-ink` for its letters): the live lamp in the strip and nothing else anywhere on the site.
+- **ON AIR Red** (`lamp`, with `lamp-face` and `lamp-edge` for the lit gradient and rim, and `lamp-ink` for its letters): the live lamp in the strip, and its one echo: the steady dot beside the dashboard's Manage Stream section link while on air. Nothing else anywhere on the site.
 - **Dark Glass** (`glass`, `glass-edge`, `glass-ink`): the same lamp switched off, reading OFF AIR. A faintly warm black, so an unlit lamp still reads as a lamp.
 
 ### Neutral
@@ -195,7 +195,7 @@ A near-black charcoal booth in warm-white ink, with one reserved red lamp and on
 - **Warm White Ink** (`ink`), **Ink 2** (`ink-2`), **Ink 3** (`ink-3`): text in three strengths. All three clear 4.5:1 on the panel. Ink 2 is secondary text and resting control labels; Ink 3 is engraved labels, metadata and hints.
 
 ### Named Rules
-**The One Red Rule.** The lamp's red is the lamp and nothing else. Errors, deletions and warnings never use a color: an error is plain ink with a small outlined warning mark beside it, and a destructive button is an ordinary key whose confirmation question is the warning.
+**The One Red Rule.** The lamp's red is the lamp and its one echo, the steady live dot on the dashboard's Manage Stream section link, lit only while the lamp is. Errors, deletions and warnings never use a color: an error is plain ink with a small outlined warning mark beside it, and a destructive button is an ordinary key whose confirmation question is the warning.
 
 **The One Accent Rule.** The channel accent marks the one primary action on a screen and the current selection. It never tints a surface, a heading or an illustration.
 
@@ -227,21 +227,21 @@ One spacing unit, 4px (`u`); every padding, gap and margin is a multiple of it, 
 
 Viewer pages are one centered column (720px, wide pages 1120px) under the 48px lamp strip; doors (sign-in, setup, shared clip) are a 480px column. On a phone everything shares one centered axis. The watch room stacks strip, monitor, slate, call board, chat and the composer at the thumb; from 960px chat becomes a 380px column beside the monitor, the monitor is sized so the slate and board still fit beneath it, and the lamp takes the center of the strip.
 
-The operator dashboard is up to 1440px wide. Its Go live screen puts the three steps in a 360-460px column on the left and the room panel (program monitor, slate, call board, readout) on the right, 32px apart. Section pages are a 760px column (1040px wide). Section links run along the strip from 1080px and lead the menu sheet below that.
+The operator dashboard is up to 1440px wide. Its Manage Stream screen leads with the room panel (program monitor, slate, call board, readout) at full width and puts the three steps under it, 32px apart: stacked on a phone, side by side from 960px with the first step wider and seams between them. Section pages are a 760px column (1040px wide). Section links run along the strip from 1080px and lead the menu sheet below that.
 
-Controls are compact under a fine pointer (40px buttons, fields and icon keys; 36px chips) and grow to at least 44px under a coarse pointer or below 560px. Breakpoints in use: 560, 640, 720, 960, 1080, 1340px.
+Controls are compact under a fine pointer (40px buttons, fields and icon keys; 36px chips) and grow to at least 44px under a coarse pointer or below 560px. Breakpoints in use: 560, 640, 720, 960, 1080, 1460px.
 
 ## Elevation & Depth
 
 The system is flat. Depth comes from tonal layering (booth, ground, panel, raised, darkest to lightest by role) and 1px seams, never from drop shadows. The lamp is the exception, and the only light source.
 
 ### Shadow Vocabulary
-- **Lamp glow** (`box-shadow: 0 0 18px rgba(255, 59, 47, 0.45), 0 0 2px rgba(255, 59, 47, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.35)`, with `text-shadow: 0 0 6px rgba(255, 220, 210, 0.6)`): the lit lamp only.
+- **Lamp glow** (`box-shadow: 0 0 18px rgba(255, 59, 47, 0.45), 0 0 2px rgba(255, 59, 47, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.35)`, with `text-shadow: 0 0 6px rgba(255, 220, 210, 0.6)`): the lit lamp, and the live dot without the inset highlight.
 - **Dark glass** (`box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), inset 0 -8px 12px rgba(0, 0, 0, 0.35)`): the unlit lamp's recessed face.
 - **Selection line** (`box-shadow: inset 0 -2px 0` accent): the underline on a selected tab, pressed chip, current strip section or chosen swatch. It is a drawn line, not elevation.
 
 ### Named Rules
-**The One Glow Rule.** Nothing glows but the ON AIR lamp. No accent glow, no hover glow, no colored shadows.
+**The One Glow Rule.** Nothing glows but the ON AIR lamp and its live dot. No accent glow, no hover glow, no colored shadows.
 
 **The Flat Panel Rule.** Panels, modals and the menu sheet are flat: a seam and a lighter fill set them apart. A modal sits on the room dimmed to 72% black, not on a shadow.
 
@@ -282,7 +282,7 @@ Raised keys on a console: compact, quiet at rest, never shouting except once per
 ### Navigation
 - **The lamp strip:** 48px of booth black across the top of every page, a seam beneath. Menu key and site name (16px condensed, 0.04em) on the left; the lamp and the on-air clock on the right, centered from 960px.
 - **Menu sheet:** a flat 300px panel under the menu key, closed by Escape, an outside click or the key. Rows are 44px, Inter 15px in Ink 2 with an Ink 3 icon; hover and the current page take the raised fill, and the current page's icon takes the accent.
-- **Dashboard sections:** condensed 14px uppercase words along the strip; the current one takes the raised fill and the accent selection line.
+- **Dashboard sections:** condensed 14px uppercase words along the strip; the current one takes the raised fill and the accent selection line. While on air, Manage Stream carries an 8px lamp-red dot with the lamp's glow, steady, never pulsing, in the strip and in the menu.
 
 ### The ON AIR Lamp (signature)
 A small engraved lamp in the strip. Off, it is dark glass reading OFF AIR in a dim warm gray. Live, it lights: a red gradient face, a pale rim, near-white letters and the one glow on the site. It changes over 300ms.
@@ -302,7 +302,7 @@ Messages stack 12px apart with a 28px square avatar, a bold 14px name, a 12px ti
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep the ON AIR lamp the only red and the only glow on any surface.
+- **Do** keep the ON AIR lamp (and its one echo, the live dot) the only red and the only glow on any surface.
 - **Do** give each screen exactly one loud word in the accent at full width; everything else is an ordinary key.
 - **Do** build depth from ground, panel and raised fills with 1px seams and 2px corners.
 - **Do** set every padding, gap and margin as a multiple of 4px.

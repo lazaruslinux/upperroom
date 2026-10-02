@@ -16,6 +16,9 @@ from config import VERSION
 # all, which is the right behaviour for a release with nothing a viewer would
 # notice.
 NOTES = {
+    "0.25.0": [
+        "A tidier dashboard for the host. Nothing changes on your side.",
+    ],
     # 0.24.1 repeats the 0.24.0 lines: only the newest entry is ever shown, and
     # most accounts had not signed in between the two releases.
     "0.24.1": [

@@ -12,96 +12,20 @@
   <meta name="theme-color" content="#0c0d0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/assets/style.css?v=65">
-  <link rel="stylesheet" href="/assets/dash.css?v=2">
+  <link rel="stylesheet" href="/assets/style.css?v=66">
+  <link rel="stylesheet" href="/assets/dash.css?v=3">
 </head>
 <body class="dash">
   <div id="site-nav"></div>
 
   <main class="dash-main">
 
-    <!-- ==== Go live: the screen the dashboard opens on ====================
-         Three steps on the left that tick as they become true, the room on
-         the right. Everything else is behind the section menu. -->
+    <!-- ==== Manage Stream: the screen the dashboard opens on ==============
+         The room first, then three steps under it that tick as they become
+         true. Everything else is behind the section menu. -->
     <section class="dash-section golive" data-panel="golive" aria-labelledby="golive-title">
-      <h1 id="golive-title" class="sr-only" tabindex="-1">Go live</h1>
+      <h1 id="golive-title" class="sr-only" tabindex="-1">Manage Stream</h1>
       <div class="desk">
-        <ol class="steps">
-          <li class="step" id="step-obs" data-state="now">
-            <span class="mark" aria-hidden="true">
-              <span class="mark-n">1</span>
-              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
-            </span>
-            <div class="step-body">
-              <h2 class="step-title">Settings in OBS <span class="sr-only step-sr"></span></h2>
-              <p class="step-state">Settings <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Stream <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Service: <b>Custom</b></p>
-              <p id="obs-note" class="step-note" hidden>This key is new. OBS needs it before the next broadcast.</p>
-              <div class="kv">
-                <div class="kv-row">
-                  <label class="field-label">
-                    <span class="engraved">Server</span>
-                    <input id="stream-server" class="field code" type="text" readonly autocomplete="off" spellcheck="false">
-                  </label>
-                  <div class="kv-tools">
-                    <button type="button" id="server-copy" class="chip">Copy</button>
-                  </div>
-                </div>
-                <div class="kv-row">
-                  <label class="field-label">
-                    <span class="engraved">Stream Key</span>
-                    <input id="stream-key" class="field code" type="password" readonly autocomplete="off" spellcheck="false">
-                  </label>
-                  <div class="kv-tools">
-                    <button type="button" id="stream-key-show" class="chip" aria-pressed="false">Show</button>
-                    <button type="button" id="stream-key-copy" class="chip">Copy</button>
-                  </div>
-                </div>
-              </div>
-              <p class="step-aside">
-                <button type="button" id="stream-key-regen" class="link-btn">Regenerate the key</button>
-              </p>
-              <p id="stream-key-msg" class="notify-msg" role="status" hidden></p>
-            </div>
-          </li>
-
-          <li class="step" id="step-air" data-state="wait">
-            <span class="mark" aria-hidden="true">
-              <span class="mark-n">2</span>
-              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
-            </span>
-            <div class="step-body">
-              <h2 class="step-title">Start Streaming in OBS <span class="sr-only step-sr"></span></h2>
-              <p id="air-state" class="step-state" aria-live="polite">Press Start Streaming in OBS.</p>
-            </div>
-          </li>
-
-          <!-- Lights once on air, but works off air too. A link preview is
-               made when the link is pasted, so one sent off air shows the
-               offline card. -->
-          <li class="step" id="step-link" data-state="wait">
-            <span class="mark" aria-hidden="true">
-              <span class="mark-n">3</span>
-              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
-            </span>
-            <div class="step-body">
-              <h2 class="step-title">Send the link <span class="sr-only step-sr"></span></h2>
-              <p class="step-state">Anyone with an account opens it straight into the room.</p>
-              <p id="link-note" class="step-state" hidden>Send it once you're on air so the preview shows tonight's title and a live frame.</p>
-              <button type="button" id="copy-link" class="loud">
-                <span>Copy watch link</span>
-                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
-              </button>
-              <p id="link-msg" class="notify-msg" role="status" hidden></p>
-              <!-- Shown only when the browser refuses the clipboard: the link,
-                   selected, to copy by hand. -->
-              <label id="link-fallback" class="field-label link-fallback" hidden>
-                <span class="engraved">Your link</span>
-                <input id="link-fallback-url" class="field code" type="text" readonly spellcheck="false">
-              </label>
-            </div>
-          </li>
-        </ol>
-
         <section class="room-panel" aria-labelledby="room-title">
           <h2 id="room-title" class="sr-only">The room</h2>
           <!-- The watch page itself, in a frame: the monitor and the chat
@@ -187,6 +111,82 @@
           </form>
           <p id="room-limit-msg" class="notify-msg slate-msg" role="status" hidden></p>
         </section>
+
+        <ol class="steps">
+          <li class="step" id="step-obs" data-state="now">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">1</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Settings in OBS <span class="sr-only step-sr"></span></h2>
+              <p class="step-state">Settings <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Stream <span class="path-sep" aria-hidden="true">→</span><span class="sr-only">,</span> Service: <b>Custom</b></p>
+              <p id="obs-note" class="step-note" hidden>This key is new. OBS needs it before the next broadcast.</p>
+              <div class="kv">
+                <div class="kv-row">
+                  <label class="field-label">
+                    <span class="engraved">Server</span>
+                    <input id="stream-server" class="field code" type="text" readonly autocomplete="off" spellcheck="false">
+                  </label>
+                  <div class="kv-tools">
+                    <button type="button" id="server-copy" class="chip">Copy</button>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <label class="field-label">
+                    <span class="engraved">Stream Key</span>
+                    <input id="stream-key" class="field code" type="password" readonly autocomplete="off" spellcheck="false">
+                  </label>
+                  <div class="kv-tools">
+                    <button type="button" id="stream-key-show" class="chip" aria-pressed="false">Show</button>
+                    <button type="button" id="stream-key-copy" class="chip">Copy</button>
+                  </div>
+                </div>
+              </div>
+              <p class="step-aside">
+                <button type="button" id="stream-key-regen" class="link-btn">Regenerate the key</button>
+              </p>
+              <p id="stream-key-msg" class="notify-msg" role="status" hidden></p>
+            </div>
+          </li>
+
+          <li class="step" id="step-air" data-state="wait">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">2</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Start Streaming in OBS <span class="sr-only step-sr"></span></h2>
+              <p id="air-state" class="step-state" aria-live="polite">Press Start Streaming in OBS.</p>
+            </div>
+          </li>
+
+          <!-- Lights once on air, but works off air too. A link preview is
+               made when the link is pasted, so one sent off air shows the
+               offline card. -->
+          <li class="step" id="step-link" data-state="wait">
+            <span class="mark" aria-hidden="true">
+              <span class="mark-n">3</span>
+              <svg class="i mark-tick" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>
+            </span>
+            <div class="step-body">
+              <h2 class="step-title">Send the link <span class="sr-only step-sr"></span></h2>
+              <p class="step-state">Anyone with an account opens it straight into the room.</p>
+              <p id="link-note" class="step-state" hidden>Send it once you're on air so the preview shows tonight's title and a live frame.</p>
+              <button type="button" id="copy-link" class="loud">
+                <span>Copy watch link</span>
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>
+              </button>
+              <p id="link-msg" class="notify-msg" role="status" hidden></p>
+              <!-- Shown only when the browser refuses the clipboard: the link,
+                   selected, to copy by hand. -->
+              <label id="link-fallback" class="field-label link-fallback" hidden>
+                <span class="engraved">Your link</span>
+                <input id="link-fallback-url" class="field code" type="text" readonly spellcheck="false">
+              </label>
+            </div>
+          </li>
+        </ol>
       </div>
     </section>
 
@@ -469,7 +469,7 @@
         </div>
         <p class="group-note">The projector runs on your media machine and connects
           outward to this server, so that machine needs no open port. Give it this
-          key and the stream key from Go live. Regenerating it disconnects the
+          key and the stream key from Manage Stream. Regenerating it disconnects the
           projector at once. Setup is in
           <a href="https://github.com/lazaruslinux/upperroom/blob/main/docs/11-theater.md" target="_blank" rel="noopener">docs/11-theater.md</a>.</p>
         <p id="projector-status" class="theater-status">Loading…</p>
@@ -583,8 +583,8 @@
     </div>
   </div>
 
-  <script src="/assets/nav.js?v=12"></script>
+  <script src="/assets/nav.js?v=13"></script>
   <script src="/assets/theater-picker.js?v=1"></script>
-  <script src="/assets/admin.js?v=51"></script>
+  <script src="/assets/admin.js?v=52"></script>
 </body>
 </html>

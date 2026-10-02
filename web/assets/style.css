@@ -11,8 +11,8 @@
    theater.
 
    Rules the whole system keeps, and that the dashboard inherits:
-     - ON AIR red (--lamp) is the lamp and nothing else. It is also the only
-       thing that glows.
+     - ON AIR red (--lamp) is the lamp and its one echo, the live dot on the
+       dashboard's Manage Stream link. They are also the only things that glow.
      - The channel accent marks primary actions and the current selection, and
        nothing decorative.
      - Flat panels on one charcoal ground, 1px seams between them, 2px corners.
@@ -1335,12 +1335,16 @@ body.framed .stage-col .slate,
 body.framed .stage-col .board,
 body.framed .offair,
 body.framed #points-btn { display: none; }
-/* Narrow, the frame is the picture alone; the dashboard's Chat only swaps in
-   the chat. */
+/* Narrow, the frame is one column the height of the frame: the picture, then
+   chat under it, its messages scrolling inside so the composer stays at the
+   bottom. The dashboard's Chat only takes the picture away. */
 @media (max-width: 639px) {
-  body.framed:not(.chat-only) .chat-col { display: none; }
-  /* A short, wide frame reads as a landscape phone, but it has no strip to
-     leave room for: the picture takes the whole frame. */
+  body.watch.framed { height: var(--vvh, 100vh); min-height: 0; overflow: hidden; }
+  body.framed .room { display: flex; flex-direction: column; min-height: 0; }
+  body.framed .stage-col { flex: none; }
+  body.framed .chat-col { display: flex; flex: 1 1 auto; min-height: 0; }
+  /* The frame has no strip, so the landscape-phone cap on the picture does
+     not apply here. */
   body.framed .monitor { max-height: none; }
 }
 
@@ -1357,7 +1361,8 @@ body.framed #points-btn { display: none; }
     border-right: 1px solid var(--seam);
     background: var(--screen);
   }
-  body.framed .stage-col .monitor { width: 100%; max-height: none; margin: 0; }
+  /* Never taller than the frame: a short frame letterboxes the picture. */
+  body.framed .stage-col .monitor { width: min(100%, calc(var(--vvh, 100vh) * 16 / 9)); max-height: none; margin: 0 auto; }
   body.framed .chat-col { display: flex; min-height: 0; }
   body.framed.chat-only .room { grid-template-columns: minmax(0, 1fr); }
   body.framed.chat-only .stage-col { display: none; }

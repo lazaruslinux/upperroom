@@ -1,8 +1,8 @@
 // The dashboard: everything an operator runs.
 //
-// It opens on Go live: the three things that have to be true for a night to
-// happen (OBS has the settings, OBS is streaming, the link has gone out), each
-// ticking as it becomes true, beside the room itself. Everything else is a
+// It opens on Manage Stream: the room itself, then under it the three things
+// that have to be true for a night to happen (OBS has the settings, OBS is
+// streaming, the link has gone out), each ticking as it becomes true. Everything else is a
 // section behind the menu in the strip: People, Library, Channel, Chat rules
 // and Connections here, Stats on its own page.
 //
@@ -189,7 +189,7 @@ async function requireAdmin() {
 }
 
 // =============================================================================
-// Go live
+// Manage Stream
 // =============================================================================
 
 let stream = {};              // the last /api/admin/stream answer
@@ -1646,12 +1646,13 @@ $("invite-made-copy").addEventListener("click", (e) => {
 // The sections
 // =============================================================================
 // One section at a time. A section's data is fetched the first time it is
-// shown, so opening the dashboard costs the Go live screen and nothing else.
-// The dashboard always opens on Go live (a link to /admin#people lands on
-// People). Older links name the tabs this replaced, and still land.
+// shown, so opening the dashboard costs the Manage Stream screen and nothing
+// else. The dashboard always opens on Manage Stream (a link to /admin#people
+// lands on People). Older links name the tabs this replaced, and still land:
+// the screen keeps its old key, golive, for the same reason.
 
 const SECTIONS = [
-  { key: "golive", label: "Go live", href: "/admin#golive" },
+  { key: "golive", label: "Manage Stream", href: "/admin#golive" },
   { key: "people", label: "People", href: "/admin#people" },
   { key: "library", label: "Library", href: "/admin#library" },
   { key: "channel", label: "Channel", href: "/admin#channel" },
@@ -1718,7 +1719,7 @@ async function boot() {
   loadChannel();
   loadStream();
   setInterval(loadStream, 10000);
-  // The store only matters on Go live, and only while it shows.
+  // The store only matters on Manage Stream, and only while it shows.
   setInterval(() => { if (current === "golive") loadStorageState(); }, 60000);
   // Only while a session is open: the state moves on its own then (a title
   // ending puts the room back to intermission).

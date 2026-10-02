@@ -17,7 +17,7 @@ let me = null;               // this browser's identity, for the strip
 // The dashboard's sections, which this page is the last of. The same list
 // admin.js hands the strip.
 const SECTIONS = [
-  { key: "golive", label: "Go live", href: "/admin#golive" },
+  { key: "golive", label: "Manage Stream", href: "/admin#golive" },
   { key: "people", label: "People", href: "/admin#people" },
   { key: "library", label: "Library", href: "/admin#library" },
   { key: "channel", label: "Channel", href: "/admin#channel" },

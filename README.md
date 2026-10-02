@@ -7,7 +7,7 @@ third party streaming service, and nobody gets an account unless you made it or
 handed them an invite. You can also share a single clip publicly. It runs on a
 server you control, at your own domain.
 
-Current version: **0.24.1**. Releases are tagged in git, and the running version
+Current version: **0.25.0**. Releases are tagged in git, and the running version
 also shows in the dashboard footer and at `/api/status`.
 
 ## Screenshots
@@ -31,9 +31,9 @@ The analytics page, composed entirely from data the site already has:
 
 ![The analytics page with watch time and unique viewer charts](docs/screenshots/analytics.png)
 
-The dashboard's Go live screen: three steps that tick as you go on air, beside the room as viewers see it:
+The dashboard's Manage Stream screen: the room as viewers see it, with three steps under it that tick as you go on air:
 
-![The Go live screen: OBS settings, on-air status and the watch link beside the live room and chat](docs/screenshots/dashboard-golive.png)
+![The Manage Stream screen: the live room and chat on top, with the OBS settings, on-air status and the watch link as three steps under it](docs/screenshots/dashboard-golive.png)
 
 ## What it does
 
@@ -135,14 +135,15 @@ only repackages the video and stays light.
   is here. It is laid out for a phone first.
 - Your site name leads the pages your viewers see. Set it in the dashboard.
 - Four accent colors, applied site wide, including the browser theme color.
-- Your stream key lives in the dashboard, on the Go live screen. Copy it, or
-  regenerate it if it leaks, without touching a config file or restarting
+- Your stream key lives in the dashboard, on the Manage Stream screen. Copy it,
+  or regenerate it if it leaks, without touching a config file or restarting
   anything.
-- The dashboard opens on one Go live screen: the OBS settings, whether you are
-  on air and recording, and the watch link, as three steps that tick as they
-  become true, beside your own watch page with its chat, the stream title and
-  the game, who is in the room, and the room limit. You can start the broadcast
-  in OBS and keep an eye on the room without a second tab. Everything else
+- The dashboard opens on one Manage Stream screen: your own watch page with its
+  chat (still under the picture on a phone), the stream title and the game, who
+  is in the room, and the room limit, then under it the OBS settings, whether
+  you are on air and recording, and the watch link, as three steps that tick as
+  they become true. While you are on air its name carries a red dot. You can
+  start the broadcast in OBS and keep an eye on the room without a second tab. Everything else
   (people, the library, the channel, chat rules, connections, stats) is a
   section behind a menu, and all of it works from a phone.
 - A transparent chat overlay you add to OBS as a browser source, so the
@@ -236,7 +237,7 @@ Cloudflare account. The tutorials in `docs/` walk through each part.
 5. Open your domain in a browser. Because there are no accounts yet, it sends
    you to a setup page that creates your admin account and names your site, then
    signs you in. That page is gone for good once it has run.
-6. Open the dashboard. The first step on its Go live screen has the server
+6. Open the dashboard. The first step on its Manage Stream screen has the server
    address and stream key: copy them into OBS (`docs/03-obs.md`), then go
    live.
 
